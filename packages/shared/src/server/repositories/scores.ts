@@ -45,6 +45,7 @@ import {
 } from "../../tableDefinitions";
 import * as greptimeScoreReads from "./greptime/scores";
 import { upsertScoreToGreptime } from "./greptime/mutations";
+import { streamScoresForAnalyticsGreptime } from "./greptime/exportToSink";
 
 export const searchExistingAnnotationScore = (
   projectId: string,
@@ -788,90 +789,13 @@ export const getScoresForAnalyticsIntegrations = async function* (
   projectName: string,
   minTimestamp: Date,
   maxTimestamp: Date,
-  options: { useGraceHash?: boolean } = {},
+  _options: { useGraceHash?: boolean } = {},
 ) {
-  // Pre-filter traces in a CTE so the trace timestamp window prunes partitions
-  // directly, instead of living in an OR clause after the LEFT JOIN where the
-  // planner cannot push it down. Subtract 7d from minTimestamp to keep scores
-  // whose trace was created before the score window started.
-  const query = `
-    WITH selected_traces AS (
-      SELECT
-        t.project_id as project_id,
-        t.id as id,
-        t.name as name,
-        t.session_id as session_id,
-        t.user_id as user_id,
-        t.release as release,
-        t.tags as tags,
-        t.metadata['$posthog_session_id'] as posthog_session_id,
-        t.metadata['$mixpanel_session_id'] as mixpanel_session_id
-      FROM traces t FINAL
-      WHERE t.project_id = {projectId: String}
-      AND t.timestamp >= {minTimestamp: DateTime64(3)} - INTERVAL 7 DAY
-      AND t.timestamp <= {maxTimestamp: DateTime64(3)}
-    )
-
-    SELECT
-      s.id as id,
-      s.timestamp as timestamp,
-      s.name as name,
-      s.value as value,
-      s.string_value as string_value,
-      s.data_type as data_type,
-      s.comment as comment,
-      s.environment as environment,
-      s.trace_id as score_trace_id,
-      s.session_id as score_session_id,
-      s.dataset_run_id as score_dataset_run_id,
-      t.id as trace_id,
-      t.name as trace_name,
-      t.session_id as trace_session_id,
-      t.user_id as trace_user_id,
-      t.release as trace_release,
-      t.tags as trace_tags,
-      s.metadata as metadata,
-      t.posthog_session_id as posthog_session_id,
-      t.mixpanel_session_id as mixpanel_session_id
-    FROM scores s FINAL
-    LEFT JOIN selected_traces t ON s.trace_id = t.id AND s.project_id = t.project_id
-    WHERE s.project_id = {projectId: String}
-    AND s.timestamp >= {minTimestamp: DateTime64(3)}
-    AND s.timestamp < {maxTimestamp: DateTime64(3)}
-    AND s.data_type IN ({dataTypes: Array(String)})
-    AND (
-      s.trace_id IS NOT NULL
-      OR s.session_id IS NOT NULL
-      OR s.dataset_run_id IS NOT NULL
-    )
-  `;
-
-  const records = queryClickhouseStream<Record<string, unknown>>({
-    query,
-    params: {
-      projectId,
-      minTimestamp: convertDateToClickhouseDateTime(minTimestamp),
-      maxTimestamp: convertDateToClickhouseDateTime(maxTimestamp),
-      dataTypes: LISTABLE_SCORE_TYPES,
-    },
-    tags: {
-      feature: "posthog",
-      type: "score",
-      kind: "analytic",
-      projectId,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-      ...(options.useGraceHash
-        ? {
-            clickhouse_settings: {
-              join_algorithm: "grace_hash",
-              grace_hash_join_initial_buckets: "32",
-            },
-          }
-        : {}),
-    },
-  });
+  const records = streamScoresForAnalyticsGreptime(
+    projectId,
+    minTimestamp,
+    maxTimestamp,
+  );
 
   const baseUrl = env.NEXTAUTH_URL?.replace("/api/auth", "");
   for await (const record of records) {

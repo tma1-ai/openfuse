@@ -64,6 +64,7 @@ import {
   getObservationsCountForPublicApiFromEventsGreptime,
   getObservationsV2ForPublicApiFromEventsGreptime,
 } from "./greptime/eventsObservations";
+import { streamEventsForAnalyticsGreptime } from "./greptime/exportToSink";
 import {
   FullEventsObservations,
   createPublicApiTracesColumnMapping,
@@ -1037,46 +1038,11 @@ export const getEventsForAnalyticsIntegrations = async function* (
   minTimestamp: Date,
   maxTimestamp: Date,
 ) {
-  const queryBuilder = new EventsQueryBuilder({ projectId })
-    // Use export field set for most fields (id, traceId, name, type, level, version,
-    // environment, userId, sessionId, tags, release, traceName, totalCost, latency, etc.)
-    .selectFieldSet("export")
-    // Add analytics-specific computed fields
-    .selectRaw(
-      // Token counts from usage/cost details
-      "e.usage_details['input'] as input_tokens",
-      "e.usage_details['output'] as output_tokens",
-      "e.usage_details['total'] as total_tokens",
-      // Analytics integration session IDs from metadata (constructed from array columns)
-      "mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['$posthog_session_id'] as posthog_session_id",
-      "mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['$mixpanel_session_id'] as mixpanel_session_id",
-    )
-    .whereRaw(
-      "e.start_time >= {minTimestamp: DateTime64(3)} AND e.start_time < {maxTimestamp: DateTime64(3)}",
-      {
-        minTimestamp: convertDateToClickhouseDateTime(minTimestamp),
-        maxTimestamp: convertDateToClickhouseDateTime(maxTimestamp),
-      },
-    )
-    .whereRaw("e.is_deleted = 0")
-    .limitBy("e.span_id", "e.project_id");
-
-  const { query, params } = queryBuilder.buildWithParams();
-
-  const records = queryClickhouseStream<Record<string, unknown>>({
-    query,
-    params,
-    tags: {
-      feature: "analytics-integration",
-      type: "event",
-      kind: "analytic",
-      projectId,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-    },
-    preferredClickhouseService: "EventsReadOnly",
-  });
+  const records = streamEventsForAnalyticsGreptime(
+    projectId,
+    minTimestamp,
+    maxTimestamp,
+  );
 
   const baseUrl = env.NEXTAUTH_URL?.replace("/api/auth", "");
   for await (const record of records) {
