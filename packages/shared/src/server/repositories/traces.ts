@@ -1,18 +1,11 @@
-import {
-  commandClickhouse,
-  queryClickhouse,
-  queryClickhouseStream,
-} from "./clickhouse";
+import { commandClickhouse, queryClickhouse } from "./clickhouse";
 import { OrderByState } from "../../interfaces/orderBy";
 import { FilterState } from "../../types";
 import { FilterList } from "../queries/clickhouse-sql/clickhouse-filter";
 import { TraceRecordReadType } from "./definitions";
 import { tracesTableUiColumnDefinitions } from "../tableMappings/mapTracesTable";
 import { UiColumnMappings, ColumnDefinition } from "../../tableDefinitions";
-import {
-  convertDateToClickhouseDateTime,
-  PreferredClickhouseService,
-} from "../clickhouse/client";
+import { PreferredClickhouseService } from "../clickhouse/client";
 import { env } from "../../env";
 import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import type { AnalyticsTraceEvent } from "../analytics-integrations/types";
@@ -21,7 +14,10 @@ import { DEFAULT_RENDERING_PROPS, RenderingProps } from "../utils/rendering";
 import { logger } from "../logger";
 import * as greptimeTraceReads from "./greptime/traces";
 import { upsertTraceToGreptime } from "./greptime/mutations";
-import { streamTracesForAnalyticsGreptime } from "./greptime/exportToSink";
+import {
+  streamTracesForAnalyticsGreptime,
+  streamTracesForBlobGreptime,
+} from "./greptime/exportToSink";
 
 /**
  * Checks if trace exists in clickhouse.
@@ -343,50 +339,7 @@ export const getTracesForBlobStorageExport = function (
   minTimestamp: Date,
   maxTimestamp: Date,
 ) {
-  const traceTable = "traces";
-
-  const query = `
-    SELECT
-      id,
-      timestamp,
-      name,
-      environment,
-      project_id,
-      metadata,
-      user_id,
-      session_id,
-      release,
-      version,
-      public as public,
-      bookmarked as bookmarked,
-      tags,
-      input as input,
-      output as output,
-      created_at,
-      updated_at
-    FROM ${traceTable} FINAL
-    WHERE project_id = {projectId: String}
-    AND timestamp >= {minTimestamp: DateTime64(3)}
-    AND timestamp <= {maxTimestamp: DateTime64(3)}
-  `;
-
-  return queryClickhouseStream<Record<string, unknown>>({
-    query,
-    params: {
-      projectId,
-      minTimestamp: convertDateToClickhouseDateTime(minTimestamp),
-      maxTimestamp: convertDateToClickhouseDateTime(maxTimestamp),
-    },
-    tags: {
-      feature: "blobstorage",
-      type: "trace",
-      kind: "analytic",
-      projectId,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-    },
-  });
+  return streamTracesForBlobGreptime(projectId, minTimestamp, maxTimestamp);
 };
 
 export const getTracesForAnalyticsIntegrations = async function* (

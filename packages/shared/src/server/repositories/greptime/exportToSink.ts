@@ -2,6 +2,11 @@ import { greptimeQuery } from "../../greptime/client";
 import { selectJsonColumn, greptimeJson } from "../../greptime/sql/rowContract";
 import { greptimeTsParam, notDeleted, greptimeInClause } from "./queryHelpers";
 import { LISTABLE_SCORE_TYPES } from "../../../domain/scores";
+import {
+  LEGACY_OBSERVATION_EXPORT_FIELDS,
+  OBSERVATION_FIELD_GROUPS_FULL,
+  type ObservationFieldGroupFull,
+} from "../../../domain/observation-field-groups";
 
 /**
  * GreptimeDB export-to-sink readers (04-read-path.md, P6 Piece 2). These feed the blob-storage and
@@ -395,4 +400,430 @@ export async function* streamScoresForAnalyticsGreptime(
       id: String(last.id),
     };
   }
+}
+
+/**
+ * Blob export: traces, raw legacy column shape. Window inclusive of `maxTimestamp` (`<=`).
+ * JSON columns (metadata, tags) are parsed back to objects/arrays so the JSON/JSONL serializer
+ * nests them as the legacy Map columns did.
+ */
+export async function* streamTracesForBlobGreptime(
+  projectId: string,
+  minTimestamp: Date,
+  maxTimestamp: Date,
+): AsyncGenerator<Record<string, unknown>> {
+  let cursor: Cursor = null;
+  while (true) {
+    const rows: Record<string, unknown>[] = await greptimeQuery<
+      Record<string, unknown>
+    >({
+      query: `
+        SELECT
+          t.id AS id,
+          t.timestamp AS timestamp,
+          t.name AS name,
+          t.environment AS environment,
+          t.project_id AS project_id,
+          ${selectJsonColumn("metadata", { alias: "metadata", tablePrefix: "t" })},
+          t.user_id AS user_id,
+          t.session_id AS session_id,
+          t.release AS release,
+          t.version AS version,
+          t.public AS public,
+          t.bookmarked AS bookmarked,
+          ${selectJsonColumn("tags", { alias: "tags", tablePrefix: "t" })},
+          t.input AS input,
+          t.output AS output,
+          t.created_at AS created_at,
+          t.updated_at AS updated_at
+        FROM traces t
+        WHERE t.project_id = :projectId AND ${notDeleted("t")}
+          AND t.timestamp >= :minTs AND t.timestamp <= :maxTs
+          ${cursor ? `AND ${keysetDesc("t", "timestamp")}` : ""}
+        ORDER BY t.timestamp DESC, t.id DESC
+        LIMIT :pageSize`,
+      params: {
+        projectId,
+        minTs: greptimeTsParam(minTimestamp),
+        maxTs: greptimeTsParam(maxTimestamp),
+        pageSize: PAGE_SIZE,
+        ...(cursor ? { curTs: cursor.ts, curId: cursor.id } : {}),
+      },
+      readOnly: true,
+    });
+    if (rows.length === 0) return;
+    for (const r of rows) {
+      yield {
+        ...r,
+        metadata: greptimeJson(r.metadata, null),
+        tags: greptimeJson<string[]>(r.tags, []),
+      };
+    }
+    if (rows.length < PAGE_SIZE) return;
+    const last = rows[rows.length - 1];
+    cursor = {
+      ts: greptimeTsParam(last.timestamp as Date),
+      id: String(last.id),
+    };
+  }
+}
+
+/** Blob export: scores, raw legacy column shape. Window inclusive of `maxTimestamp` (`<=`). */
+export async function* streamScoresForBlobGreptime(
+  projectId: string,
+  minTimestamp: Date,
+  maxTimestamp: Date,
+): AsyncGenerator<Record<string, unknown>> {
+  const dataTypes = greptimeInClause("s.data_type", LISTABLE_SCORE_TYPES, "dt");
+  let cursor: Cursor = null;
+  while (true) {
+    const rows: Record<string, unknown>[] = await greptimeQuery<
+      Record<string, unknown>
+    >({
+      query: `
+        SELECT
+          s.id AS id,
+          s.timestamp AS timestamp,
+          s.project_id AS project_id,
+          s.environment AS environment,
+          s.trace_id AS trace_id,
+          s.observation_id AS observation_id,
+          s.session_id AS session_id,
+          s.dataset_run_id AS dataset_run_id,
+          s.name AS name,
+          s.value AS value,
+          s.source AS source,
+          s.comment AS comment,
+          s.data_type AS data_type,
+          s.string_value AS string_value,
+          s.created_at AS created_at,
+          s.updated_at AS updated_at
+        FROM scores s
+        WHERE s.project_id = :projectId AND ${notDeleted("s")}
+          AND s.timestamp >= :minTs AND s.timestamp <= :maxTs
+          AND ${dataTypes.sql}
+          ${cursor ? `AND ${keysetDesc("s", "timestamp")}` : ""}
+        ORDER BY s.timestamp DESC, s.id DESC
+        LIMIT :pageSize`,
+      params: {
+        projectId,
+        minTs: greptimeTsParam(minTimestamp),
+        maxTs: greptimeTsParam(maxTimestamp),
+        pageSize: PAGE_SIZE,
+        ...dataTypes.params,
+        ...(cursor ? { curTs: cursor.ts, curId: cursor.id } : {}),
+      },
+      readOnly: true,
+    });
+    if (rows.length === 0) return;
+    for (const r of rows) yield r;
+    if (rows.length < PAGE_SIZE) return;
+    const last = rows[rows.length - 1];
+    cursor = {
+      ts: greptimeTsParam(last.timestamp as Date),
+      id: String(last.id),
+    };
+  }
+}
+
+// Legacy observation-export field -> GreptimeDB select expression (aliased to the legacy column
+// name). Direct projection columns fall through to `o.<field> AS <field>`. JSON columns are
+// json_to_string'd and parsed back to objects; latency/ttft are seconds (legacy v3 contract).
+const OBSERVATION_BLOB_EXPR: Record<string, string> = {
+  model_id: "o.internal_model_id AS model_id",
+  latency:
+    "CASE WHEN o.end_time IS NULL THEN NULL ELSE CAST((to_unixtime(o.end_time) - to_unixtime(o.start_time)) * 1000 AS BIGINT) / 1000.0 END AS latency",
+  time_to_first_token:
+    "CASE WHEN o.completion_start_time IS NULL THEN NULL ELSE CAST((to_unixtime(o.completion_start_time) - to_unixtime(o.start_time)) * 1000 AS BIGINT) / 1000.0 END AS time_to_first_token",
+  metadata: selectJsonColumn("metadata", {
+    alias: "metadata",
+    tablePrefix: "o",
+  }),
+  model_parameters: selectJsonColumn("model_parameters", {
+    alias: "model_parameters",
+    tablePrefix: "o",
+  }),
+  usage_details: selectJsonColumn("usage_details", {
+    alias: "usage_details",
+    tablePrefix: "o",
+  }),
+  cost_details: selectJsonColumn("cost_details", {
+    alias: "cost_details",
+    tablePrefix: "o",
+  }),
+  tool_calls: selectJsonColumn("tool_calls", {
+    alias: "tool_calls",
+    tablePrefix: "o",
+  }),
+  tool_call_names: selectJsonColumn("tool_call_names", {
+    alias: "tool_call_names",
+    tablePrefix: "o",
+  }),
+  tool_definitions: selectJsonColumn("tool_definitions", {
+    alias: "tool_definitions",
+    tablePrefix: "o",
+  }),
+};
+
+const OBSERVATION_BLOB_JSON_FIELDS = new Set([
+  "metadata",
+  "model_parameters",
+  "usage_details",
+  "cost_details",
+  "tool_calls",
+  "tool_call_names",
+  "tool_definitions",
+]);
+
+/**
+ * Blob export: observations, legacy column shape with field-group selection. `core` is always
+ * included (id/trace_id/start/end for the cursor). No trace denormalisation — the legacy
+ * observations table had none (trace_context has no counterpart). Window inclusive (`<=`).
+ */
+export async function* streamObservationsForBlobGreptime(
+  projectId: string,
+  minTimestamp: Date,
+  maxTimestamp: Date,
+  fieldGroups: ObservationFieldGroupFull[] = [...OBSERVATION_FIELD_GROUPS_FULL],
+): AsyncGenerator<Record<string, unknown>> {
+  const effectiveGroups = new Set<ObservationFieldGroupFull>([
+    "core",
+    ...fieldGroups,
+  ]);
+  const selectedFields = LEGACY_OBSERVATION_EXPORT_FIELDS.filter((c) =>
+    effectiveGroups.has(c.group),
+  ).map((c) => c.field);
+  const selectExprs = selectedFields.map(
+    (field) => OBSERVATION_BLOB_EXPR[field] ?? `o.${field} AS ${field}`,
+  );
+  const jsonFields = selectedFields.filter((f) =>
+    OBSERVATION_BLOB_JSON_FIELDS.has(f),
+  );
+
+  let cursor: Cursor = null;
+  while (true) {
+    const rows: Record<string, unknown>[] = await greptimeQuery<
+      Record<string, unknown>
+    >({
+      query: `
+        SELECT
+          ${selectExprs.join(",\n          ")}
+        FROM observations o
+        WHERE o.project_id = :projectId AND ${notDeleted("o")}
+          AND o.start_time >= :minTs AND o.start_time <= :maxTs
+          ${cursor ? `AND ${keysetDesc("o", "start_time")}` : ""}
+        ORDER BY o.start_time DESC, o.id DESC
+        LIMIT :pageSize`,
+      params: {
+        projectId,
+        minTs: greptimeTsParam(minTimestamp),
+        maxTs: greptimeTsParam(maxTimestamp),
+        pageSize: PAGE_SIZE,
+        ...(cursor ? { curTs: cursor.ts, curId: cursor.id } : {}),
+      },
+      readOnly: true,
+    });
+    if (rows.length === 0) return;
+    for (const r of rows) {
+      for (const f of jsonFields) r[f] = greptimeJson(r[f], null);
+      yield r;
+    }
+    if (rows.length < PAGE_SIZE) return;
+    const last = rows[rows.length - 1];
+    cursor = {
+      ts: greptimeTsParam(last.start_time as Date),
+      id: String(last.id),
+    };
+  }
+}
+
+// Events blob export field groups -> GreptimeDB select expressions, aliased to the legacy events
+// export column names (EVENTS_FIELDS). Events == observation projection; denormalised trace fields
+// (userId/sessionId/bookmarked/public/tags/release/traceName) come from the LEFT JOIN to traces.
+// latency / time_to_first_token are MILLISECONDS here (the handler converts to seconds for
+// integrations created on/after 2026-04-01) — unlike the seconds-valued observations blob.
+const EVENT_BLOB_GROUP_EXPR: Record<ObservationFieldGroupFull, string[]> = {
+  core: [
+    "o.id AS id",
+    "o.trace_id AS trace_id",
+    "o.start_time AS start_time",
+    "o.end_time AS end_time",
+    "o.project_id AS project_id",
+    "o.parent_observation_id AS parent_observation_id",
+    "o.type AS type",
+  ],
+  basic: [
+    "o.name AS name",
+    "o.level AS level",
+    "o.status_message AS status_message",
+    "o.version AS version",
+    "o.environment AS environment",
+    "t.bookmarked AS bookmarked",
+    "t.public AS public",
+    "t.user_id AS user_id",
+    "t.session_id AS session_id",
+  ],
+  time: [
+    "o.completion_start_time AS completion_start_time",
+    "o.created_at AS created_at",
+    "o.updated_at AS updated_at",
+  ],
+  io: ["o.input AS input", "o.output AS output"],
+  metadata: [
+    selectJsonColumn("metadata", { alias: "metadata", tablePrefix: "o" }),
+  ],
+  model: [
+    "o.provided_model_name AS provided_model_name",
+    "o.internal_model_id AS model_id",
+    selectJsonColumn("model_parameters", {
+      alias: "model_parameters",
+      tablePrefix: "o",
+    }),
+  ],
+  usage: [
+    selectJsonColumn("usage_details", {
+      alias: "usage_details",
+      tablePrefix: "o",
+    }),
+    selectJsonColumn("cost_details", {
+      alias: "cost_details",
+      tablePrefix: "o",
+    }),
+    "o.total_cost AS total_cost",
+    "o.usage_pricing_tier_id AS usage_pricing_tier_id",
+    "o.usage_pricing_tier_name AS usage_pricing_tier_name",
+  ],
+  prompt: [
+    "o.prompt_id AS prompt_id",
+    "o.prompt_name AS prompt_name",
+    "o.prompt_version AS prompt_version",
+  ],
+  metrics: [
+    "CASE WHEN o.end_time IS NULL THEN NULL ELSE CAST((to_unixtime(o.end_time) - to_unixtime(o.start_time)) * 1000 AS BIGINT) END AS latency",
+    "CASE WHEN o.completion_start_time IS NULL THEN NULL ELSE CAST((to_unixtime(o.completion_start_time) - to_unixtime(o.start_time)) * 1000 AS BIGINT) END AS time_to_first_token",
+  ],
+  trace_context: [
+    selectJsonColumn("tags", { alias: "tags", tablePrefix: "t" }),
+    "t.release AS release",
+    "t.name AS trace_name",
+  ],
+  tools: [
+    selectJsonColumn("tool_definitions", {
+      alias: "tool_definitions",
+      tablePrefix: "o",
+    }),
+    selectJsonColumn("tool_calls", { alias: "tool_calls", tablePrefix: "o" }),
+    selectJsonColumn("tool_call_names", {
+      alias: "tool_call_names",
+      tablePrefix: "o",
+    }),
+  ],
+};
+
+const EVENT_BLOB_JSON_FIELDS = new Set([
+  "metadata",
+  "model_parameters",
+  "usage_details",
+  "cost_details",
+  "tool_definitions",
+  "tool_calls",
+  "tool_call_names",
+  "tags",
+]);
+
+/**
+ * Blob export: events == observation projection joined to trace denorm, legacy events column
+ * schema with field-group selection. `core` always included. Window inclusive (`<=`).
+ */
+export async function* streamEventsForBlobGreptime(
+  projectId: string,
+  minTimestamp: Date,
+  maxTimestamp: Date,
+  fieldGroups: ObservationFieldGroupFull[] = [...OBSERVATION_FIELD_GROUPS_FULL],
+): AsyncGenerator<Record<string, unknown>> {
+  const effectiveGroups = new Set<ObservationFieldGroupFull>([
+    "core",
+    ...fieldGroups,
+  ]);
+  const selectExprs = [...effectiveGroups].flatMap(
+    (g) => EVENT_BLOB_GROUP_EXPR[g],
+  );
+  const jsonFields = [...effectiveGroups]
+    .flatMap((g) => EVENT_BLOB_GROUP_EXPR[g])
+    .map((e) =>
+      e
+        .split(/\s+AS\s+/i)
+        .pop()
+        ?.replace(/`/g, "")
+        .trim(),
+    )
+    .filter((f): f is string => Boolean(f) && EVENT_BLOB_JSON_FIELDS.has(f!));
+
+  let cursor: Cursor = null;
+  while (true) {
+    const rows: Record<string, unknown>[] = await greptimeQuery<
+      Record<string, unknown>
+    >({
+      query: `
+        SELECT
+          ${selectExprs.join(",\n          ")}
+        FROM observations o
+        LEFT JOIN traces t ON o.trace_id = t.id AND o.project_id = t.project_id
+        WHERE o.project_id = :projectId AND ${notDeleted("o")}
+          AND o.start_time >= :minTs AND o.start_time <= :maxTs
+          ${cursor ? `AND ${keysetDesc("o", "start_time")}` : ""}
+        ORDER BY o.start_time DESC, o.id DESC
+        LIMIT :pageSize`,
+      params: {
+        projectId,
+        minTs: greptimeTsParam(minTimestamp),
+        maxTs: greptimeTsParam(maxTimestamp),
+        pageSize: PAGE_SIZE,
+        ...(cursor ? { curTs: cursor.ts, curId: cursor.id } : {}),
+      },
+      readOnly: true,
+    });
+    if (rows.length === 0) return;
+    for (const r of rows) {
+      for (const f of jsonFields) r[f] = greptimeJson(r[f], null);
+      yield r;
+    }
+    if (rows.length < PAGE_SIZE) return;
+    const last = rows[rows.length - 1];
+    cursor = {
+      ts: greptimeTsParam(last.start_time as Date),
+      id: String(last.id),
+    };
+  }
+}
+
+/**
+ * Earliest export timestamp across traces/observations/scores projections for a project (used by
+ * the blob-storage FULL_HISTORY export to find the backfill start). Returns null when the project
+ * has no data.
+ */
+export async function getMinExportTimestampGreptime(
+  projectId: string,
+): Promise<Date | null> {
+  const probe = async (table: string, col: string): Promise<Date | null> => {
+    const rows: Record<string, unknown>[] = await greptimeQuery<
+      Record<string, unknown>
+    >({
+      query: `SELECT min(${col}) AS min_ts FROM ${table}
+              WHERE project_id = :projectId AND ${notDeleted()}`,
+      params: { projectId },
+      readOnly: true,
+    });
+    const v = rows[0]?.min_ts;
+    return v instanceof Date ? v : null;
+  };
+  const mins = (
+    await Promise.all([
+      probe("traces", "timestamp"),
+      probe("observations", "start_time"),
+      probe("scores", "timestamp"),
+    ])
+  ).filter((d): d is Date => d != null);
+  if (mins.length === 0) return null;
+  return new Date(Math.min(...mins.map((d) => d.getTime())));
 }

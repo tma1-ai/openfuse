@@ -1,7 +1,6 @@
 import {
   commandClickhouse,
   queryClickhouse,
-  queryClickhouseStream,
   upsertClickhouse,
 } from "./clickhouse";
 import { logger } from "../logger";
@@ -11,10 +10,7 @@ import { FilterState } from "../../types";
 import { FilterList, FullObservations } from "../queries";
 import { OrderByState } from "../../interfaces/orderBy";
 import { getTracesByIds } from "./traces";
-import {
-  convertDateToClickhouseDateTime,
-  PreferredClickhouseService,
-} from "../clickhouse/client";
+import { PreferredClickhouseService } from "../clickhouse/client";
 import {
   convertObservation,
   enrichObservationWithModelData,
@@ -25,13 +21,15 @@ import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import type { AnalyticsGenerationEvent } from "../analytics-integrations/types";
 import { ObservationType } from "../../domain";
 import {
-  LEGACY_OBSERVATION_EXPORT_FIELDS,
   OBSERVATION_FIELD_GROUPS_FULL,
   type ObservationFieldGroupFull,
 } from "../../domain/observation-field-groups";
 import { DEFAULT_RENDERING_PROPS, RenderingProps } from "../utils/rendering";
 import * as greptimeObservationReads from "./greptime/observations";
-import { streamGenerationsForAnalyticsGreptime } from "./greptime/exportToSink";
+import {
+  streamGenerationsForAnalyticsGreptime,
+  streamObservationsForBlobGreptime,
+} from "./greptime/exportToSink";
 import {
   getObservationsTableCountGreptime,
   getObservationsTableRowsGreptime,
@@ -489,67 +487,18 @@ export const getTraceIdsForObservations = (
     observationIds,
   );
 
-// SQL expressions for the export fields of LEGACY_OBSERVATION_EXPORT_FIELDS
-// (the domain-level export contract) that are not plain column reads. Every
-// other field selects the table column of the same name.
-const LEGACY_OBSERVATION_EXPORT_SQL_OVERRIDES: Record<string, string> = {
-  latency:
-    "if(isNull(end_time), NULL, date_diff('millisecond', start_time, end_time) / 1000) as latency",
-  time_to_first_token:
-    "if(isNull(completion_start_time), NULL, date_diff('millisecond', start_time, completion_start_time) / 1000) as time_to_first_token",
-  model_id: "internal_model_id as model_id",
-};
-
 export const getObservationsForBlobStorageExport = function (
   projectId: string,
   minTimestamp: Date,
   maxTimestamp: Date,
   fieldGroups: ObservationFieldGroupFull[] = [...OBSERVATION_FIELD_GROUPS_FULL],
 ) {
-  // core is always required (provides id, trace_id, start/end_time used for deduplication)
-  const effectiveGroups = new Set<ObservationFieldGroupFull>([
-    "core",
-    ...fieldGroups,
-  ]);
-
-  const selectedColumns = LEGACY_OBSERVATION_EXPORT_FIELDS.filter((column) =>
-    effectiveGroups.has(column.group),
-  ).map(
-    (column) =>
-      LEGACY_OBSERVATION_EXPORT_SQL_OVERRIDES[column.field] ?? column.field,
+  return streamObservationsForBlobGreptime(
+    projectId,
+    minTimestamp,
+    maxTimestamp,
+    fieldGroups,
   );
-
-  const query = `
-    SELECT
-      ${selectedColumns.join(",\n      ")}
-    FROM observations
-    WHERE project_id = {projectId: String}
-    AND start_time >= {minTimestamp: DateTime64(3)}
-    AND start_time <= {maxTimestamp: DateTime64(3)}
-    ORDER BY event_ts DESC
-    LIMIT 1 BY id, project_id, type
-  `;
-
-  const records = queryClickhouseStream<Record<string, unknown>>({
-    query,
-    params: {
-      projectId,
-      minTimestamp: convertDateToClickhouseDateTime(minTimestamp),
-      maxTimestamp: convertDateToClickhouseDateTime(maxTimestamp),
-    },
-    tags: {
-      feature: "blobstorage",
-      type: "observation",
-      kind: "analytic",
-      projectId,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-    },
-    preferredClickhouseService: "ReadOnly",
-  });
-
-  return records;
 };
 
 export const getGenerationsForAnalyticsIntegrations = async function* (

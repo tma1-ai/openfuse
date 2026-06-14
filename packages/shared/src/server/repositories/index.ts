@@ -13,6 +13,7 @@ export * from "./constants";
 export * from "./trace-sessions";
 export * from "./scores-utils";
 export * from "./environments";
+export { getMinExportTimestampGreptime } from "./greptime/exportToSink";
 export * from "./automation-repository";
 export * from "./dataset-run-items-converters";
 export * from "./dataset-run-items";

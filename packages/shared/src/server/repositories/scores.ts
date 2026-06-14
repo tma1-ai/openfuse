@@ -12,11 +12,7 @@ import { InvalidRequestError, InternalServerError } from "../../errors";
 import type { APIScoreV3 } from "../../features/scores/interfaces/api/v3/schemas";
 import type { ScoreFieldGroupV3 } from "../../features/scores/interfaces/api/v3/endpoints";
 import { filterAndValidateV3GetScoreList } from "../../features/scores/interfaces/api/v3/validation";
-import {
-  commandClickhouse,
-  queryClickhouse,
-  queryClickhouseStream,
-} from "./clickhouse";
+import { commandClickhouse, queryClickhouse } from "./clickhouse";
 import { FilterList, orderByToClickhouseSql } from "../queries";
 import { FilterCondition, FilterState, TimeFilter } from "../../types";
 import {
@@ -26,10 +22,7 @@ import {
 import { OrderByState } from "../../interfaces/orderBy";
 import { scoresTableUiColumnDefinitionsFromEvents } from "../tableMappings";
 import { convertClickhouseScoreToDomain } from "./scores_converters";
-import {
-  convertDateToClickhouseDateTime,
-  PreferredClickhouseService,
-} from "../clickhouse/client";
+import { PreferredClickhouseService } from "../clickhouse/client";
 import { ScoreRecordReadType } from "./definitions";
 import { env } from "../../env";
 import { _handleGetScoreById, _handleGetScoresByIds } from "./scores-utils";
@@ -45,7 +38,10 @@ import {
 } from "../../tableDefinitions";
 import * as greptimeScoreReads from "./greptime/scores";
 import { upsertScoreToGreptime } from "./greptime/mutations";
-import { streamScoresForAnalyticsGreptime } from "./greptime/exportToSink";
+import {
+  streamScoresForAnalyticsGreptime,
+  streamScoresForBlobGreptime,
+} from "./greptime/exportToSink";
 
 export const searchExistingAnnotationScore = (
   projectId: string,
@@ -737,51 +733,7 @@ export const getScoresForBlobStorageExport = function (
   minTimestamp: Date,
   maxTimestamp: Date,
 ) {
-  const query = `
-    SELECT
-      id,
-      timestamp,
-      project_id,
-      environment,
-      trace_id,
-      observation_id,
-      session_id,
-      dataset_run_id,
-      name,
-      value,
-      source,
-      comment,
-      data_type,
-      string_value,
-      created_at,
-      updated_at
-    FROM scores FINAL
-    WHERE project_id = {projectId: String}
-    AND timestamp >= {minTimestamp: DateTime64(3)}
-    AND timestamp <= {maxTimestamp: DateTime64(3)}
-    AND data_type IN ({dataTypes: Array(String)})
-  `;
-
-  const records = queryClickhouseStream<Record<string, unknown>>({
-    query,
-    params: {
-      projectId,
-      minTimestamp: convertDateToClickhouseDateTime(minTimestamp),
-      maxTimestamp: convertDateToClickhouseDateTime(maxTimestamp),
-      dataTypes: LISTABLE_SCORE_TYPES,
-    },
-    tags: {
-      feature: "blobstorage",
-      type: "score",
-      kind: "analytic",
-      projectId,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-    },
-  });
-
-  return records;
+  return streamScoresForBlobGreptime(projectId, minTimestamp, maxTimestamp);
 };
 
 export const getScoresForAnalyticsIntegrations = async function* (

@@ -5,10 +5,7 @@ import type {
   ObservationType,
 } from "../../domain";
 import { env } from "../../env";
-import {
-  convertDateToClickhouseDateTime,
-  PreferredClickhouseService,
-} from "../clickhouse/client";
+import { PreferredClickhouseService } from "../clickhouse/client";
 import {
   getTraceByIdFromTracesTable,
   getTracesIdentifierForSessionFromTracesTable,
@@ -64,7 +61,10 @@ import {
   getObservationsCountForPublicApiFromEventsGreptime,
   getObservationsV2ForPublicApiFromEventsGreptime,
 } from "./greptime/eventsObservations";
-import { streamEventsForAnalyticsGreptime } from "./greptime/exportToSink";
+import {
+  streamEventsForAnalyticsGreptime,
+  streamEventsForBlobGreptime,
+} from "./greptime/exportToSink";
 import {
   FullEventsObservations,
   createPublicApiTracesColumnMapping,
@@ -84,16 +84,12 @@ import {
   type ObservationFieldGroupPublicApi,
   type ObservationFieldGroupFull,
 } from "../../domain/observation-field-groups";
-import { queryClickhouseStream } from "./clickhouse";
 import type { AnalyticsObservationEvent } from "../analytics-integrations/types";
 import {
   getObservationByIdFromObservationsTable,
   ObservationTableQuery,
 } from "./observations";
-import {
-  EventsQueryBuilder,
-  type SessionEventsMetricsRow,
-} from "../queries/clickhouse-sql/event-query-builder";
+import { type SessionEventsMetricsRow } from "../queries/clickhouse-sql/event-query-builder";
 import { type EventsObservationPublic } from "../queries/createGenerationsQuery";
 import { type NumericEventsTableColumnId } from "../../eventsTable";
 import { tracesTableCols } from "../../tableDefinitions/tracesTable";
@@ -981,50 +977,12 @@ export const getEventsForBlobStorageExport = function (
   maxTimestamp: Date,
   fieldGroups: ObservationFieldGroupFull[] = [...OBSERVATION_FIELD_GROUPS_FULL],
 ) {
-  const queryBuilder = new EventsQueryBuilder({ projectId });
-
-  // core is always required (provides id, trace_id, start/end_time used for cursor and deduplication)
-  const effectiveGroups = fieldGroups.includes("core")
-    ? fieldGroups
-    : (["core", ...fieldGroups] as ObservationFieldGroupFull[]);
-
-  for (const group of effectiveGroups) {
-    if (group === "io") {
-      queryBuilder.selectIO(false); // Full I/O, no truncation
-    } else if (group === "model") {
-      queryBuilder.selectFieldSet("model_export"); // "model_export" is the SQL field set name for the "model" group
-    } else {
-      queryBuilder.selectFieldSet(group);
-    }
-  }
-
-  queryBuilder
-    .whereRaw(
-      "e.start_time >= {minTimestamp: DateTime64(3)} AND e.start_time <= {maxTimestamp: DateTime64(3)}",
-      {
-        minTimestamp: convertDateToClickhouseDateTime(minTimestamp),
-        maxTimestamp: convertDateToClickhouseDateTime(maxTimestamp),
-      },
-    )
-    .whereRaw("e.is_deleted = 0")
-    .limitBy("e.span_id", "e.project_id");
-
-  const { query, params } = queryBuilder.buildWithParams();
-
-  return queryClickhouseStream<Record<string, unknown>>({
-    query,
-    params,
-    tags: {
-      feature: "blobstorage",
-      type: "event",
-      kind: "analytic",
-      projectId,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-    },
-    preferredClickhouseService: "EventsReadOnly",
-  });
+  return streamEventsForBlobGreptime(
+    projectId,
+    minTimestamp,
+    maxTimestamp,
+    fieldGroups,
+  );
 };
 
 /**
