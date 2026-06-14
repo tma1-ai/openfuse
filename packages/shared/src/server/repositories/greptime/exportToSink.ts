@@ -64,8 +64,8 @@ async function fetchTraceDenormByIds(
         t.user_id AS user_id,
         t.release AS release,
         ${selectJsonColumn("tags", { alias: "tags", tablePrefix: "t" })},
-        json_get_string(t.metadata, '$posthog_session_id') AS posthog_session_id,
-        json_get_string(t.metadata, '$mixpanel_session_id') AS mixpanel_session_id
+        json_get_string(t.metadata, '$["$posthog_session_id"]') AS posthog_session_id,
+        json_get_string(t.metadata, '$["$mixpanel_session_id"]') AS mixpanel_session_id
       FROM traces t
       WHERE t.project_id = :projectId AND ${notDeleted("t")} AND ${inClause.sql}`,
     params: { projectId, ...inClause.params },
@@ -111,8 +111,8 @@ export async function* streamTracesForAnalyticsGreptime(
           t.version AS version,
           t.environment AS environment,
           ${selectJsonColumn("tags", { alias: "tags", tablePrefix: "t" })},
-          json_get_string(t.metadata, '$posthog_session_id') AS posthog_session_id,
-          json_get_string(t.metadata, '$mixpanel_session_id') AS mixpanel_session_id
+          json_get_string(t.metadata, '$["$posthog_session_id"]') AS posthog_session_id,
+          json_get_string(t.metadata, '$["$mixpanel_session_id"]') AS mixpanel_session_id
         FROM traces t
         WHERE t.project_id = :projectId AND ${notDeleted("t")}
           AND t.timestamp >= :minTs AND t.timestamp < :maxTs
@@ -140,10 +140,8 @@ export async function* streamTracesForAnalyticsGreptime(
           o.trace_id AS trace_id,
           sum(coalesce(o.total_cost, 0)) AS total_cost,
           count(*) AS observation_count,
-          CAST(
-            (to_unixtime(greatest(max(o.start_time), max(o.end_time)))
-             - to_unixtime(least(min(o.start_time), min(o.end_time)))) * 1000 AS BIGINT
-          ) AS latency_ms
+          arrow_cast(greatest(max(o.start_time), max(o.end_time)), 'Int64')
+            - arrow_cast(least(min(o.start_time), min(o.end_time)), 'Int64') AS latency_ms
         FROM observations o
         WHERE o.project_id = :projectId AND ${notDeleted("o")} AND ${rollupIn.sql}
         GROUP BY o.trace_id`,
@@ -223,9 +221,9 @@ async function* streamObservationsForAnalyticsGreptime(
           json_get_float(o.usage_details, 'total') AS usage_total,
           json_get_float(o.cost_details, 'total') AS cost_total,
           CASE WHEN o.end_time IS NULL THEN NULL
-            ELSE CAST((to_unixtime(o.end_time) - to_unixtime(o.start_time)) * 1000 AS BIGINT) END AS latency_ms,
+            ELSE arrow_cast(o.end_time, 'Int64') - arrow_cast(o.start_time, 'Int64') END AS latency_ms,
           CASE WHEN o.completion_start_time IS NULL THEN NULL
-            ELSE CAST((to_unixtime(o.completion_start_time) - to_unixtime(o.start_time)) * 1000 AS BIGINT) END AS ttft_ms
+            ELSE arrow_cast(o.completion_start_time, 'Int64') - arrow_cast(o.start_time, 'Int64') END AS ttft_ms
         FROM observations o
         WHERE o.project_id = :projectId AND ${notDeleted("o")}
           AND o.start_time >= :minTs AND o.start_time < :maxTs
@@ -532,9 +530,9 @@ export async function* streamScoresForBlobGreptime(
 const OBSERVATION_BLOB_EXPR: Record<string, string> = {
   model_id: "o.internal_model_id AS model_id",
   latency:
-    "CASE WHEN o.end_time IS NULL THEN NULL ELSE CAST((to_unixtime(o.end_time) - to_unixtime(o.start_time)) * 1000 AS BIGINT) / 1000.0 END AS latency",
+    "CASE WHEN o.end_time IS NULL THEN NULL ELSE (arrow_cast(o.end_time, 'Int64') - arrow_cast(o.start_time, 'Int64')) / 1000.0 END AS latency",
   time_to_first_token:
-    "CASE WHEN o.completion_start_time IS NULL THEN NULL ELSE CAST((to_unixtime(o.completion_start_time) - to_unixtime(o.start_time)) * 1000 AS BIGINT) / 1000.0 END AS time_to_first_token",
+    "CASE WHEN o.completion_start_time IS NULL THEN NULL ELSE (arrow_cast(o.completion_start_time, 'Int64') - arrow_cast(o.start_time, 'Int64')) / 1000.0 END AS time_to_first_token",
   metadata: selectJsonColumn("metadata", {
     alias: "metadata",
     tablePrefix: "o",
@@ -699,8 +697,8 @@ const EVENT_BLOB_GROUP_EXPR: Record<ObservationFieldGroupFull, string[]> = {
     "o.prompt_version AS prompt_version",
   ],
   metrics: [
-    "CASE WHEN o.end_time IS NULL THEN NULL ELSE CAST((to_unixtime(o.end_time) - to_unixtime(o.start_time)) * 1000 AS BIGINT) END AS latency",
-    "CASE WHEN o.completion_start_time IS NULL THEN NULL ELSE CAST((to_unixtime(o.completion_start_time) - to_unixtime(o.start_time)) * 1000 AS BIGINT) END AS time_to_first_token",
+    "CASE WHEN o.end_time IS NULL THEN NULL ELSE arrow_cast(o.end_time, 'Int64') - arrow_cast(o.start_time, 'Int64') END AS latency",
+    "CASE WHEN o.completion_start_time IS NULL THEN NULL ELSE arrow_cast(o.completion_start_time, 'Int64') - arrow_cast(o.start_time, 'Int64') END AS time_to_first_token",
   ],
   trace_context: [
     selectJsonColumn("tags", { alias: "tags", tablePrefix: "t" }),
