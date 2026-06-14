@@ -24,7 +24,6 @@ import { monitorQueueProcessor } from "./queues/monitorQueue";
 import { WorkerManager } from "./queues/workerManager";
 import {
   CoreDataS3ExportQueue,
-  DataRetentionQueue,
   MeteringDataPostgresExportQueue,
   PostHogIntegrationQueue,
   MixpanelIntegrationQueue,
@@ -68,10 +67,6 @@ import {
 } from "./queues/blobStorageIntegrationQueue";
 import { coreDataS3ExportProcessor } from "./queues/coreDataS3ExportQueue";
 import { meteringDataPostgresExportProcessor } from "./ee/meteringDataPostgresExport/handleMeteringDataPostgresExportJob";
-import {
-  dataRetentionProcessingProcessor,
-  dataRetentionProcessor,
-} from "./queues/dataRetentionQueue";
 import { batchActionQueueProcessor } from "./queues/batchActionQueue";
 import { scoreDeleteProcessor } from "./queues/scoreDelete";
 import { DlqRetryService } from "./services/dlq/dlqRetryService";
@@ -554,29 +549,6 @@ if (env.QUEUE_CONSUMER_BLOB_STORAGE_INTEGRATION_QUEUE_IS_ENABLED === "true") {
       lockDuration: 60000, // 60 seconds
       stalledInterval: 120000, // 120 seconds
       maxStalledCount: 3,
-    },
-  );
-}
-
-if (env.QUEUE_CONSUMER_DATA_RETENTION_QUEUE_IS_ENABLED === "true") {
-  // Instantiate the queue to trigger scheduled jobs
-  DataRetentionQueue.getInstance();
-
-  WorkerManager.register(QueueName.DataRetentionQueue, dataRetentionProcessor, {
-    concurrency: 1,
-  });
-
-  WorkerManager.register(
-    QueueName.DataRetentionProcessingQueue,
-    dataRetentionProcessingProcessor,
-    {
-      concurrency: 1,
-      limiter: {
-        // Process at most `max` delete jobs per LANGFUSE_CLICKHOUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS (default 10 min)
-        max: env.LANGFUSE_PROJECT_DELETE_CONCURRENCY,
-        duration:
-          env.LANGFUSE_CLICKHOUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS,
-      },
     },
   );
 }
