@@ -81,10 +81,7 @@ import { datasetDeleteProcessor } from "./queues/datasetDelete";
 import { otelIngestionQueueProcessorBuilder } from "./queues/otelIngestionQueue";
 import { eventPropagationProcessor } from "./queues/eventPropagationQueue";
 import { notificationQueueProcessor } from "./queues/notificationQueue";
-import {
-  BatchProjectCleaner,
-  BATCH_DELETION_TABLES,
-} from "./features/batch-project-cleaner";
+import { BatchProjectCleaner } from "./features/batch-project-cleaner";
 import {
   BatchDataRetentionCleaner,
   BATCH_DATA_RETENTION_TABLES,
@@ -651,17 +648,9 @@ if (env.QUEUE_CONSUMER_NOTIFICATION_QUEUE_IS_ENABLED === "true") {
 export const batchProjectCleaners: BatchProjectCleaner[] = [];
 
 if (env.LANGFUSE_BATCH_PROJECT_CLEANER_ENABLED === "true") {
-  for (const table of BATCH_DELETION_TABLES) {
-    // Only start the events table cleaners when V4 write mode targets events_full.
-    if (
-      (table !== "events_full" && table !== "events_core") ||
-      v4WritesToEventsTable(env)
-    ) {
-      const cleaner = new BatchProjectCleaner(table);
-      batchProjectCleaners.push(cleaner);
-      cleaner.start();
-    }
-  }
+  const cleaner = new BatchProjectCleaner();
+  batchProjectCleaners.push(cleaner);
+  cleaner.start();
 }
 
 // Batch data retention cleaners for bulk deletion of expired ClickHouse data
