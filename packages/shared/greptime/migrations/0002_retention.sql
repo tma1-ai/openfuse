@@ -1,27 +1,32 @@
 -- GreptimeDB retention / TTL (02-write-path.md, invariant 6).
 --
+-- RETENTION MODEL: analytics retention is a GLOBAL table-level TTL, not per-project.
+-- GreptimeDB only supports table-/database-level TTL (no per-row / per-tag TTL), so a single
+-- table TTL expresses one deployment-wide horizon. Per-project analytics retention is
+-- intentionally NOT supported on this backend — TTL at the retention boundary is sufficient
+-- and avoids criteria-based DELETEs that would resurrect on the next raw_events replay.
+-- (deletion.ts still hard-deletes projection + EAV rows for EXPLICIT project / entity deletion;
+-- that is a different concern from time-based retention and is not driven from here.)
+--
 -- INVARIANT 6 (hard): raw_events TTL MUST be >= the projection retention horizon. The worker
 -- rebuilds each projection snapshot by replaying the entity's FULL raw_events history. If a
 -- `create` event expires from raw_events while the entity can still receive an update (or be
 -- reprocessed), the rebuild loses immutable fields / metadata / tags and silently corrupts the
 -- projection. TTL is therefore NOT a cost-control knob on raw_events — size it from the maximum
--- entity-update / reprocess window you need to support.
+-- entity-update / reprocess window you need to support. Because raw_events is append-only and
+-- cannot be DELETEd, it relies solely on the TTL set here.
 --
--- Default posture: NO TTL (the base schema in 0001_init.sql sets none) so rebuilds are always
--- complete. Per-project data retention is enforced by the deletion job (greptime/deletion.ts),
--- which hard-deletes projection + EAV rows; raw_events is append-only and cannot be DELETEd, so
--- it relies solely on the TTL set here.
---
--- The statements below are an OPT-IN example. Adjust the durations to your deployment and apply
--- only after confirming raw_events_ttl >= max(project retention, reprocess window).
+-- Default posture: NO TTL (the base schema in 0001_init.sql sets none) so a fresh install keeps
+-- data indefinitely and rebuilds are always complete. The statements below are OPT-IN: uncomment
+-- and adjust the durations to enforce a global retention horizon, only after confirming
+-- raw_events TTL >= max(projection TTL, reprocess window).
 --
 -- Apply: mysql -h127.0.0.1 -P4002 -uroot openfuse < 0002_retention.sql
 
--- Example backstop: keep raw_events (source of truth) longer than any projection horizon.
+-- Backstop: keep raw_events (source of truth) longer than any projection horizon.
 -- ALTER TABLE raw_events MODIFY TTL '400d';
 
--- Projection + EAV retention (must each be <= the raw_events TTL above). Uncomment to enforce a
--- global horizon in addition to the per-project deletion job.
+-- Projection + EAV retention (each MUST be <= the raw_events TTL above).
 -- ALTER TABLE traces                MODIFY TTL '365d';
 -- ALTER TABLE observations          MODIFY TTL '365d';
 -- ALTER TABLE scores                MODIFY TTL '365d';
@@ -29,3 +34,5 @@
 -- ALTER TABLE observations_metadata MODIFY TTL '365d';
 -- ALTER TABLE scores_metadata       MODIFY TTL '365d';
 -- ALTER TABLE traces_tags           MODIFY TTL '365d';
+-- ALTER TABLE observations_tags     MODIFY TTL '365d';
+-- ALTER TABLE scores_tags           MODIFY TTL '365d';
