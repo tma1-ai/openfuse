@@ -85,7 +85,6 @@ import { BatchProjectCleaner } from "./features/batch-project-cleaner";
 import { MediaRetentionCleaner } from "./features/media-retention-cleaner";
 import { BatchTraceDeletionCleaner } from "./features/batch-trace-deletion-cleaner";
 import { BatchProjectMediaCleaner } from "./features/batch-project-media-cleaner";
-import { BatchProjectBlobCleaner } from "./features/batch-project-blob-cleaner";
 import { QueueMetricsRunner } from "./features/queue-metrics-runner";
 import { MonitorRunner } from "./features/monitor-runner";
 
@@ -665,17 +664,6 @@ if (
 ) {
   batchProjectMediaCleaner = new BatchProjectMediaCleaner();
   batchProjectMediaCleaner.start();
-}
-
-// Batch project blob cleaner for ingestion event S3/ClickHouse cleanup of soft-deleted projects
-export let batchProjectBlobCleaner: BatchProjectBlobCleaner | null = null;
-
-if (
-  env.LANGFUSE_BATCH_PROJECT_CLEANER_ENABLED === "true" &&
-  env.LANGFUSE_ENABLE_BLOB_STORAGE_FILE_LOG === "true"
-) {
-  batchProjectBlobCleaner = new BatchProjectBlobCleaner();
-  batchProjectBlobCleaner.start();
 }
 
 // Batch trace deletion cleaner for supplementary trace deletion
