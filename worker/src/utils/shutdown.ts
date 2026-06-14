@@ -11,7 +11,6 @@ import { prisma } from "@langfuse/shared/src/db";
 import { BackgroundMigrationManager } from "../backgroundMigrations/backgroundMigrationManager";
 import {
   batchProjectCleaners,
-  batchDataRetentionCleaners,
   mediaRetentionCleaner,
   batchProjectMediaCleaner,
   batchProjectBlobCleaner,
@@ -30,11 +29,6 @@ export const onShutdown: NodeJS.SignalsListener = async (signal) => {
 
   // Stop batch project cleaners
   for (const cleaner of batchProjectCleaners) {
-    cleaner.stop();
-  }
-
-  // Stop batch data retention cleaners
-  for (const cleaner of batchDataRetentionCleaners) {
     cleaner.stop();
   }
 

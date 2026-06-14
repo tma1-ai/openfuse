@@ -399,32 +399,14 @@ const EnvSchema = z.object({
     .positive()
     .default(5000), // Media items per chunk
 
-  // Batch Data Retention Cleaner configuration (ClickHouse)
-  LANGFUSE_BATCH_DATA_RETENTION_CLEANER_ENABLED: z
+  // Media Retention Cleaner configuration (S3/PostgreSQL)
+  LANGFUSE_MEDIA_RETENTION_CLEANER_ENABLED: z
     .enum(["true", "false"])
     .default("false"),
-  LANGFUSE_BATCH_DATA_RETENTION_CLEANER_INTERVAL_MS: z.coerce
-    .number()
-    .positive()
-    .default(3_600_000), // 1 hour between runs
   LANGFUSE_MEDIA_RETENTION_CLEANER_INTERVAL_MS: z.coerce
     .number()
     .positive()
     .default(600_000), // 10 minutes between runs
-  LANGFUSE_BATCH_DATA_RETENTION_CLEANER_PROJECT_LIMIT: z.coerce
-    .number()
-    .positive()
-    .default(100), // Max projects per batch DELETE
-  LANGFUSE_BATCH_DATA_RETENTION_CLEANER_CHUNK_SIZE: z.coerce
-    .number()
-    .positive()
-    .default(100), // Chunk size for counting projects in ClickHouse
-  LANGFUSE_BATCH_DATA_RETENTION_CLEANER_DELETE_TIMEOUT_MS: z.coerce
-    .number()
-    .positive()
-    .default(3_600_000), // 1 hour for DELETE operations
-
-  // Media Retention Cleaner configuration (S3/PostgreSQL)
   LANGFUSE_MEDIA_RETENTION_CLEANER_ITEM_LIMIT: z.coerce
     .number()
     .positive()

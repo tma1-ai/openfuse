@@ -82,10 +82,6 @@ import { otelIngestionQueueProcessorBuilder } from "./queues/otelIngestionQueue"
 import { eventPropagationProcessor } from "./queues/eventPropagationQueue";
 import { notificationQueueProcessor } from "./queues/notificationQueue";
 import { BatchProjectCleaner } from "./features/batch-project-cleaner";
-import {
-  BatchDataRetentionCleaner,
-  BATCH_DATA_RETENTION_TABLES,
-} from "./features/batch-data-retention-cleaner";
 import { MediaRetentionCleaner } from "./features/media-retention-cleaner";
 import { BatchTraceDeletionCleaner } from "./features/batch-trace-deletion-cleaner";
 import { BatchProjectMediaCleaner } from "./features/batch-project-media-cleaner";
@@ -652,27 +648,10 @@ if (env.LANGFUSE_BATCH_PROJECT_CLEANER_ENABLED === "true") {
   cleaner.start();
 }
 
-// Batch data retention cleaners for bulk deletion of expired ClickHouse data
-export const batchDataRetentionCleaners: BatchDataRetentionCleaner[] = [];
-
-if (env.LANGFUSE_BATCH_DATA_RETENTION_CLEANER_ENABLED === "true") {
-  for (const table of BATCH_DATA_RETENTION_TABLES) {
-    // Only start the events table cleaners when V4 write mode targets events_full.
-    if (
-      (table !== "events_full" && table !== "events_core") ||
-      v4WritesToEventsTable(env)
-    ) {
-      const cleaner = new BatchDataRetentionCleaner(table);
-      batchDataRetentionCleaners.push(cleaner);
-      cleaner.start();
-    }
-  }
-}
-
-// Media retention cleaner for media files and blob storage
+// Media retention cleaner for media files (S3/PostgreSQL)
 export let mediaRetentionCleaner: MediaRetentionCleaner | null = null;
 
-if (env.LANGFUSE_BATCH_DATA_RETENTION_CLEANER_ENABLED === "true") {
+if (env.LANGFUSE_MEDIA_RETENTION_CLEANER_ENABLED === "true") {
   mediaRetentionCleaner = new MediaRetentionCleaner();
   mediaRetentionCleaner.start();
 }
