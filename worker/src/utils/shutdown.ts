@@ -16,7 +16,6 @@ import {
   batchProjectMediaCleaner,
   batchProjectBlobCleaner,
   batchTraceDeletionCleaner,
-  deletedMaskCleaner,
   queueMetricsRunner,
   monitorRunners,
 } from "../app";
@@ -50,9 +49,6 @@ export const onShutdown: NodeJS.SignalsListener = async (signal) => {
 
   // Stop batch trace deletion cleaner
   batchTraceDeletionCleaner?.stop();
-
-  // Stop deleted-mask cleaner
-  deletedMaskCleaner?.stop();
 
   // Stop queue metrics runner
   queueMetricsRunner?.stop();
