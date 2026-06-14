@@ -1,6 +1,5 @@
 import { expect, describe, it, beforeAll } from "vitest";
 import {
-  clickhouseClient,
   createObservation,
   createObservationsCh,
   createOrgProjectAndApiKey,
@@ -8,7 +7,6 @@ import {
   createScoresCh,
   createTrace,
   createTracesCh,
-  getBlobStorageByProjectId,
   getObservationsForTrace,
   getScoresForTraces,
   getTracesByIds,
@@ -21,19 +19,9 @@ import { env } from "../env";
 import { prisma } from "@langfuse/shared/src/db";
 
 describe("trace deletion", () => {
-  let eventStorageService: StorageService;
   let mediaStorageService: StorageService;
 
   beforeAll(() => {
-    eventStorageService = StorageServiceFactory.getInstance({
-      accessKeyId: env.LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID,
-      secretAccessKey: env.LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY,
-      bucketName: env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET,
-      endpoint: env.LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT,
-      region: env.LANGFUSE_S3_EVENT_UPLOAD_REGION,
-      forcePathStyle: env.LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE === "true",
-    });
-
     mediaStorageService = StorageServiceFactory.getInstance({
       accessKeyId: env.LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID,
       secretAccessKey: env.LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY,
@@ -249,104 +237,5 @@ describe("trace deletion", () => {
       },
     });
     expect(traceMedia).toHaveLength(1);
-  });
-
-  it("should delete S3 event files for deleted traces", async () => {
-    // Setup
-    const { projectId } = await createOrgProjectAndApiKey();
-
-    const traceId = randomUUID();
-    const observationId = randomUUID();
-    const scoreId = randomUUID();
-
-    await createTracesCh([createTrace({ id: traceId, project_id: projectId })]);
-    await createObservationsCh([
-      createObservation({
-        id: observationId,
-        trace_id: traceId,
-        project_id: projectId,
-      }),
-    ]);
-    await createScoresCh([
-      createTraceScore({
-        id: scoreId,
-        trace_id: traceId,
-        project_id: projectId,
-      }),
-    ]);
-
-    const fileType = "application/json";
-    const data = JSON.stringify({ hello: "world" });
-
-    await Promise.all([
-      eventStorageService.uploadFile({
-        fileName: `${projectId}/traces/${traceId}-trace.json`,
-        fileType,
-        data,
-      }),
-      eventStorageService.uploadFile({
-        fileName: `${projectId}/observation/${traceId}-observation.json`,
-        fileType,
-        data,
-      }),
-      eventStorageService.uploadFile({
-        fileName: `${projectId}/score/${traceId}-score.json`,
-        fileType,
-        data,
-      }),
-    ]);
-
-    await clickhouseClient().insert({
-      table: "blob_storage_file_log",
-      format: "JSONEachRow",
-      values: [
-        {
-          id: randomUUID(),
-          project_id: projectId,
-          entity_type: "trace",
-          entity_id: traceId,
-          event_id: randomUUID(),
-          bucket_name: env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET,
-          bucket_path: `${projectId}/traces/${traceId}-trace.json`,
-          created_at: new Date().getTime(),
-          updated_at: new Date().getTime(),
-        },
-        {
-          id: randomUUID(),
-          project_id: projectId,
-          entity_type: "observation",
-          entity_id: observationId,
-          event_id: randomUUID(),
-          bucket_name: env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET,
-          bucket_path: `${projectId}/observation/${traceId}-observation.json`,
-          created_at: new Date().getTime(),
-          updated_at: new Date().getTime(),
-        },
-        {
-          id: randomUUID(),
-          project_id: projectId,
-          entity_type: "score",
-          entity_id: scoreId,
-          event_id: randomUUID(),
-          bucket_name: env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET,
-          bucket_path: `${projectId}/score/${traceId}-score.json`,
-          created_at: new Date().getTime(),
-          updated_at: new Date().getTime(),
-        },
-      ],
-    });
-
-    // When
-    await processClickhouseTraceDelete(projectId, [traceId]);
-
-    // Then
-    const eventLog = getBlobStorageByProjectId(projectId);
-    for await (const _ of eventLog) {
-      // Should never happen as the expect event log to be empty
-      expect(true).toBe(false);
-    }
-
-    const files = await eventStorageService.listFiles(projectId);
-    expect(files).toHaveLength(0);
   });
 });

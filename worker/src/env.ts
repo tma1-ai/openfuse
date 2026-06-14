@@ -183,10 +183,6 @@ const EnvSchema = z.object({
     .enum(["true", "false"])
     .default("false"),
 
-  LANGFUSE_ENABLE_BLOB_STORAGE_FILE_LOG: z
-    .enum(["true", "false"])
-    .default("true"),
-
   LANGFUSE_BLOB_STORAGE_FAILURE_NOTIFICATION_COOLDOWN_HOURS: z.coerce
     .number()
     .positive()

@@ -1,21 +1,18 @@
 import { expect, it, describe, beforeAll, beforeEach, afterEach } from "vitest";
-import { env, v4WritesToEventsTable } from "../env";
+import { env } from "../env";
 import { randomUUID } from "crypto";
 import {
-  convertDateToClickhouseDateTime,
   createObservation,
   createObservationsCh,
   createTraceScore,
   createScoresCh,
   createTrace,
   createTracesCh,
-  getBlobStorageByProjectAndEntityId,
   getObservationById,
   getScoreById,
   getTraceById,
   StorageService,
   StorageServiceFactory,
-  upsertTrace,
   deleteTracesByProjectId,
   deleteObservationsByProjectId,
   deleteScoresByProjectId,
@@ -29,8 +26,6 @@ describe("ProjectDeletionProcessingJob", () => {
   let storageService: StorageService;
   let s3Prefix: string | null = null;
   const orgId = "seed-org-id";
-
-  const maybeEventsIt = v4WritesToEventsTable(env) ? it : it.skip;
 
   beforeAll(() => {
     storageService = StorageServiceFactory.getInstance({
@@ -196,49 +191,6 @@ describe("ProjectDeletionProcessingJob", () => {
     });
     expect(score).toBeUndefined();
   });
-
-  maybeEventsIt(
-    "should delete event data from S3 for the project",
-    async () => {
-      // Setup
-      const projectId = randomUUID();
-      await prisma.project.create({
-        data: {
-          id: projectId,
-          orgId,
-          name: `Project-${randomUUID()}`,
-        },
-      });
-
-      // Use upsertTrace here as this also creates an S3 event record
-      const baseId = randomUUID();
-      await upsertTrace({
-        id: `${baseId}-trace`,
-        project_id: projectId,
-        timestamp: convertDateToClickhouseDateTime(new Date()),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
-
-      // When
-      await projectDeleteProcessor({
-        data: { payload: { projectId, orgId } },
-      } as Job);
-
-      // Then
-      const files = await storageService.listFiles("");
-      expect(files.some((file) => file.file.includes(`${baseId}-trace`))).toBe(
-        false,
-      );
-
-      const eventLogRecord = await getBlobStorageByProjectAndEntityId(
-        projectId,
-        "trace",
-        `${baseId}-trace`,
-      );
-      expect(eventLogRecord).toHaveLength(0);
-    },
-  );
 
   it("should delete all media assets for the project", async () => {
     // Setup

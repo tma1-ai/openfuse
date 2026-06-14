@@ -298,37 +298,6 @@ export type DatasetRunItemRecordInsertType = z.infer<
   typeof datasetRunItemRecordInsertSchema
 >;
 
-export const blobStorageFileLogRecordBaseSchema = z.object({
-  id: z.string(),
-  project_id: z.string(),
-  entity_type: z.string(),
-  entity_id: z.string(),
-  // event_id is nullable to be compatible with legacy queue events.
-  // It still allows us to delete things by prefix, but requires an additional list call.
-  event_id: z.string().nullable(),
-  bucket_name: z.string(),
-  bucket_path: z.string(),
-  is_deleted: z.number(),
-});
-export const blobStorageFileRefRecordReadSchema =
-  blobStorageFileLogRecordBaseSchema.extend({
-    created_at: clickhouseStringDateSchema,
-    updated_at: clickhouseStringDateSchema,
-    event_ts: clickhouseStringDateSchema,
-  });
-export type BlobStorageFileRefRecordReadType = z.infer<
-  typeof blobStorageFileRefRecordReadSchema
->;
-export const blobStorageFileLogRecordInsertSchema =
-  blobStorageFileLogRecordBaseSchema.extend({
-    created_at: z.number(),
-    updated_at: z.number(),
-    event_ts: z.number(),
-  });
-export type BlobStorageFileLogInsertType = z.infer<
-  typeof blobStorageFileLogRecordInsertSchema
->;
-
 export const convertTraceReadToInsert = (
   record: TraceRecordReadType,
 ): TraceRecordInsertType => {
