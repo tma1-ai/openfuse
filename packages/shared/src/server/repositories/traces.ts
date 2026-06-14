@@ -283,50 +283,6 @@ export const deleteTraces = async (projectId: string, traceIds: string[]) => {
 export const hasAnyTraceOlderThan = (projectId: string, beforeDate: Date) =>
   greptimeTraceReads.hasAnyTraceOlderThan(projectId, beforeDate);
 
-export const deleteTracesOlderThanDays = async (
-  projectId: string,
-  beforeDate: Date,
-): Promise<boolean> => {
-  const hasData = await hasAnyTraceOlderThan(projectId, beforeDate);
-  if (!hasData) {
-    return false;
-  }
-
-  await measureAndReturn({
-    operationName: "deleteTracesOlderThanDays",
-    projectId,
-    input: {
-      params: {
-        projectId,
-        cutoffDate: convertDateToClickhouseDateTime(beforeDate),
-      },
-      tags: {
-        feature: "tracing",
-        type: "trace",
-        kind: "delete",
-        projectId,
-      },
-    },
-    fn: async (input) => {
-      const query = `
-        DELETE FROM traces
-        WHERE project_id = {projectId: String}
-        AND timestamp < {cutoffDate: DateTime64(3)};
-      `;
-      await commandClickhouse({
-        query: query,
-        params: input.params,
-        clickhouseConfigs: {
-          request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-        },
-        tags: input.tags,
-      });
-    },
-  });
-
-  return true;
-};
-
 export const deleteTracesByProjectId = async (
   projectId: string,
 ): Promise<boolean> => {

@@ -866,13 +866,6 @@ export const hasAnyEventOlderThan = async (
  * Delete events older than a cutoff date
  * Used for data retention cleanup
  */
-export const deleteEventsOlderThanDays = async (
-  _projectId: string,
-  _beforeDate: Date,
-): Promise<boolean> => {
-  return false;
-};
-
 export const getObservationsBatchIOFromEventsTable = async <
   TIncludeExperiment extends boolean = false,
 >(opts: {

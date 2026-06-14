@@ -395,40 +395,6 @@ export const hasAnyObservationOlderThan = async (
   beforeDate: Date,
 ) => greptimeObservationReads.hasAnyObservationOlderThan(projectId, beforeDate);
 
-export const deleteObservationsOlderThanDays = async (
-  projectId: string,
-  beforeDate: Date,
-): Promise<boolean> => {
-  const hasData = await hasAnyObservationOlderThan(projectId, beforeDate);
-  if (!hasData) {
-    return false;
-  }
-
-  const query = `
-    DELETE FROM observations
-    WHERE project_id = {projectId: String}
-    AND start_time < {cutoffDate: DateTime64(3)};
-  `;
-  await commandClickhouse({
-    query: query,
-    params: {
-      projectId,
-      cutoffDate: convertDateToClickhouseDateTime(beforeDate),
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-    },
-    tags: {
-      feature: "tracing",
-      type: "observation",
-      kind: "delete",
-      projectId,
-    },
-  });
-
-  return true;
-};
-
 export const getObservationsWithPromptName = (
   projectId: string,
   promptNames: string[],

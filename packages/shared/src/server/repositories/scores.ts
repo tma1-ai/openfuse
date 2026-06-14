@@ -688,40 +688,6 @@ export const deleteScoresByProjectId = async (
 export const hasAnyScoreOlderThan = (projectId: string, beforeDate: Date) =>
   greptimeScoreReads.hasAnyScoreOlderThan(projectId, beforeDate);
 
-export const deleteScoresOlderThanDays = async (
-  projectId: string,
-  beforeDate: Date,
-): Promise<boolean> => {
-  const hasData = await hasAnyScoreOlderThan(projectId, beforeDate);
-  if (!hasData) {
-    return false;
-  }
-
-  const query = `
-    DELETE FROM scores
-    WHERE project_id = {projectId: String}
-    AND timestamp < {cutoffDate: DateTime64(3)};
-  `;
-  await commandClickhouse({
-    query: query,
-    params: {
-      projectId,
-      cutoffDate: convertDateToClickhouseDateTime(beforeDate),
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-    },
-    tags: {
-      feature: "tracing",
-      type: "score",
-      kind: "delete",
-      projectId,
-    },
-  });
-
-  return true;
-};
-
 export const getNumericScoreHistogram = (
   projectId: string,
   filter: FilterState,
