@@ -50,6 +50,7 @@ export * from "./utils/compareVersions";
 export * from "./otel/utils";
 export * from "./clickhouse/client";
 export * from "./greptime/client";
+export * from "./greptime/applyMigrations";
 // Namespaced: greptime-filter intentionally mirrors clickhouse-filter's class names
 // (StringFilter/FilterList/...), so it cannot be flat re-exported alongside ./queries.
 export * as greptimeFilters from "./greptime/sql/greptime-filter";

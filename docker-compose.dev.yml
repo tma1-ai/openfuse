@@ -26,6 +26,36 @@ services:
     networks:
       - default
 
+  greptimedb:
+    # GreptimeDB backend for the fork. Replaces ClickHouse as the analytics store; the read/write
+    # paths and the test harness target this. Standalone mode exposes HTTP (4000), gRPC (4001,
+    # ingest SDK), MySQL wire (4002, read pool + migrations), and Postgres wire (4003).
+    image: docker.io/greptime/greptimedb:latest
+    container_name: ${GREPTIME_CONTAINER_NAME:-langfuse-greptimedb}
+    command:
+      - standalone
+      - start
+      - --http-addr=0.0.0.0:4000
+      - --rpc-bind-addr=0.0.0.0:4001
+      - --mysql-addr=0.0.0.0:4002
+      - --postgres-addr=0.0.0.0:4003
+      - --data-home=/greptimedb_data
+    ports:
+      - ${HOST_IP:-127.0.0.1}:${GREPTIME_HTTP_PORT:-4000}:4000
+      - ${HOST_IP:-127.0.0.1}:${GREPTIME_GRPC_PORT:-4001}:4001
+      - ${HOST_IP:-127.0.0.1}:${GREPTIME_MYSQL_PORT:-4002}:4002
+      - ${HOST_IP:-127.0.0.1}:${GREPTIME_PG_PORT:-4003}:4003
+    volumes:
+      - langfuse_greptimedb_data:/greptimedb_data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 2s
+    networks:
+      - default
+
   minio:
     image: cgr.dev/chainguard/minio
     container_name: ${MINIO_CONTAINER_NAME:-langfuse-minio}
@@ -114,6 +144,9 @@ volumes:
     driver: local
   langfuse_clickhouse_logs:
     name: ${CLICKHOUSE_LOGS_VOLUME_NAME:-langfuse_clickhouse_logs}
+    driver: local
+  langfuse_greptimedb_data:
+    name: ${GREPTIME_DATA_VOLUME_NAME:-langfuse_greptimedb_data}
     driver: local
   langfuse_minio_data:
     name: ${MINIO_VOLUME_NAME:-langfuse_minio_data}
