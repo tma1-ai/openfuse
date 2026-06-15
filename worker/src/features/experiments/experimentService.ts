@@ -13,11 +13,11 @@ import {
   ExperimentCreateEventSchema,
   fetchLLMCompletion,
   getDatasetItems,
+  getExistingRunItemDatasetItemIds,
   IngestionEventType,
   LangfuseInternalTraceEnvironment,
   logger,
   processEventBatch,
-  queryClickhouse,
   QueueJobs,
   redis,
   TraceSinkParams,
@@ -38,37 +38,6 @@ import { randomUUID } from "crypto";
 import { createW3CTraceId } from "../utils";
 import { scheduleExperimentObservationEvals } from "./scheduleExperimentEvals";
 import { createInternalEventsWriter } from "../internal-tracing/createInternalEventsWriter";
-
-async function getExistingRunItemDatasetItemIds(
-  projectId: string,
-  runId: string,
-  datasetId: string,
-): Promise<Set<string>> {
-  const query = `
-  SELECT dataset_item_id as id
-  FROM dataset_run_items_rmt
-  WHERE project_id = {projectId: String}
-  AND dataset_id = {datasetId: String}
-  AND dataset_run_id = {runId: String}
-`;
-
-  const rows = await queryClickhouse<{ id: string }>({
-    query,
-    params: {
-      projectId,
-      runId,
-      datasetId,
-    },
-    tags: {
-      feature: "dataset-run-item",
-      type: "read",
-      kind: "list",
-      projectId,
-    },
-  });
-
-  return new Set(rows.map((row) => row.id));
-}
 
 async function processItem(
   projectId: string,
@@ -271,11 +240,11 @@ async function getItemsToProcess(
   }
 
   // Batch deduplication - get existing run items' dataset item ids
-  const existingDatasetItemIds = await getExistingRunItemDatasetItemIds(
+  const existingDatasetItemIds = await getExistingRunItemDatasetItemIds({
     projectId,
-    runId,
     datasetId,
-  );
+    runId,
+  });
 
   // Filter out existing items
   const itemsToProcess = validatedDatasetItems.filter(
@@ -289,16 +258,13 @@ async function getItemsToProcess(
   return itemsToProcess;
 }
 
-export const createExperimentJobClickhouse = async ({
+export const createExperimentJob = async ({
   event,
 }: {
   event: z.infer<typeof ExperimentCreateEventSchema>;
 }) => {
   const startTime = Date.now();
-  logger.info(
-    "Processing experiment create job with ClickHouse batching",
-    event,
-  );
+  logger.info("Processing experiment create job", event);
 
   const { datasetId, projectId, runId } = event;
 
@@ -386,11 +352,11 @@ async function createAllDatasetRunItemsWithConfigError(
   });
 
   // Check for existing run items' dataset item ids to avoid duplicates
-  const existingRunItemDatasetItemIds = await getExistingRunItemDatasetItemIds(
+  const existingRunItemDatasetItemIds = await getExistingRunItemDatasetItemIds({
     projectId,
-    runId,
     datasetId,
-  );
+    runId,
+  });
 
   // Create run items with config error for all non-existing items
   const newItems = datasetItems.filter(

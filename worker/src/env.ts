@@ -279,37 +279,9 @@ const EnvSchema = z.object({
   QUEUE_CONSUMER_ENTITY_CHANGE_QUEUE_IS_ENABLED: z
     .enum(["true", "false"])
     .default("true"),
-  QUEUE_CONSUMER_EVENT_PROPAGATION_QUEUE_IS_ENABLED: z
-    .enum(["true", "false"])
-    .default("true"),
   QUEUE_CONSUMER_NOTIFICATION_QUEUE_IS_ENABLED: z
     .enum(["true", "false"])
     .default("true"),
-
-  LANGFUSE_EVENT_PROPAGATION_WORKER_GLOBAL_CONCURRENCY: z.coerce
-    .number()
-    .positive()
-    .default(10),
-  LANGFUSE_DATASET_RUN_BACKFILL_CHUNK_SIZE: z.coerce
-    .number()
-    .positive()
-    .default(100),
-  LANGFUSE_EXPERIMENT_BACKFILL_THROTTLE_MS: z.coerce
-    .number()
-    .positive()
-    .default(5 * 60 * 1000), // 5 minutes
-
-  // Comma-separated list of project IDs to exclude from experiment backfill processing
-  LANGFUSE_EXPERIMENT_BACKFILL_EXCLUDE_PROJECT_IDS: z
-    .string()
-    .optional()
-    .transform((s) => (s ? s.split(",").map((id) => id.trim()) : [])),
-
-  // Comma-separated list of project IDs to exclude from event propagation dual-write
-  LANGFUSE_EVENT_PROPAGATION_EXCLUDE_PROJECT_IDS: z
-    .string()
-    .optional()
-    .transform((s) => (s ? s.split(",").map((id) => id.trim()) : [])),
 
   // Core data S3 upload - Langfuse Cloud
   LANGFUSE_S3_CORE_DATA_EXPORT_IS_ENABLED: z
@@ -417,12 +389,6 @@ const EnvSchema = z.object({
     .number()
     .positive()
     .default(7200), // 2 hours to handle worst-case deletions
-
-  LANGFUSE_EXPERIMENT_EVENT_PROPAGATION_PARTITION_DELAY_MINUTES: z.coerce
-    .number()
-    .positive()
-    .int()
-    .default(10),
 
   LANGFUSE_WEBHOOK_QUEUE_PROCESSING_CONCURRENCY: z.coerce
     .number()
