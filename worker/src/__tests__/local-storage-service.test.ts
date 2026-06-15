@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import {
   resolveLocalStoragePath,
@@ -49,6 +50,28 @@ describe("LocalFileStorageService", () => {
 
     await localStorageService.deleteFiles([fileName]);
     await expect(localStorageService.listFiles(fileName)).resolves.toEqual([]);
+  });
+
+  test("does not leave a partial file when the stream fails mid-write", async () => {
+    const dir = randomUUID();
+    const fileName = `${dir}/broken.bin`;
+    const failing = new Readable({
+      read() {
+        this.push(Buffer.from("partial"));
+        this.destroy(new Error("stream boom"));
+      },
+    });
+
+    await expect(
+      localStorageService.uploadFile({
+        fileName,
+        fileType: "application/octet-stream",
+        data: failing,
+      }),
+    ).rejects.toThrow();
+
+    // The canonical file is never created and no temp ".part" file is left.
+    await expect(localStorageService.listFiles(dir)).resolves.toEqual([]);
   });
 
   test("rejects absolute paths and parent-directory escapes", () => {

@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
 import { createWriteStream } from "node:fs";
 import {
   mkdir,
   readdir,
   readFile,
+  rename,
   rm,
   stat,
   writeFile,
@@ -324,7 +326,17 @@ class LocalFileStorageService implements StorageService {
       return;
     }
 
-    await pipeline(params.data, createWriteStream(target));
+    // Stream to a temp file first, then atomically rename into place. A
+    // mid-stream failure (e.g. client disconnect) therefore never leaves a
+    // partially written file at the canonical path; the temp file is removed.
+    const tmpTarget = `${target}.${randomUUID()}.part`;
+    try {
+      await pipeline(params.data, createWriteStream(tmpTarget));
+      await rename(tmpTarget, target);
+    } catch (error) {
+      await rm(tmpTarget, { force: true });
+      throw error;
+    }
   }
 
   async uploadFileBuffered(params: UploadFileBuffered): Promise<void> {
