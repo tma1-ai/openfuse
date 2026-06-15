@@ -231,10 +231,10 @@ async function* streamObservationsForAnalyticsGreptime(
           o.environment AS environment,
           o.provided_model_name AS model,
           o.total_cost AS total_cost,
-          json_get_float(o.usage_details, 'input') AS input_tokens_input,
-          json_get_float(o.usage_details, 'output') AS output_tokens,
-          json_get_float(o.usage_details, 'total') AS usage_total,
-          json_get_float(o.cost_details, 'total') AS cost_total,
+          coalesce(json_get_float(o.usage_details, 'input'), 0) AS input_tokens_input,
+          coalesce(json_get_float(o.usage_details, 'output'), 0) AS output_tokens,
+          coalesce(json_get_float(o.usage_details, 'total'), 0) AS usage_total,
+          coalesce(json_get_float(o.cost_details, 'total'), 0) AS cost_total,
           CASE WHEN o.end_time IS NULL THEN NULL
             ELSE arrow_cast(o.end_time, 'Int64') - arrow_cast(o.start_time, 'Int64') END AS latency_ms,
           CASE WHEN o.completion_start_time IS NULL THEN NULL
