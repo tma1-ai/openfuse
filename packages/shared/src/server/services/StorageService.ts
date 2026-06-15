@@ -1,4 +1,17 @@
+import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import {
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  writeFile,
+} from "node:fs/promises";
+import path from "node:path";
 import { Readable } from "stream";
+import { pipeline } from "node:stream/promises";
 import {
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -91,6 +104,28 @@ function handleStorageError(err: unknown, operation: string): never {
   // For other errors, throw with the original cause preserved
   throw new Error(`Failed to ${operation}`, { cause: err });
 }
+
+export const resolveLocalStoragePath = (
+  basePath: string,
+  fileName: string,
+): string => {
+  if (!basePath) {
+    throw new Error("Local media storage path is not configured");
+  }
+
+  const normalizedFileName = fileName.replace(/\\/g, "/");
+  if (path.isAbsolute(normalizedFileName)) {
+    throw new Error("Local storage file name must be relative");
+  }
+
+  const root = path.resolve(basePath);
+  const resolved = path.resolve(root, normalizedFileName);
+  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
+    throw new Error("Local storage file name escapes configured base path");
+  }
+
+  return resolved;
+};
 
 function createS3RequestHandler(
   connectionValidation?: OutboundUrlConnectionValidationOptions,
@@ -198,6 +233,7 @@ export class StorageServiceFactory {
    * @param params.useAzureBlob - Use Azure Blob Storage instead of S3
    * @param params.useOCIObjectStorage - Use OCI Object Storage instead of S3
    * @param params.useGoogleCloudStorage - Use Google Cloud Storage instead of S3
+   * @param params.useLocalFileStorage - Use local filesystem storage instead of object storage
    * @param params.googleCloudCredentials - Google Cloud Storage credentials JSON string or path to credentials file
    * @param params.awsSse - Server-side encryption method (e.g., "aws:kms")
    * @param params.awsSseKmsKeyId - SSE KMS Key ID when using KMS encryption
@@ -214,11 +250,19 @@ export class StorageServiceFactory {
     useAzureBlob?: boolean;
     useGoogleCloudStorage?: boolean;
     useOCIObjectStorage?: boolean;
+    useLocalFileStorage?: boolean;
+    localFileStoragePath?: string;
     googleCloudCredentials?: string;
     awsSse: string | undefined;
     awsSseKmsKeyId: string | undefined;
     connectionValidation?: OutboundUrlConnectionValidationOptions;
   }): StorageService {
+    if (params.useLocalFileStorage) {
+      return new LocalFileStorageService({
+        basePath: params.localFileStoragePath ?? env.LANGFUSE_MEDIA_LOCAL_PATH,
+      });
+    }
+
     if (
       params.useAzureBlob !== undefined
         ? params.useAzureBlob
@@ -254,6 +298,145 @@ export class StorageServiceFactory {
       return new OCIObjectStorageService(params);
     }
     return new S3StorageService(params);
+  }
+}
+
+class LocalFileStorageService implements StorageService {
+  private readonly basePath: string;
+
+  constructor(params: { basePath?: string }) {
+    if (!params.basePath) {
+      throw new Error(
+        "LANGFUSE_MEDIA_LOCAL_PATH must be set for local media storage",
+      );
+    }
+    this.basePath = params.basePath;
+  }
+
+  private pathFor(fileName: string): string {
+    return resolveLocalStoragePath(this.basePath, fileName);
+  }
+
+  async uploadFile(params: UploadFile): Promise<void> {
+    const target = this.pathFor(params.fileName);
+    await mkdir(path.dirname(target), { recursive: true });
+
+    if (typeof params.data === "string") {
+      await writeFile(target, params.data);
+      return;
+    }
+
+    // Stream to a temp file first, then atomically rename into place. A
+    // mid-stream failure (e.g. client disconnect) therefore never leaves a
+    // partially written file at the canonical path; the temp file is removed.
+    const tmpTarget = `${target}.${randomUUID()}.part`;
+    try {
+      await pipeline(params.data, createWriteStream(tmpTarget));
+      await rename(tmpTarget, target);
+    } catch (error) {
+      await rm(tmpTarget, { force: true });
+      throw error;
+    }
+  }
+
+  async uploadFileBuffered(params: UploadFileBuffered): Promise<void> {
+    await this.uploadFile({
+      fileName: params.fileName,
+      fileType: params.fileType,
+      data: params.data,
+    });
+  }
+
+  async uploadWithSignedUrl(
+    _params: UploadWithSignedUrl,
+  ): Promise<{ signedUrl: string }> {
+    throw new Error("Local file storage does not support presigned URLs");
+  }
+
+  async uploadJson(
+    fileName: string,
+    body: Record<string, unknown>[] | Record<string, unknown>,
+  ): Promise<void> {
+    await this.uploadFile({
+      fileName,
+      fileType: "application/json",
+      data: JSON.stringify(body),
+    });
+  }
+
+  async download(fileName: string): Promise<string> {
+    return readFile(this.pathFor(fileName), "utf8");
+  }
+
+  async listFiles(
+    prefix: string,
+  ): Promise<{ file: string; createdAt: Date }[]> {
+    const root = this.pathFor(prefix || ".");
+    const base = path.resolve(this.basePath);
+    const files: { file: string; createdAt: Date }[] = [];
+    // Cap results like the object-storage backends do, so a broad prefix
+    // (e.g. an empty prefix) cannot trigger an unbounded walk / OOM.
+    const maxKeys = env.LANGFUSE_S3_LIST_MAX_KEYS;
+
+    try {
+      const rootStat = await stat(root);
+      if (rootStat.isFile()) {
+        return [
+          {
+            file: path.relative(base, root),
+            createdAt: rootStat.birthtime,
+          },
+        ];
+      }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+      throw error;
+    }
+
+    const walk = async (dir: string) => {
+      if (files.length >= maxKeys) return;
+
+      const entries = await readdir(dir, { withFileTypes: true }).catch(
+        (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return [];
+          throw error;
+        },
+      );
+
+      for (const entry of entries) {
+        if (files.length >= maxKeys) return;
+
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          await walk(fullPath);
+          continue;
+        }
+        const fileStat = await stat(fullPath);
+        files.push({
+          file: path.relative(base, fullPath),
+          createdAt: fileStat.birthtime,
+        });
+      }
+    };
+
+    await walk(root);
+    return files;
+  }
+
+  async getSignedUrl(): Promise<string> {
+    throw new Error("Local file storage does not support presigned URLs");
+  }
+
+  async getSignedUploadUrl(): Promise<string> {
+    throw new Error("Local file storage does not support presigned URLs");
+  }
+
+  async deleteFiles(paths: string[]): Promise<void> {
+    await Promise.all(
+      paths.map(async (fileName) => {
+        await rm(this.pathFor(fileName), { force: true });
+      }),
+    );
   }
 }
 

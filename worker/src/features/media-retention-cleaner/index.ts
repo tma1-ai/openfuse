@@ -154,8 +154,11 @@ export class MediaRetentionCleaner extends PeriodicExclusiveRunner {
   }
 
   private async processProject(workload: ProjectWorkload): Promise<void> {
-    // Delete media files (S3 + PostgreSQL)
-    if (env.LANGFUSE_S3_MEDIA_UPLOAD_BUCKET) {
+    // Delete media files (storage + PostgreSQL)
+    if (
+      env.LANGFUSE_MEDIA_STORAGE_BACKEND === "local" ||
+      env.LANGFUSE_S3_MEDIA_UPLOAD_BUCKET
+    ) {
       await this.deleteExpiredMedia(workload);
     }
 
@@ -184,7 +187,7 @@ export class MediaRetentionCleaner extends PeriodicExclusiveRunner {
       projectId: workload.projectId,
       mediaFiles,
       storageClient: getS3MediaStorageClient(
-        env.LANGFUSE_S3_MEDIA_UPLOAD_BUCKET!,
+        env.LANGFUSE_S3_MEDIA_UPLOAD_BUCKET ?? "local",
       ),
     });
 

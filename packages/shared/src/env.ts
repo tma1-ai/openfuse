@@ -251,6 +251,8 @@ const EnvSchema = z.object({
     .default("false"),
   LANGFUSE_S3_MEDIA_UPLOAD_SSE: z.enum(["AES256", "aws:kms"]).optional(),
   LANGFUSE_S3_MEDIA_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
+  LANGFUSE_MEDIA_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
+  LANGFUSE_MEDIA_LOCAL_PATH: z.string().optional(),
   LANGFUSE_USE_AZURE_BLOB: z.enum(["true", "false"]).default("false"),
   LANGFUSE_AZURE_SKIP_CONTAINER_CHECK: z
     .enum(["true", "false"])
@@ -495,6 +497,21 @@ const EnvSchema = z.object({
     .transform((s) =>
       s ? s.split(",").map((h) => h.toLowerCase().trim()) : [],
     ),
+}).superRefine((env, ctx) => {
+  // The local media backend cannot resolve any path without an explicit base
+  // directory. Fail fast at startup instead of crashing on the first media
+  // operation with an indirect error.
+  if (
+    env.LANGFUSE_MEDIA_STORAGE_BACKEND === "local" &&
+    !env.LANGFUSE_MEDIA_LOCAL_PATH
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["LANGFUSE_MEDIA_LOCAL_PATH"],
+      message:
+        "LANGFUSE_MEDIA_LOCAL_PATH is required when LANGFUSE_MEDIA_STORAGE_BACKEND is 'local'",
+    });
+  }
 });
 
 export type SharedEnv = z.infer<typeof EnvSchema>;
