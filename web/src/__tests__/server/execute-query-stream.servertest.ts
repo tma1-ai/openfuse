@@ -4,7 +4,7 @@ import type { NextApiRequest, NextApiResponse } from "next";
 import {
   createOrgProjectAndApiKey,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   type TraceRecordInsertType,
 } from "@langfuse/shared/src/server";
 import handler from "../../pages/api/dashboard/execute-query-stream";
@@ -84,7 +84,7 @@ describe("execute-query-stream handler", () => {
       );
     }
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     fromTimestamp = new Date(baseTime - 60 * 60 * 1000).toISOString();
     toTimestamp = new Date(baseTime + 60 * 60 * 1000).toISOString();

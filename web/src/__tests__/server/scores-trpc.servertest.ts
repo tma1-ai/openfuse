@@ -25,11 +25,11 @@ import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import { ScoreConfigDataType } from "@langfuse/shared";
 import {
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createTrace,
   createTraceScore,
-  createTracesCh,
-  createScoresCh,
+  createTracesGreptime,
+  createScoresGreptime,
   ScoreDeleteQueue,
   BatchActionQueue,
   QueueJobs,
@@ -92,7 +92,7 @@ describe("scores trpc", () => {
       const createdScore = createTraceScore({
         project_id: projectId,
       });
-      await createScoresCh([createdScore]);
+      await createScoresGreptime([createdScore]);
       const scoreDeleteQueue = ScoreDeleteQueue.getInstance();
 
       // When
@@ -122,7 +122,7 @@ describe("scores trpc", () => {
         project_id: projectId,
         name: scoreName,
       });
-      await createScoresCh([createdScore]);
+      await createScoresGreptime([createdScore]);
       const batchActionQueue = BatchActionQueue.getInstance();
 
       // When
@@ -180,13 +180,13 @@ describe("scores trpc", () => {
       const traceId = randomUUID();
       const observationId = randomUUID();
 
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({
           id: traceId,
           project_id: projectId,
         }),
       ]);
-      await createObservationsCh([
+      await createObservationsGreptime([
         createObservation({
           id: observationId,
           trace_id: traceId,
@@ -194,7 +194,7 @@ describe("scores trpc", () => {
         }),
       ]);
 
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           project_id: projectId,
           trace_id: traceId,

@@ -1,9 +1,9 @@
 import { randomUUID } from "crypto";
 import {
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
 } from "@langfuse/shared/src/server";
 import { executeQuery } from "@langfuse/shared/query/server";
 import { type QueryType } from "@langfuse/shared/query";
@@ -115,7 +115,7 @@ describe("selfServeDashboards", () => {
     ];
 
     // Insert traces into ClickHouse
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Create observations for some of these traces
     const observations = [];
@@ -185,7 +185,7 @@ describe("selfServeDashboards", () => {
     }
 
     // Insert observations into ClickHouse
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     // Calculate statistics for verification
     stats.totalTraces = traces.length;

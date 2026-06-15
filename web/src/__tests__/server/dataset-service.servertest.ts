@@ -1,8 +1,8 @@
 import {
-  createDatasetRunItemsCh,
-  createObservationsCh,
-  createScoresCh,
-  createTracesCh,
+  createDatasetRunItemsGreptime,
+  createObservationsGreptime,
+  createScoresGreptime,
+  createTracesGreptime,
   getDatasetRunItemsByDatasetIdCh,
   getDatasetRunsTableMetricsCh,
   getScoresForExperiments,
@@ -149,7 +149,7 @@ describe("Fetch datasets for UI presentation", () => {
       dataset_run_created_at: oneMinuteAgo.getTime(),
     });
 
-    await createDatasetRunItemsCh([
+    await createDatasetRunItemsGreptime([
       datasetRunItem1,
       datasetRunItem2,
       datasetRunItem3,
@@ -195,7 +195,7 @@ describe("Fetch datasets for UI presentation", () => {
       start_time: new Date().getTime() - 1000 * 60 * 60, // minus 1 min
       end_time: new Date().getTime(),
     });
-    await createObservationsCh([
+    await createObservationsGreptime([
       observation,
       observation2,
       observation3,
@@ -231,7 +231,7 @@ describe("Fetch datasets for UI presentation", () => {
       value: 1,
       comment: "some other comment for non run related score",
     });
-    await createScoresCh([score, score2, score3]);
+    await createScoresGreptime([score, score2, score3]);
 
     // Get runs that have metrics (only runs with dataset_run_items_rmt)
     const runsWithMetrics = await getDatasetRunsTableMetricsCh({
@@ -398,7 +398,7 @@ describe("Fetch datasets for UI presentation", () => {
       dataset_id: datasetId,
     });
 
-    await createDatasetRunItemsCh([datasetRunItem1, datasetRunItem2]);
+    await createDatasetRunItemsGreptime([datasetRunItem1, datasetRunItem2]);
 
     const scoreName = v4();
     const score = createTraceScore({
@@ -409,7 +409,7 @@ describe("Fetch datasets for UI presentation", () => {
       name: scoreName,
     });
 
-    await createScoresCh([score]);
+    await createScoresGreptime([score]);
 
     // Get runs that have metrics (only runs with dataset_run_items_rmt)
     const runsWithMetrics = await getDatasetRunsTableMetricsCh({
@@ -590,7 +590,7 @@ describe("Fetch datasets for UI presentation", () => {
         dataset_run_name: "no-score-run",
       });
 
-      await createDatasetRunItemsCh([runItem1, runItem2, runItem3]);
+      await createDatasetRunItemsGreptime([runItem1, runItem2, runItem3]);
 
       // Create observations for latency calculation
       const observation1 = createObservation({
@@ -614,7 +614,7 @@ describe("Fetch datasets for UI presentation", () => {
         end_time: new Date().getTime(),
       });
 
-      await createObservationsCh([observation1, observation2, observation3]);
+      await createObservationsGreptime([observation1, observation2, observation3]);
 
       // Create scores with different values for the same score name
       const highAccuracyScore = createTraceScore({
@@ -643,7 +643,7 @@ describe("Fetch datasets for UI presentation", () => {
 
       // No scores for traceId3 to test filtering behavior
 
-      await createScoresCh([
+      await createScoresGreptime([
         highAccuracyScore,
         lowAccuracyScore,
         highPrecisionScore,
@@ -796,7 +796,7 @@ describe("Fetch datasets for UI presentation", () => {
         }),
       ];
 
-      await createDatasetRunItemsCh(runItems);
+      await createDatasetRunItemsGreptime(runItems);
 
       // Create observations for each trace
       const observations = traceIds.map((traceId) =>
@@ -808,7 +808,7 @@ describe("Fetch datasets for UI presentation", () => {
         }),
       );
 
-      await createObservationsCh(observations);
+      await createObservationsGreptime(observations);
 
       // Create categorical scores
       const qualityScores = [
@@ -866,7 +866,7 @@ describe("Fetch datasets for UI presentation", () => {
         }),
       ];
 
-      await createScoresCh([...qualityScores, ...sentimentScores]);
+      await createScoresGreptime([...qualityScores, ...sentimentScores]);
 
       // Test: Filter for high quality runs (excellent or good)
       const highQualityRuns = await getDatasetRunsTableMetricsCh({
@@ -1007,7 +1007,7 @@ describe("Fetch datasets for UI presentation", () => {
         }),
       ];
 
-      await createDatasetRunItemsCh(runItems);
+      await createDatasetRunItemsGreptime(runItems);
 
       // Create observations with different costs
       const observations = [
@@ -1027,7 +1027,7 @@ describe("Fetch datasets for UI presentation", () => {
         }),
       ];
 
-      await createObservationsCh(observations);
+      await createObservationsGreptime(observations);
 
       // Create high accuracy scores for both runs
       const scores = [
@@ -1055,7 +1055,7 @@ describe("Fetch datasets for UI presentation", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       // Test: Combine numeric score filter with category filter
       const recentHighAccuracyRuns = await getDatasetRunsTableMetricsCh({
@@ -1172,7 +1172,7 @@ describe("Fetch datasets for UI presentation", () => {
       dataset_id: datasetId,
     });
 
-    await createDatasetRunItemsCh([datasetRunItem1, datasetRunItem2]);
+    await createDatasetRunItemsGreptime([datasetRunItem1, datasetRunItem2]);
 
     const trace1 = createTrace({
       id: traceId1,
@@ -1184,7 +1184,7 @@ describe("Fetch datasets for UI presentation", () => {
       project_id: projectId,
     });
 
-    await createTracesCh([trace1, trace2]);
+    await createTracesGreptime([trace1, trace2]);
 
     const observation = createObservation({
       id: observationId,
@@ -1198,7 +1198,7 @@ describe("Fetch datasets for UI presentation", () => {
       trace_id: traceId1,
     });
 
-    await createObservationsCh([observation]);
+    await createObservationsGreptime([observation]);
 
     const score = createTraceScore({
       observation_id: observation2.id,
@@ -1206,7 +1206,7 @@ describe("Fetch datasets for UI presentation", () => {
       project_id: projectId,
     });
 
-    await createScoresCh([score]);
+    await createScoresGreptime([score]);
 
     const runItems = await getDatasetRunItemsByDatasetIdCh({
       projectId: projectId,
@@ -1365,7 +1365,7 @@ describe("Fetch datasets for UI presentation", () => {
           }),
         );
 
-        await createTracesCh(traces);
+        await createTracesGreptime(traces);
 
         // Create observations for some traces (mix of trace-level and observation-level linkage)
         const parentObsId = v4();
@@ -1430,7 +1430,7 @@ describe("Fetch datasets for UI presentation", () => {
           // Fourth trace: no observation (trace-level linkage only)
         ];
 
-        await createObservationsCh(observations);
+        await createObservationsGreptime(observations);
 
         // Create dataset run items - mix of trace-level and observation-level linkage
         const runItems = [
@@ -1501,7 +1501,7 @@ describe("Fetch datasets for UI presentation", () => {
           }),
         ];
 
-        await createDatasetRunItemsCh(runItems);
+        await createDatasetRunItemsGreptime(runItems);
 
         // Create scores for traces
         const scores = [
@@ -1547,7 +1547,7 @@ describe("Fetch datasets for UI presentation", () => {
           }),
         ];
 
-        await createScoresCh(scores);
+        await createScoresGreptime(scores);
       });
 
       it("should return correct data structure with no pagination", async () => {
@@ -2059,7 +2059,7 @@ describe("Fetch datasets for UI presentation", () => {
               timestamp: new Date().getTime() - (5 - index) * 1000,
             }),
         );
-        await createTracesCh(traces);
+        await createTracesGreptime(traces);
 
         // Create observations for latency calculations
         const observations = [
@@ -2076,7 +2076,7 @@ describe("Fetch datasets for UI presentation", () => {
             total_cost: (index + 1) * 10,
           }),
         );
-        await createObservationsCh(observations);
+        await createObservationsGreptime(observations);
 
         // Create dataset run items - ALL runs have ALL 5 items
         const runItems = [
@@ -2121,7 +2121,7 @@ describe("Fetch datasets for UI presentation", () => {
           ),
         ];
 
-        await createDatasetRunItemsCh(runItems);
+        await createDatasetRunItemsGreptime(runItems);
 
         // Create scores with different patterns for filtering
         const scores: any[] = [];
@@ -2201,7 +2201,7 @@ describe("Fetch datasets for UI presentation", () => {
             );
           });
         });
-        await createScoresCh(scores);
+        await createScoresGreptime(scores);
       });
 
       it("should return intersection of items across runs with different filters (intersection complexity)", async () => {

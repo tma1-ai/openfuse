@@ -1,6 +1,6 @@
 import {
   createDatasetRunItem,
-  createDatasetRunItemsCh,
+  createDatasetRunItemsGreptime,
   createManyDatasetItems,
   createOrgProjectAndApiKey,
   getDatasetRunItemsCountCh,
@@ -61,7 +61,7 @@ describe("trpc.datasets", () => {
       })),
     });
 
-    await createDatasetRunItemsCh(
+    await createDatasetRunItemsGreptime(
       datasetItemIds.map((datasetItemId, index) =>
         createDatasetRunItem({
           dataset_item_id: datasetItemId,

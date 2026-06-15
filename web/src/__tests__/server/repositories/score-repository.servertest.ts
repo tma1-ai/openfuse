@@ -1,6 +1,6 @@
 import { prisma } from "@langfuse/shared/src/db";
 import {
-  createScoresCh,
+  createScoresGreptime,
   getScoreById,
   getScoresByIds,
   getCategoricalScoresGroupedByName,
@@ -12,13 +12,13 @@ import {
   getScoresForExperiments,
   getTraceScoresForDatasetRuns,
   getScoreNames,
-  createTracesCh,
-  createObservationsCh,
+  createTracesGreptime,
+  createObservationsGreptime,
   createTrace,
   createObservation,
   createTraceScore,
   createDatasetRunItem,
-  createDatasetRunItemsCh,
+  createDatasetRunItemsGreptime,
   createDatasetRunScore,
   createSessionScore,
   createOrgProjectAndApiKey,
@@ -54,7 +54,7 @@ describe("Clickhouse Scores Repository Test", () => {
       environment: "default",
     });
 
-    await createScoresCh([score]);
+    await createScoresGreptime([score]);
 
     const result = await getScoreById({
       projectId,
@@ -114,11 +114,11 @@ describe("Clickhouse Scores Repository Test", () => {
         dataset_item_id: v4(),
         trace_id: traceId,
       });
-      await createDatasetRunItemsCh([datasetRunItem]);
+      await createDatasetRunItemsGreptime([datasetRunItem]);
 
       // Create trace
       const trace = createTrace({ id: traceId, project_id: projectId });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const scoreForRunItem = createTraceScore({
         project_id: projectId,
@@ -136,7 +136,7 @@ describe("Clickhouse Scores Repository Test", () => {
         data_type: "NUMERIC",
       });
 
-      await createScoresCh([scoreForRunItem, scoreWithoutRun]);
+      await createScoresGreptime([scoreForRunItem, scoreWithoutRun]);
 
       const result = await getScoresGroupedByNameSourceType({
         projectId,
@@ -193,7 +193,7 @@ describe("Clickhouse Scores Repository Test", () => {
         source: "API",
         data_type: "NUMERIC",
       });
-      await createScoresCh([datasetRunScore, traceScore]);
+      await createScoresGreptime([datasetRunScore, traceScore]);
 
       const result = await getScoresGroupedByNameSourceType({
         projectId,
@@ -231,7 +231,7 @@ describe("Clickhouse Scores Repository Test", () => {
         id: traceId2,
         project_id: isolatedProjectId,
       });
-      await createTracesCh([trace1, trace2]);
+      await createTracesGreptime([trace1, trace2]);
 
       // Create trace scores and other types
       const traceScore = createTraceScore({
@@ -252,7 +252,7 @@ describe("Clickhouse Scores Repository Test", () => {
         data_type: "CATEGORICAL",
       });
 
-      await createScoresCh([traceScore, sessionScore]);
+      await createScoresGreptime([traceScore, sessionScore]);
 
       // Filter for trace-level scores only
       const result = await getScoresGroupedByNameSourceType({
@@ -289,7 +289,7 @@ describe("Clickhouse Scores Repository Test", () => {
 
       // Create trace
       const trace = createTrace({ id: traceId, project_id: isolatedProjectId });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Create session scores and trace scores
       const sessionScore = createSessionScore({
@@ -309,7 +309,7 @@ describe("Clickhouse Scores Repository Test", () => {
         data_type: "NUMERIC",
       });
 
-      await createScoresCh([sessionScore, traceScore]);
+      await createScoresGreptime([sessionScore, traceScore]);
 
       // Filter for session-level scores only
       const result = await getScoresGroupedByNameSourceType({
@@ -349,7 +349,7 @@ describe("Clickhouse Scores Repository Test", () => {
 
       // Create trace
       const trace = createTrace({ id: traceId, project_id: isolatedProjectId });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Create observations
       const obs1 = createObservation({
@@ -362,7 +362,7 @@ describe("Clickhouse Scores Repository Test", () => {
         trace_id: traceId,
         project_id: isolatedProjectId,
       });
-      await createObservationsCh([obs1, obs2]);
+      await createObservationsGreptime([obs1, obs2]);
 
       // Create observation scores and trace scores
       const observationScore = createTraceScore({
@@ -383,7 +383,7 @@ describe("Clickhouse Scores Repository Test", () => {
         data_type: "NUMERIC",
       });
 
-      await createScoresCh([observationScore, traceScore]);
+      await createScoresGreptime([observationScore, traceScore]);
 
       // Filter for observation-level scores only
       const result = await getScoresGroupedByNameSourceType({
@@ -471,7 +471,7 @@ describe("Clickhouse Scores Repository Test", () => {
         }),
       );
 
-      await createScoresCh([
+      await createScoresGreptime([
         ...cappedScoreRows,
         ...prioritizedScoreRows,
         ...additionalScoreRows,
@@ -536,7 +536,7 @@ describe("Clickhouse Scores Repository Test", () => {
         name: traceName,
         tags: ["tag1", "tag2"],
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const score = createTraceScore({
         project_id: isolatedProjectId,
@@ -546,7 +546,7 @@ describe("Clickhouse Scores Repository Test", () => {
         source: "API",
         data_type: "NUMERIC",
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const result = await getScoresUiTable({
         projectId: isolatedProjectId,
@@ -583,7 +583,7 @@ describe("Clickhouse Scores Repository Test", () => {
         name: "precision",
         source: "API",
       });
-      await createScoresCh([score1, score2]);
+      await createScoresGreptime([score1, score2]);
 
       const result = await getScoresUiTable({
         projectId: isolatedProjectId,
@@ -614,7 +614,7 @@ describe("Clickhouse Scores Repository Test", () => {
         name: "test",
         metadata: { key: "value" },
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const result = await getScoresUiTable({
         projectId: isolatedProjectId,
@@ -657,7 +657,7 @@ describe("Clickhouse Scores Repository Test", () => {
         id: traceId2,
         project_id: isolatedProjectId,
       });
-      await createTracesCh([trace1, trace2]);
+      await createTracesGreptime([trace1, trace2]);
 
       const score1 = createTraceScore({
         project_id: isolatedProjectId,
@@ -676,7 +676,7 @@ describe("Clickhouse Scores Repository Test", () => {
         trace_id: v4(),
         name: "score3",
       });
-      await createScoresCh([score1, score2, score3]);
+      await createScoresGreptime([score1, score2, score3]);
 
       const result = await getScoresForTraces({
         projectId: isolatedProjectId,
@@ -693,14 +693,14 @@ describe("Clickhouse Scores Repository Test", () => {
       const traceId = v4();
 
       const trace = createTrace({ id: traceId, project_id: isolatedProjectId });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const score = createTraceScore({
         project_id: isolatedProjectId,
         trace_id: traceId,
         metadata: { key: "value" },
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const result = await getScoresForTraces({
         projectId: isolatedProjectId,
@@ -718,14 +718,14 @@ describe("Clickhouse Scores Repository Test", () => {
       const traceId = v4();
 
       const trace = createTrace({ id: traceId, project_id: isolatedProjectId });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const scoreWithMeta = createTraceScore({
         project_id: isolatedProjectId,
         trace_id: traceId,
         metadata: { key: "value" },
       });
-      await createScoresCh([scoreWithMeta]);
+      await createScoresGreptime([scoreWithMeta]);
 
       const result = await getScoresForTraces({
         projectId: isolatedProjectId,
@@ -759,7 +759,7 @@ describe("Clickhouse Scores Repository Test", () => {
       const obsId2 = v4();
 
       const trace = createTrace({ id: traceId, project_id: isolatedProjectId });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const obs1 = createObservation({
         id: obsId1,
@@ -771,7 +771,7 @@ describe("Clickhouse Scores Repository Test", () => {
         trace_id: traceId,
         project_id: isolatedProjectId,
       });
-      await createObservationsCh([obs1, obs2]);
+      await createObservationsGreptime([obs1, obs2]);
 
       const score1 = createTraceScore({
         project_id: isolatedProjectId,
@@ -785,7 +785,7 @@ describe("Clickhouse Scores Repository Test", () => {
         observation_id: obsId2,
         name: "obs_score2",
       });
-      await createScoresCh([score1, score2]);
+      await createScoresGreptime([score1, score2]);
 
       const result = await getScoresForObservations({
         projectId: isolatedProjectId,
@@ -803,14 +803,14 @@ describe("Clickhouse Scores Repository Test", () => {
       const obsId = v4();
 
       const trace = createTrace({ id: traceId, project_id: isolatedProjectId });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const obs = createObservation({
         id: obsId,
         trace_id: traceId,
         project_id: isolatedProjectId,
       });
-      await createObservationsCh([obs]);
+      await createObservationsGreptime([obs]);
 
       const score = createTraceScore({
         project_id: isolatedProjectId,
@@ -818,7 +818,7 @@ describe("Clickhouse Scores Repository Test", () => {
         observation_id: obsId,
         metadata: { key: "value" },
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const result = await getScoresForObservations({
         projectId: isolatedProjectId,
@@ -867,7 +867,7 @@ describe("Clickhouse Scores Repository Test", () => {
         session_id: v4(),
         name: "session_score3",
       });
-      await createScoresCh([score1, score2, score3]);
+      await createScoresGreptime([score1, score2, score3]);
 
       const result = await getScoresForSessions({
         projectId: isolatedProjectId,
@@ -891,7 +891,7 @@ describe("Clickhouse Scores Repository Test", () => {
         session_id: sessionId,
         metadata: { key: "value" },
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const result = await getScoresForSessions({
         projectId: isolatedProjectId,
@@ -920,7 +920,7 @@ describe("Clickhouse Scores Repository Test", () => {
         source: "ANNOTATION",
       });
 
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const result = await getScoreById({ projectId, scoreId });
       expect(result).toBeDefined();
@@ -953,7 +953,7 @@ describe("Clickhouse Scores Repository Test", () => {
         source: "ANNOTATION",
       });
 
-      await createScoresCh([numericScore, textScore]);
+      await createScoresGreptime([numericScore, textScore]);
 
       const result = await getScoresGroupedByNameSourceType({
         projectId: isolatedProjectId,
@@ -999,7 +999,7 @@ describe("Clickhouse Scores Repository Test", () => {
         source: "ANNOTATION",
       });
 
-      await createScoresCh([categoricalScore, textScore]);
+      await createScoresGreptime([categoricalScore, textScore]);
 
       const result = await getScoreStringValues(isolatedProjectId, []);
 
@@ -1027,14 +1027,14 @@ describe("Clickhouse Scores Repository Test", () => {
         project_id: isolatedProjectId,
         session_id: sessionId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const obs = createObservation({
         id: observationId,
         trace_id: traceId,
         project_id: isolatedProjectId,
       });
-      await createObservationsCh([obs]);
+      await createObservationsGreptime([obs]);
 
       const scores = [
         createTraceScore({
@@ -1100,7 +1100,7 @@ describe("Clickhouse Scores Repository Test", () => {
         }),
       ];
 
-      await createScoresCh([...scores, ...sessionScores]);
+      await createScoresGreptime([...scores, ...sessionScores]);
     });
 
     it("getScoresByIds should return all non-CORRECTION types", async () => {
@@ -1182,7 +1182,7 @@ describe("Clickhouse Scores Repository Test", () => {
           string_value: "Should be excluded",
         }),
       ];
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await getScoresForExperiments({
         projectId: isolatedProjectId,
@@ -1209,7 +1209,7 @@ describe("Clickhouse Scores Repository Test", () => {
         id: runTraceId,
         project_id: isolatedProjectId,
       });
-      await createTracesCh([runTrace]);
+      await createTracesGreptime([runTrace]);
 
       const datasetRunItem = createDatasetRunItem({
         project_id: isolatedProjectId,
@@ -1219,7 +1219,7 @@ describe("Clickhouse Scores Repository Test", () => {
         dataset_item_id: v4(),
         trace_id: runTraceId,
       });
-      await createDatasetRunItemsCh([datasetRunItem]);
+      await createDatasetRunItemsGreptime([datasetRunItem]);
 
       const scores = [
         createTraceScore({
@@ -1239,7 +1239,7 @@ describe("Clickhouse Scores Repository Test", () => {
           string_value: "Should be excluded",
         }),
       ];
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await getTraceScoresForDatasetRuns(isolatedProjectId, [
         datasetRun.id,

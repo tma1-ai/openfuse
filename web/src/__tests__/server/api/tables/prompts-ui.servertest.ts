@@ -1,6 +1,6 @@
 import {
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
 } from "@langfuse/shared/src/server";
 import {
   getObservationMetricsForPrompts,
@@ -60,7 +60,7 @@ describe("UI Prompts Table", () => {
       id: v4(),
       prompt_name: null,
     };
-    await createObservationsCh([
+    await createObservationsGreptime([
       observation,
       secondObservation,
       thirdObservation,
@@ -132,7 +132,7 @@ describe("UI Prompts Table", () => {
       prompt_name: "folder2/another-prompt", // Different folder
     };
 
-    await createObservationsCh([
+    await createObservationsGreptime([
       folderedObservation,
       secondFolderedObservation,
       thirdFolderedObservation,
@@ -205,7 +205,7 @@ describe("UI Prompts Table", () => {
       completion_start_time: Date.parse("2026-01-03T00:00:00.500Z"),
     });
 
-    await createObservationsCh([olderObservation, newerObservation]);
+    await createObservationsGreptime([olderObservation, newerObservation]);
 
     const result = await getObservationsWithPromptName(
       projectId,
@@ -277,7 +277,7 @@ describe("UI Prompts Table", () => {
       prompt_version: 2,
       cost_details: { input: 234, output: 755 },
     });
-    await createObservationsCh([
+    await createObservationsGreptime([
       observation,
       secondObservation,
       thirdObservation,
@@ -366,7 +366,7 @@ describe("UI Prompts Table", () => {
       total_cost: 3,
     });
 
-    await createObservationsCh([olderObservation, newerObservation]);
+    await createObservationsGreptime([olderObservation, newerObservation]);
 
     const result = await getObservationMetricsForPrompts(
       projectId,

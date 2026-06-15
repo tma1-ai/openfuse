@@ -10,12 +10,12 @@ import { prisma } from "@langfuse/shared/src/db";
 import {
   convertDateToClickhouseDateTime,
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   upsertObservation,
   upsertTrace,
-  createDatasetRunItemsCh,
+  createDatasetRunItemsGreptime,
   createDatasetRunItem,
   createOrgProjectAndApiKey,
   LLMCompletionError,
@@ -825,7 +825,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
       });
 
       // Create a clickhouse run item
-      await createDatasetRunItemsCh([
+      await createDatasetRunItemsGreptime([
         createDatasetRunItem({
           project_id: projectId,
           dataset_id: datasetId,
@@ -1262,7 +1262,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         id: traceId,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const jobConfiguration = await prisma.jobConfiguration.create({
         data: {
@@ -1332,7 +1332,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         timestamp: timestamp.getTime(),
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const jobConfiguration = await prisma.jobConfiguration.create({
         data: {
@@ -1399,7 +1399,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         timestamp: new Date(Date.now() + 1000 * 60 * 60 * 24).getTime(),
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       await createEvalJobs({
         sourceEventType: "trace-upsert",
@@ -1476,7 +1476,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
       });
 
       // Create a clickhouse run item that references dataset 2 and the new trace.
-      await createDatasetRunItemsCh([
+      await createDatasetRunItemsGreptime([
         createDatasetRunItem({
           project_id: projectId,
           dataset_id: datasetId2,
@@ -1616,7 +1616,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
       });
 
       // Create a clickhouse run item that references a non-existing dataset and the new trace.
-      await createDatasetRunItemsCh([
+      await createDatasetRunItemsGreptime([
         createDatasetRunItem({
           dataset_id: randomUUID(),
           dataset_item_id: datasetItemId,
@@ -3314,7 +3314,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
       });
 
       // Create clickhouse run item
-      await createDatasetRunItemsCh([
+      await createDatasetRunItemsGreptime([
         createDatasetRunItem({
           project_id: projectId,
           dataset_id: datasetId,

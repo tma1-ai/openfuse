@@ -3,11 +3,11 @@ import { env } from "../env";
 import { randomUUID } from "crypto";
 import {
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createTraceScore,
-  createScoresCh,
+  createScoresGreptime,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   getObservationById,
   getScoreById,
   getTraceById,
@@ -149,20 +149,20 @@ describe("ProjectDeletionProcessingJob", () => {
 
     const baseId = randomUUID();
     await Promise.all([
-      createTracesCh([
+      createTracesGreptime([
         createTrace({
           id: `${baseId}-trace`,
           project_id: projectId,
         }),
       ]),
-      createObservationsCh([
+      createObservationsGreptime([
         createObservation({
           id: `${baseId}-observation`,
           trace_id: `${baseId}-trace`,
           project_id: projectId,
         }),
       ]),
-      createScoresCh([
+      createScoresGreptime([
         createTraceScore({
           id: `${baseId}-score`,
           trace_id: `${baseId}-trace`,
@@ -305,7 +305,7 @@ describe("ProjectDeletionProcessingJob", () => {
       const projectId = randomUUID();
       const traceId = randomUUID();
 
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: traceId, project_id: projectId }),
       ]);
 
@@ -324,7 +324,7 @@ describe("ProjectDeletionProcessingJob", () => {
       const traceId = randomUUID();
       const observationId = randomUUID();
 
-      await createObservationsCh([
+      await createObservationsGreptime([
         createObservation({
           id: observationId,
           trace_id: traceId,
@@ -349,7 +349,7 @@ describe("ProjectDeletionProcessingJob", () => {
       const traceId = randomUUID();
       const scoreId = randomUUID();
 
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           trace_id: traceId,

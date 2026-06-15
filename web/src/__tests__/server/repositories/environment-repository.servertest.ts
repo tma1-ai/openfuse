@@ -1,5 +1,5 @@
 import {
-  createTracesCh,
+  createTracesGreptime,
   createTrace,
   getEnvironmentsForProject,
 } from "@langfuse/shared/src/server";
@@ -17,7 +17,7 @@ describe("Clickhouse Project Repository Test", () => {
     const projectId = randomUUID();
     const environmentId1 = randomUUID();
     const environmentId2 = randomUUID();
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({
         project_id: projectId,
         environment: environmentId1,

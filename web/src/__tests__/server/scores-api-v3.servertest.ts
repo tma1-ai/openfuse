@@ -2,7 +2,7 @@ import {
   createTraceScore,
   createSessionScore,
   createDatasetRunScore,
-  createScoresCh,
+  createScoresGreptime,
   createOrgProjectAndApiKey,
 } from "@langfuse/shared/src/server";
 import { transformBooleanValueForFilter } from "@langfuse/shared/src/server";
@@ -28,7 +28,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scores = Array.from({ length: 3 }, () =>
         createTraceScore({ project_id: projectId }),
       );
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const res = await makeZodVerifiedAPICall(
         GetScoresResponseV3,
@@ -48,7 +48,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scores = Array.from({ length: 5 }, () =>
         createTraceScore({ project_id: projectId }),
       );
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const res = await makeZodVerifiedAPICall(
         GetScoresResponseV3,
@@ -105,7 +105,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("NUMERIC score has numeric value", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -130,7 +130,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("BOOLEAN score has boolean value", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -156,7 +156,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("CATEGORICAL score has string value", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -181,7 +181,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("CORRECTION score has string value from longStringValue", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -206,7 +206,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("TEXT score has string value", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -232,7 +232,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("tenant isolation: project A cannot see project B scores", async () => {
       const projectB = await createOrgProjectAndApiKey();
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({ id: scoreId, project_id: projectB.projectId }),
       ]);
 
@@ -263,7 +263,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scores = Array.from({ length: 3 }, () =>
         createTraceScore({ project_id: projectId }),
       );
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       // page 1: limit=2, expect cursor
       const page1 = await makeZodVerifiedAPICall(
@@ -297,7 +297,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scores = Array.from({ length: count }, () =>
         createTraceScore({ project_id: project.projectId }),
       );
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
       const scoreIds = new Set(scores.map((s) => s.id));
 
       const seenIds = new Set<string>();
@@ -377,7 +377,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scoresA = Array.from({ length: 3 }, () =>
         createTraceScore({ project_id: projectA.projectId }),
       );
-      await createScoresCh(scoresA);
+      await createScoresGreptime(scoresA);
 
       const page1A = await makeZodVerifiedAPICall(
         GetScoresResponseV3,
@@ -393,7 +393,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scoresB = Array.from({ length: 3 }, () =>
         createTraceScore({ project_id: projectB.projectId }),
       );
-      await createScoresCh(scoresB);
+      await createScoresGreptime(scoresB);
 
       const replayRes = await makeZodVerifiedAPICall(
         GetScoresResponseV3,
@@ -415,7 +415,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scores = Array.from({ length: n }, () =>
         createTraceScore({ project_id: project.projectId }),
       );
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const res = await makeZodVerifiedAPICall(
         GetScoresResponseV3,
@@ -439,7 +439,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
           metadata: { idx: String(i) },
         }),
       );
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const seenIds = new Set<string>();
       let cursor: string | undefined;
@@ -473,7 +473,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scores = Array.from({ length: 3 }, () =>
         createTraceScore({ project_id: project.projectId }),
       );
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
       const scoreIds = new Set(scores.map((s) => s.id));
 
       const seenIds = new Set<string>();
@@ -516,7 +516,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("fields omitted → only core keys present", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -545,7 +545,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("fields=core,details → details present", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -575,7 +575,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("fields=core,annotation → annotation present", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -607,7 +607,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       // createTraceScore defaults source to "API"; author_user_id and queue_id
       // are left at their column defaults so the annotation group should be
       // present but with null fields (matching the Fern doc contract).
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({ id: scoreId, project_id: projectId }),
       ]);
 
@@ -628,7 +628,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("fields=core,subject → trace score has kind=trace", async () => {
       const scoreId = v4();
       const traceId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -655,7 +655,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("fields=core,subject → session score has kind=session", async () => {
       const scoreId = v4();
       const sessionId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createSessionScore({
           id: scoreId,
           project_id: projectId,
@@ -680,7 +680,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("fields=core,subject → dataset run score has kind=experiment", async () => {
       const scoreId = v4();
       const datasetRunId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createDatasetRunScore({
           id: scoreId,
           project_id: projectId,
@@ -706,7 +706,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scoreId = v4();
       const observationId = v4();
       const traceId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -752,7 +752,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("fields=core passed explicitly behaves same as omitted", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({ id: scoreId, project_id: projectId }),
       ]);
 
@@ -778,7 +778,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("fields=core,details,subject,annotation → all groups present simultaneously", async () => {
       const scoreId = v4();
       const traceId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -935,7 +935,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("id filter (single) returns only matching score", async () => {
       const scoreId = v4();
       const otherId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({ id: scoreId, project_id: projectId }),
         createTraceScore({ id: otherId, project_id: projectId }),
       ]);
@@ -956,7 +956,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const id1 = v4();
       const id2 = v4();
       const id3 = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({ id: id1, project_id: projectId }),
         createTraceScore({ id: id2, project_id: projectId }),
         createTraceScore({ id: id3, project_id: projectId }),
@@ -980,7 +980,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("name filter returns only scores with matching name", async () => {
       const scoreName = `filter-test-name-${v4()}`;
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -1004,7 +1004,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("source filter returns only scores with matching source", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -1029,7 +1029,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("dataType filter returns only scores of that type", async () => {
       const numericId = v4();
       const boolId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: numericId,
           project_id: projectId,
@@ -1060,7 +1060,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("traceId filter returns only scores for that trace", async () => {
       const traceId = v4();
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -1085,7 +1085,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const traceId = v4();
       const observationId = v4();
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -1111,7 +1111,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const traceId = v4();
       const observationId = v4();
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -1142,7 +1142,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("sessionId filter returns only session scores", async () => {
       const sessionId = v4();
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createSessionScore({
           id: scoreId,
           project_id: projectId,
@@ -1166,7 +1166,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("experimentId filter returns only dataset run scores", async () => {
       const datasetRunId = v4();
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createDatasetRunScore({
           id: scoreId,
           project_id: projectId,
@@ -1190,7 +1190,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("value=0.85 dataType=NUMERIC matches numeric column", async () => {
       const scoreId = v4();
       const otherId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -1222,7 +1222,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const goodId = v4();
       const badId = v4();
       const otherId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: goodId,
           project_id: projectId,
@@ -1264,7 +1264,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("value=true dataType=BOOLEAN matches numeric column = 1", async () => {
       const trueId = v4();
       const falseId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: trueId,
           project_id: projectId,
@@ -1298,7 +1298,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("value=true,false dataType=BOOLEAN → 200, returns all boolean scores", async () => {
       const trueId = v4();
       const falseId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: trueId,
           project_id: projectId,
@@ -1332,7 +1332,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("valueMin/valueMax filter matches only scores in range", async () => {
       const inRangeId = v4();
       const outOfRangeId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: inRangeId,
           project_id: projectId,
@@ -1447,7 +1447,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const project = await createOrgProjectAndApiKey();
       const negativeId = v4();
       const positiveId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: negativeId,
           project_id: project.projectId,
@@ -1479,7 +1479,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const project = await createOrgProjectAndApiKey();
       const negativeId = v4();
       const positiveId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: negativeId,
           project_id: project.projectId,
@@ -1510,7 +1510,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
     it("environment filter returns only scores with matching environment", async () => {
       const scoreId = v4();
       const controlId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -1545,7 +1545,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scoreId = v4();
       const controlId = v4();
       const configId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -1576,7 +1576,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scoreId = v4();
       const controlId = v4();
       const queueId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -1607,7 +1607,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const scoreId = v4();
       const controlId = v4();
       const userId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,
@@ -1638,7 +1638,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const oldId = v4();
       const newId = v4();
       const cutoff = new Date("2025-01-01T00:00:00Z");
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: oldId,
           project_id: projectId,
@@ -1673,7 +1673,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
       const onlySourceId = v4();
       const onlyDataTypeId = v4();
       const sharedTs = new Date("2025-04-01T00:00:00Z").getTime();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: matchId,
           project_id: projectId,
@@ -1752,7 +1752,7 @@ describe("/api/public/v3/scores API Endpoint", () => {
 
     it("regression: limit and fields still work alongside filters", async () => {
       const scoreId = v4();
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: scoreId,
           project_id: projectId,

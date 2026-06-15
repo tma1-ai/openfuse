@@ -29,12 +29,12 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import {
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createOrgProjectAndApiKey,
   getDatasetRunItemsByDatasetIdCh,
-  createDatasetRunItemsCh,
+  createDatasetRunItemsGreptime,
   createDatasetRunItem,
   getDatasetItemById,
   createDatasetItemFilterState,
@@ -78,8 +78,8 @@ describe("/api/public/datasets and /api/public/dataset-items API Endpoints", () 
       version: "2.0.0",
     });
 
-    await createTracesCh([trace]);
-    await createObservationsCh([observation]);
+    await createTracesGreptime([trace]);
+    await createObservationsGreptime([observation]);
   });
 
   it("should create and get a dataset (v1), include special characters", async () => {
@@ -946,8 +946,8 @@ describe("/api/public/datasets and /api/public/dataset-items API Endpoints", () 
       version: "2.0.0",
     });
 
-    await createTracesCh([trace]);
-    await createObservationsCh([observation]);
+    await createTracesGreptime([trace]);
+    await createObservationsGreptime([observation]);
 
     const runItemObservation = await makeZodVerifiedAPICall(
       PostDatasetRunItemsV1Response,
@@ -1126,8 +1126,8 @@ describe("/api/public/datasets and /api/public/dataset-items API Endpoints", () 
       version: "2.0.0",
     });
 
-    await createTracesCh([trace]);
-    await createObservationsCh([observation]);
+    await createTracesGreptime([trace]);
+    await createObservationsGreptime([observation]);
 
     await makeZodVerifiedAPICall(
       PostDatasetRunItemsV1Response,
@@ -1509,7 +1509,7 @@ describe("/api/public/datasets and /api/public/dataset-items API Endpoints", () 
     );
     expect(deleteNonExistent.status).toBe(404);
 
-    await createDatasetRunItemsCh([
+    await createDatasetRunItemsGreptime([
       createDatasetRunItem({
         dataset_item_id: itemId,
         trace_id: traceId,

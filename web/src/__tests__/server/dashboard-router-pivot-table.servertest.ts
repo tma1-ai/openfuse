@@ -19,9 +19,9 @@
 import { randomUUID } from "crypto";
 import {
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
 } from "@langfuse/shared/src/server";
 import { QueryBuilder, executeQuery } from "@langfuse/shared/query/server";
 import { type QueryType } from "@langfuse/shared/query";
@@ -95,7 +95,7 @@ describe("Dashboard Router - Pivot Table Integration", () => {
     ];
 
     // Insert traces into ClickHouse
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Create observations with different models for each trace
     const observations = [];
@@ -155,7 +155,7 @@ describe("Dashboard Router - Pivot Table Integration", () => {
     }
 
     // Insert observations into ClickHouse
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     // Calculate test data statistics for verification
     testDataStats.totalTraces = traces.length;

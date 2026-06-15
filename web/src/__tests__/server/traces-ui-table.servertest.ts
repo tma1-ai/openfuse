@@ -1,7 +1,7 @@
 import { v4 } from "uuid";
 import {
-  createObservationsCh,
-  createTracesCh,
+  createObservationsGreptime,
+  createTracesGreptime,
 } from "@langfuse/shared/src/server";
 import { createObservation, createTrace } from "@langfuse/shared/src/server";
 import {
@@ -18,7 +18,7 @@ describe("Traces table API test", () => {
     const trace_id = v4();
 
     const trace = createTrace({ id: trace_id, project_id });
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     const tableRows = await getTracesTable({
       projectId: project_id,
@@ -59,7 +59,7 @@ describe("Traces table API test", () => {
       timestamp: new Date().getTime() - 5000,
       event_ts: new Date().getTime() + 5000,
     });
-    await createTracesCh([trace1, trace2]);
+    await createTracesGreptime([trace1, trace2]);
 
     const tableRows = await getTracesTable({
       projectId: project_id,
@@ -80,11 +80,11 @@ describe("Traces table API test", () => {
     const trace_id = v4();
 
     const trace = createTrace({ id: trace_id, project_id });
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     const obs1 = createObservation({ trace_id, project_id });
     const obs2 = createObservation({ trace_id, project_id });
-    await createObservationsCh([obs1, obs2]);
+    await createObservationsGreptime([obs1, obs2]);
 
     const tableRows = await getTracesTable({
       projectId: project_id,
@@ -184,7 +184,7 @@ describe("Traces table API test", () => {
         project_id,
         ...testConfig.traceInput,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       expect(testConfig.observationInput.length).not.toBeGreaterThan(2);
 
@@ -202,7 +202,7 @@ describe("Traces table API test", () => {
           ? testConfig.observationInput[1]
           : {}),
       });
-      await createObservationsCh([obs1, obs2]);
+      await createObservationsGreptime([obs1, obs2]);
 
       const tableRows = await getTracesTable({
         projectId: project_id,

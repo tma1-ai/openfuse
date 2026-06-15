@@ -31,11 +31,11 @@ import { v4 as uuidv4 } from "uuid";
 import { prisma } from "@langfuse/shared/src/db";
 import {
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createDatasetRunItem,
-  createDatasetRunItemsCh,
+  createDatasetRunItemsGreptime,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
 } from "@langfuse/shared/src/server";
 import {
   createMcpTestSetup,
@@ -473,7 +473,7 @@ describe("MCP public API tools", () => {
     const traceId = uuidv4();
     const observationId = uuidv4();
 
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({
         id: traceId,
         name: "mcp-dataset-trace",
@@ -481,7 +481,7 @@ describe("MCP public API tools", () => {
         project_id: projectId,
       }),
     ]);
-    await createObservationsCh([
+    await createObservationsGreptime([
       createObservation({
         id: observationId,
         trace_id: traceId,
@@ -642,7 +642,7 @@ describe("MCP public API tools", () => {
       action: "create",
     });
 
-    await createDatasetRunItemsCh([
+    await createDatasetRunItemsGreptime([
       createDatasetRunItem({
         id: runItem.id,
         project_id: projectId,
@@ -715,13 +715,13 @@ describe("MCP public API tools", () => {
     const { projectId: otherProjectId } = await createMcpTestSetup();
     const traceId = uuidv4();
 
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({
         id: traceId,
         project_id: otherProjectId,
       }),
     ]);
-    await createObservationsCh([
+    await createObservationsGreptime([
       createObservation({
         id: uuidv4(),
         trace_id: traceId,

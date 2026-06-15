@@ -2,7 +2,7 @@ import { expect, describe, it } from "vitest";
 import {
   createOrgProjectAndApiKey,
   createTraceScore,
-  createScoresCh,
+  createScoresGreptime,
   getScoresByIds,
 } from "@langfuse/shared/src/server";
 import { processClickhouseScoreDelete } from "../features/scores/processClickhouseScoreDelete";
@@ -13,7 +13,7 @@ describe("score deletion", () => {
     const { projectId } = await createOrgProjectAndApiKey();
 
     const score = createTraceScore({ project_id: projectId });
-    await createScoresCh([score]);
+    await createScoresGreptime([score]);
 
     // When
     await processClickhouseScoreDelete(projectId, [score.id]);
