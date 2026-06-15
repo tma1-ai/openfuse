@@ -2,21 +2,18 @@ import { v4 } from "uuid";
 import { prisma } from "@langfuse/shared/src/db";
 import {
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createOrgProjectAndApiKey,
-  createScoresCh,
+  createScoresGreptime,
   createSessionScore,
-  createTracesCh,
+  createTracesGreptime,
   getSessionsWithMetrics,
   getSessionsWithMetricsFromEvents,
   getSessionMetricsFromEvents,
   getSessionsTable,
   getSessionsTableFromEvents,
-  createEvent,
-  createEventsCh,
   type TraceRecordInsertType,
   type ObservationRecordInsertType,
-  type EventRecordInsertType,
 } from "@langfuse/shared/src/server";
 import { createTrace } from "@langfuse/shared/src/server";
 import { type FilterState } from "@langfuse/shared";
@@ -50,109 +47,6 @@ async function sessionsWithMetrics(props: {
 }
 
 /**
- * Derive v2 events from v1 traces + observations.
- * Reused from dashboard-v1-v2-consistency.servertest.ts.
- *
- * One root event per trace (parent_span_id = ''), plus one event per
- * observation with trace-level fields denormalized.
- * Timestamps are converted from ms to µs (* 1000).
- */
-function buildMatchingEvents(
-  traces: TraceRecordInsertType[],
-  observations: ObservationRecordInsertType[],
-): EventRecordInsertType[] {
-  const traceMap = new Map(traces.map((t) => [t.id, t]));
-  const events: EventRecordInsertType[] = [];
-
-  // Root events — one per trace.
-  for (const t of traces) {
-    events.push(
-      createEvent({
-        id: `t-${t.id}`,
-        span_id: `t-${t.id}`,
-        trace_id: t.id,
-        project_id: t.project_id,
-        parent_span_id: "",
-        name: t.name ?? "",
-        type: "SPAN",
-        environment: t.environment,
-        trace_name: t.name ?? "",
-        user_id: t.user_id ?? "",
-        session_id: t.session_id ?? null,
-        tags: t.tags ?? [],
-        release: t.release ?? null,
-        version: t.version ?? null,
-        public: t.public,
-        bookmarked: t.bookmarked,
-        input: t.input ?? null,
-        output: t.output ?? null,
-        metadata: t.metadata ?? {},
-        start_time: t.timestamp * 1000,
-        end_time: null,
-        cost_details: {},
-        provided_cost_details: {},
-        usage_details: {},
-        provided_usage_details: {},
-        created_at: t.created_at * 1000,
-        updated_at: t.updated_at * 1000,
-        event_ts: t.event_ts * 1000,
-      }),
-    );
-  }
-
-  // Observation events.
-  for (const o of observations) {
-    const traceId = o.trace_id!;
-    const t = traceMap.get(traceId)!;
-    events.push(
-      createEvent({
-        id: o.id,
-        span_id: o.id,
-        trace_id: traceId,
-        project_id: o.project_id,
-        parent_span_id: o.parent_observation_id ?? `t-${traceId}`,
-        name: o.name ?? "",
-        type: o.type as string,
-        environment: o.environment,
-        trace_name: t.name ?? "",
-        user_id: t.user_id ?? "",
-        session_id: t.session_id ?? undefined,
-        tags: t.tags ?? [],
-        release: t.release ?? null,
-        version: o.version ?? null,
-        level: o.level ?? "DEFAULT",
-        status_message: o.status_message ?? null,
-        provided_model_name: o.provided_model_name ?? null,
-        model_parameters: o.model_parameters ?? "{}",
-        input: o.input ?? null,
-        output: o.output ?? null,
-        metadata: { ...(t.metadata ?? {}), ...(o.metadata ?? {}) },
-        provided_usage_details: o.provided_usage_details ?? {},
-        usage_details: o.usage_details ?? {},
-        provided_cost_details: o.provided_cost_details ?? {},
-        cost_details: o.cost_details ?? {},
-        prompt_id: o.prompt_id ?? null,
-        prompt_name: o.prompt_name ?? null,
-        prompt_version: o.prompt_version ? String(o.prompt_version) : null,
-        tool_definitions: o.tool_definitions ?? {},
-        tool_calls: o.tool_calls ?? [],
-        tool_call_names: o.tool_call_names ?? [],
-        start_time: o.start_time * 1000,
-        end_time: o.end_time ? o.end_time * 1000 : null,
-        completion_start_time: o.completion_start_time
-          ? o.completion_start_time * 1000
-          : null,
-        created_at: o.created_at * 1000,
-        updated_at: o.updated_at * 1000,
-        event_ts: o.event_ts * 1000,
-      }),
-    );
-  }
-
-  return events;
-}
-
-/**
  * Seed both legacy tables (traces + observations) and events table.
  * This ensures the same test data is available for both code paths.
  */
@@ -160,13 +54,8 @@ async function seedSessionData(
   traces: TraceRecordInsertType[],
   observations?: ObservationRecordInsertType[],
 ) {
-  await createTracesCh(traces);
-  if (observations?.length) await createObservationsCh(observations);
-
-  if (isEventsPath) {
-    const events = buildMatchingEvents(traces, observations ?? []);
-    await createEventsCh(events);
-  }
+  await createTracesGreptime(traces);
+  if (observations?.length) await createObservationsGreptime(observations);
 }
 
 describe("trpc.sessions", () => {
@@ -616,7 +505,7 @@ describe("trpc.sessions", () => {
       value: 1,
       data_type: "NUMERIC",
     });
-    await createScoresCh([score]);
+    await createScoresGreptime([score]);
 
     const tableRows = await sessionsTable({
       projectId: project_id,
@@ -662,9 +551,8 @@ maybeEventsTable("parity: sessions metrics from events vs legacy", () => {
     ]);
 
     // Seed legacy path (sessions materialized view) and events table in parallel
-    await createTracesCh(traces);
-    await createObservationsCh(observations);
-    await createEventsCh(buildMatchingEvents(traces, observations));
+    await createTracesGreptime(traces);
+    await createObservationsGreptime(observations);
 
     const filter: FilterState = [];
 
@@ -729,8 +617,7 @@ maybeEventsTable("parity: sessions metrics from events vs legacy", () => {
       createTrace({ session_id: otherId, project_id: projectId }),
     ];
 
-    await createTracesCh(traces);
-    await createEventsCh(buildMatchingEvents(traces, []));
+    await createTracesGreptime(traces);
 
     const filter: FilterState = [
       {
