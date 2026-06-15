@@ -93,12 +93,9 @@ type AllScoresReturnType = Omit<ScoreDomain, "metadata"> & {
   hasMetadata: boolean;
 };
 
-type AllScoresFromEventsReturnType = Omit<ScoreDomain, "metadata"> & {
-  jobConfigurationId: string | null;
-  authorUserImage: string | null;
-  authorUserName: string | null;
-  hasMetadata: boolean;
-};
+// The events read path now collapses onto the GreptimeDB scores projection,
+// which (like the v1 reader) returns the trace-denormalised fields.
+type AllScoresFromEventsReturnType = AllScoresReturnType;
 
 export const scoresRouter = createTRPCRouter({
   /**
