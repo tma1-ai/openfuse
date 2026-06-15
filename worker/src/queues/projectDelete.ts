@@ -1,6 +1,5 @@
 import { Job, Processor } from "bullmq";
 import {
-  deleteEventsByProjectId,
   deleteMediaLinkRowsByProjectId,
   deleteMediaFiles,
   deleteObservationsByProjectId,
@@ -17,7 +16,7 @@ import {
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
 import { Prisma } from "@prisma/client";
-import { env, v4WritesToEventsTable } from "../env";
+import { env } from "../env";
 
 export const projectDeleteProcessor: Processor = async (
   job: Job<TQueueJobTypes[QueueName.ProjectDelete]>,
@@ -64,9 +63,6 @@ export const projectDeleteProcessor: Processor = async (
     deleteTracesByProjectId(projectId),
     deleteObservationsByProjectId(projectId),
     deleteScoresByProjectId(projectId),
-    v4WritesToEventsTable(env)
-      ? deleteEventsByProjectId(projectId)
-      : Promise.resolve(),
   ]);
 
   // Trigger async delete of dataset run items

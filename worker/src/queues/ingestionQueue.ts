@@ -21,7 +21,7 @@ import {
 import { chunk } from "lodash";
 import { prisma } from "@langfuse/shared/src/db";
 
-import { env, v4WritesToEventsTable } from "../env";
+import { env } from "../env";
 import { IngestionService } from "../services/IngestionService";
 import { GreptimeWriter } from "../services/GreptimeWriter";
 
@@ -226,12 +226,6 @@ export const ingestionQueueProcessorBuilder = (
       if (!redis) throw new Error("Redis not available");
       if (!prisma) throw new Error("Prisma not available");
 
-      // Determine whether to forward to staging events table
-      // Use explicit flag from job payload if provided, otherwise fall back to env flags
-      const forwardToEventsTable =
-        job.data.payload.data.forwardToEventsTable ??
-        v4WritesToEventsTable(env);
-
       await new IngestionService(
         redis,
         prisma,
@@ -242,7 +236,6 @@ export const ingestionQueueProcessorBuilder = (
         entityId,
         new Date(minIngestedAtMs),
         events,
-        forwardToEventsTable,
         deleted,
       );
 

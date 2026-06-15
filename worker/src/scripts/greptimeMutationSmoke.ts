@@ -88,7 +88,6 @@ const rebuild = async (entityId: string, createdAt: Date) => {
     entityId,
     createdAt,
     events as never,
-    /* forwardToEventsTable */ false,
   );
   await GreptimeWriter.getInstance().flushAll(true);
   await sleep(700);

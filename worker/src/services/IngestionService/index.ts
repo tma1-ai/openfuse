@@ -143,7 +143,6 @@ export class IngestionService {
     eventBodyId: string,
     createdAtTimestamp: Date,
     events: IngestionEventType[],
-    forwardToEventsTable: boolean,
     // True when the entity was deleted (raw_events tombstone seen). The merged projection is marked
     // is_deleted=true so a replay rebuilds it soft-deleted instead of resurrecting live data.
     deleted: boolean = false,

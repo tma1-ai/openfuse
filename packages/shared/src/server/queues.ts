@@ -29,7 +29,6 @@ export const IngestionEvent = z.object({
     batchId: z.string().optional(),
     fileKey: z.string().optional(),
     skipS3List: z.boolean().optional(),
-    forwardToEventsTable: z.boolean().optional(),
   }),
   authCheck: z.object({
     validKey: z.literal(true),

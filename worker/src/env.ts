@@ -418,17 +418,6 @@ const EnvSchema = z.object({
     .positive()
     .default(7200), // 2 hours to handle worst-case deletions
 
-  // V4 migration flags. See LFE-9778.
-  LANGFUSE_MIGRATION_V4_WRITE_MODE: z
-    .enum(["legacy", "dual", "events_only"])
-    .default("legacy"),
-  LANGFUSE_MIGRATION_V4_NATIVE_OTEL_BEHAVIOUR: z
-    .enum(["dual_write", "direct"])
-    .default("dual_write"),
-  LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN: z
-    .enum(["true", "false"])
-    .default("false"),
-
   LANGFUSE_EXPERIMENT_EVENT_PROPAGATION_PARTITION_DELAY_MINUTES: z.coerce
     .number()
     .positive()
@@ -465,52 +454,8 @@ const EnvSchema = z.object({
 
 type ParsedEnv = z.infer<typeof EnvSchema>;
 
-// V4 migration flag helpers.
-export const v4WritesToEventsTable = (envValue: ParsedEnv): boolean =>
-  envValue.LANGFUSE_MIGRATION_V4_WRITE_MODE !== "legacy";
-
-export const v4WritesToLegacyTables = (envValue: ParsedEnv): boolean =>
-  envValue.LANGFUSE_MIGRATION_V4_WRITE_MODE !== "events_only";
-
-export const v4ForceDirectOtelWrite = (envValue: ParsedEnv): boolean =>
-  envValue.LANGFUSE_MIGRATION_V4_NATIVE_OTEL_BEHAVIOUR === "direct";
-
-export const v4AllowPreviewOptIn = (envValue: ParsedEnv): boolean =>
-  envValue.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true";
-
-const validateV4Flags = (parsed: ParsedEnv): void => {
-  const mode = parsed.LANGFUSE_MIGRATION_V4_WRITE_MODE;
-  const otel = parsed.LANGFUSE_MIGRATION_V4_NATIVE_OTEL_BEHAVIOUR;
-
-  // Hard errors: combinations that would silently lose data.
-  if (mode === "legacy" && otel === "direct") {
-    throw new Error(
-      "Invalid V4 config: LANGFUSE_MIGRATION_V4_NATIVE_OTEL_BEHAVIOUR=direct " +
-        "requires LANGFUSE_MIGRATION_V4_WRITE_MODE in {dual, events_only}. " +
-        "Direct OTel writes target events_full, which is not read in legacy mode.",
-    );
-  }
-  if (mode === "events_only" && otel === "dual_write") {
-    throw new Error(
-      "Invalid V4 config: LANGFUSE_MIGRATION_V4_NATIVE_OTEL_BEHAVIOUR=dual_write " +
-        "is incoherent with LANGFUSE_MIGRATION_V4_WRITE_MODE=events_only " +
-        "(would dual-write to legacy tables the deployment otherwise skips).",
-    );
-  }
-  if (mode === "events_only" && !v4AllowPreviewOptIn(parsed)) {
-    throw new Error(
-      "Invalid V4 config: LANGFUSE_MIGRATION_V4_WRITE_MODE=events_only requires " +
-        "LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN=true. Web reads are gated " +
-        "solely on the opt-in flag; without it they target the legacy " +
-        "traces/observations tables that events_only mode no longer writes to.",
-    );
-  }
-};
-
 const parseEnv = (): ParsedEnv => {
-  const parsed = EnvSchema.parse(removeEmptyEnvVariables(process.env));
-  validateV4Flags(parsed);
-  return parsed;
+  return EnvSchema.parse(removeEmptyEnvVariables(process.env));
 };
 
 export const env: ParsedEnv =

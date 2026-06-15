@@ -108,7 +108,6 @@ export function getInternalTracingHandler(traceSinkParams: TraceSinkParams): {
           },
           {
             isLangfuseInternal: true,
-            forwardToEventsTable: eventsWriter ? false : undefined, // Do not dual write when we already direct event write
           },
         );
       } catch (processingError) {

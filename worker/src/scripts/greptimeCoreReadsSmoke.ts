@@ -61,56 +61,35 @@ async function main() {
   });
 
   // T1 in A — full payload.
-  await svc.mergeAndWrite(
-    "trace",
-    A,
-    T1,
-    created,
-    [
-      // No sessionId: the session upsert needs a real Postgres project; this smoke seeds
-      // GreptimeDB only. sessionId column mapping is covered by the converter unit test.
-      traceEvent(T1, A, {
-        name: "alpha",
-        timestamp: TS,
-        userId: "user-1",
-        metadata: { env: "prod", shared: "x" },
-        tags: ["a", "b"],
-        input: "hello",
-        output: "world",
-      }),
-    ] as never,
-    false,
-  );
+  await svc.mergeAndWrite("trace", A, T1, created, [
+    // No sessionId: the session upsert needs a real Postgres project; this smoke seeds
+    // GreptimeDB only. sessionId column mapping is covered by the converter unit test.
+    traceEvent(T1, A, {
+      name: "alpha",
+      timestamp: TS,
+      userId: "user-1",
+      metadata: { env: "prod", shared: "x" },
+      tags: ["a", "b"],
+      input: "hello",
+      output: "world",
+    }),
+  ] as never);
 
   // Same trace id in A and B — different metadata; reads must not leak across projects.
-  await svc.mergeAndWrite(
-    "trace",
-    A,
-    SHARED_TRACE,
-    created,
-    [
-      traceEvent(SHARED_TRACE, A, {
-        name: "shared-A",
-        timestamp: TS,
-        metadata: { tenant: "A" },
-      }),
-    ] as never,
-    false,
-  );
-  await svc.mergeAndWrite(
-    "trace",
-    B,
-    SHARED_TRACE,
-    created,
-    [
-      traceEvent(SHARED_TRACE, B, {
-        name: "shared-B",
-        timestamp: TS,
-        metadata: { tenant: "B" },
-      }),
-    ] as never,
-    false,
-  );
+  await svc.mergeAndWrite("trace", A, SHARED_TRACE, created, [
+    traceEvent(SHARED_TRACE, A, {
+      name: "shared-A",
+      timestamp: TS,
+      metadata: { tenant: "A" },
+    }),
+  ] as never);
+  await svc.mergeAndWrite("trace", B, SHARED_TRACE, created, [
+    traceEvent(SHARED_TRACE, B, {
+      name: "shared-B",
+      timestamp: TS,
+      metadata: { tenant: "B" },
+    }),
+  ] as never);
 
   // T2 deleted — must be excluded from reads.
   await svc.mergeAndWrite(
@@ -119,87 +98,65 @@ async function main() {
     T2_DELETED,
     created,
     [traceEvent(T2_DELETED, A, { name: "ghost", timestamp: TS_TIE })] as never,
-    false,
     /* deleted */ true,
   );
 
   // Observation under T1.
-  await svc.mergeAndWrite(
-    "observation",
-    A,
-    O1,
-    created,
-    [
-      {
-        id: `evt-${O1}`,
-        type: "generation-create",
-        timestamp: TS,
-        body: {
-          id: O1,
-          traceId: T1,
-          name: "gen-1",
-          type: "GENERATION",
-          startTime: TS,
-          endTime: "2026-06-10T08:00:03.000Z",
-          model: "gpt-x",
-          environment: "default",
-          usageDetails: { input: 10, output: 20, total: 30, custom_key: 7 },
-          costDetails: { input: 0.1, output: 0.2, total: 0.3 },
-          input: "q",
-          output: "a",
-        },
+  await svc.mergeAndWrite("observation", A, O1, created, [
+    {
+      id: `evt-${O1}`,
+      type: "generation-create",
+      timestamp: TS,
+      body: {
+        id: O1,
+        traceId: T1,
+        name: "gen-1",
+        type: "GENERATION",
+        startTime: TS,
+        endTime: "2026-06-10T08:00:03.000Z",
+        model: "gpt-x",
+        environment: "default",
+        usageDetails: { input: 10, output: 20, total: 30, custom_key: 7 },
+        costDetails: { input: 0.1, output: 0.2, total: 0.3 },
+        input: "q",
+        output: "a",
       },
-    ] as never,
-    false,
-  );
+    },
+  ] as never);
 
   // Scores under T1: numeric + categorical.
-  await svc.mergeAndWrite(
-    "score",
-    A,
-    S_NUM,
-    created,
-    [
-      {
-        id: `evt-${S_NUM}`,
-        type: "score-create",
-        timestamp: TS,
-        body: {
-          id: S_NUM,
-          traceId: T1,
-          name: "accuracy",
-          value: 0.9,
-          dataType: "NUMERIC",
-          source: "EVAL",
-          environment: "default",
-        },
+  await svc.mergeAndWrite("score", A, S_NUM, created, [
+    {
+      id: `evt-${S_NUM}`,
+      type: "score-create",
+      timestamp: TS,
+      body: {
+        id: S_NUM,
+        traceId: T1,
+        name: "accuracy",
+        value: 0.9,
+        dataType: "NUMERIC",
+        source: "EVAL",
+        environment: "default",
       },
-    ] as never,
-    false,
-  );
-  await svc.mergeAndWrite(
-    "score",
-    A,
-    S_CAT,
-    created,
-    [
-      {
-        id: `evt-${S_CAT}`,
-        type: "score-create",
-        timestamp: TS,
-        body: {
-          id: S_CAT,
-          traceId: T1,
-          name: "sentiment",
-          value: "good",
-          dataType: "CATEGORICAL",
-          source: "API",
-          environment: "default",
-        },
+    },
+  ] as never);
+  await svc.mergeAndWrite("score", A, S_CAT, created, [
+    {
+      id: `evt-${S_CAT}`,
+      type: "score-create",
+      timestamp: TS,
+      body: {
+        id: S_CAT,
+        traceId: T1,
+        name: "sentiment",
+        value: "good",
+        dataType: "CATEGORICAL",
+        source: "API",
+        environment: "default",
       },
-    ] as never,
-    false,
-  );
+    },
+  ] as never);
 
   await writer.flushAll(true);
   await sleep(800);

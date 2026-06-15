@@ -1,5 +1,4 @@
 import {
-  deleteEventsByTraceIds,
   deleteObservationsByTraceIds,
   deleteScoresByTraceIds,
   deleteTracesFromGreptime,
@@ -8,7 +7,7 @@ import {
   logger,
   traceException,
 } from "@langfuse/shared/src/server";
-import { env, v4WritesToEventsTable } from "../../env";
+import { env } from "../../env";
 import { Prisma, prisma } from "@langfuse/shared/src/db";
 import { chunk } from "lodash";
 
@@ -139,9 +138,6 @@ export const processClickhouseTraceDelete = async (
       deleteTraces(projectId, traceIds),
       deleteObservationsByTraceIds(projectId, traceIds),
       deleteScoresByTraceIds(projectId, traceIds),
-      v4WritesToEventsTable(env)
-        ? deleteEventsByTraceIds(projectId, traceIds)
-        : Promise.resolve(),
     ]);
   } catch (e) {
     logger.error(

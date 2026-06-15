@@ -76,7 +76,6 @@ async function main() {
     TRACE_ID,
     new Date(t0),
     events as never,
-    /* forwardToEventsTable */ false,
   );
 
   await GreptimeWriter.getInstance().flushAll(true);
@@ -161,7 +160,6 @@ async function main() {
     TOMB_ID,
     new Date(ts),
     tombHist.events as never,
-    false,
     tombHist.deleted,
   );
   await GreptimeWriter.getInstance().flushAll(true);

@@ -5,11 +5,9 @@ import {
   getCurrentSpan,
   getS3EventStorageClient,
   type IngestionEventType,
-  ingestionEventToRawEvent,
   logger,
   OtelIngestionProcessor,
   processEventBatch,
-  writeRawEvents,
   QueueName,
   recordDistribution,
   recordHistogram,
@@ -18,19 +16,12 @@ import {
   SecondaryOtelIngestionQueue,
   TQueueJobTypes,
   traceException,
-  compareVersions,
-  ResourceSpan,
 } from "@langfuse/shared/src/server";
 import {
   applyIngestionMasking,
   isIngestionMaskingEnabled,
 } from "@langfuse/shared/src/server/ee/ingestionMasking";
-import {
-  env,
-  v4ForceDirectOtelWrite,
-  v4WritesToEventsTable,
-  v4WritesToLegacyTables,
-} from "../env";
+import { env } from "../env";
 import { IngestionService } from "../services/IngestionService";
 import { prisma } from "@langfuse/shared/src/db";
 import { GreptimeWriter } from "../services/GreptimeWriter";
@@ -43,158 +34,6 @@ import {
   scheduleObservationEvals,
   createObservationEvalSchedulerDeps,
 } from "../features/evaluation/observationEval";
-
-/**
- * Check if HTTP headers from the SDK request indicate the batch is eligible
- * for direct event writes.
- *
- * Requirements:
- * - x-langfuse-sdk-name "python" with x-langfuse-sdk-version >= 4.0.0
- * - x-langfuse-sdk-name "javascript" with x-langfuse-sdk-version >= 5.0.0
- * - x-langfuse-ingestion-version === "4" (custom OTel exporter opt-in)
- */
-export function checkHeaderBasedDirectWrite(params: {
-  sdkName?: string;
-  sdkVersion?: string;
-  ingestionVersion?: string;
-}): boolean {
-  const { sdkName, sdkVersion, ingestionVersion } = params;
-
-  // Check x-langfuse-ingestion-version (>= 4 means direct write eligible).
-  // Values > 4 are rejected at the API route, so anything reaching here is valid.
-  const parsed = ingestionVersion ? parseInt(ingestionVersion, 10) : NaN;
-  if (!isNaN(parsed) && parsed >= 4) {
-    return true;
-  }
-
-  // Check Langfuse SDK name + version
-  if (!sdkName || !sdkVersion) {
-    return false;
-  }
-
-  try {
-    // compareVersions returns null when current >= minimum (no update needed).
-    // Strip pre-release/build metadata so that e.g. 4.0.0-rc.1 qualifies as 4.0.0.
-    // Also normalize Python PEP440 shorthand (e.g. 4.0.0b1, 4.0.0rc1) to the core version.
-    const baseVersion = extractBaseSdkVersion(sdkVersion);
-
-    if (sdkName === "python") {
-      return compareVersions(baseVersion, "v4.0.0") === null;
-    }
-
-    if (sdkName === "javascript") {
-      return compareVersions(baseVersion, "v5.0.0") === null;
-    }
-  } catch {
-    logger.warn(
-      `Failed to parse SDK version from headers: ${sdkName}@${sdkVersion}`,
-    );
-  }
-
-  return false;
-}
-
-function extractBaseSdkVersion(sdkVersion: string): string {
-  const version = sdkVersion.trim();
-
-  // Standard semver / semver pre-release / build metadata
-  if (/^v?\d+\.\d+\.\d+(?:[-+].+)?$/i.test(version)) {
-    return version.split(/[-+]/)[0];
-  }
-
-  // Python PEP 440 pre-release shorthand: 4.0.0a1, 4.0.0b1, 4.0.0rc1
-  const pep440Match = version.match(/^(v?\d+\.\d+\.\d+)(?:a|b|rc)\d+$/i);
-  if (pep440Match?.[1]) {
-    return pep440Match[1];
-  }
-
-  return version;
-}
-
-/**
- * SDK information extracted from OTEL resourceSpans.
- */
-export type SdkInfo = {
-  scopeName: string | null;
-  scopeVersion: string | null;
-  telemetrySdkLanguage: string | null;
-};
-
-/**
- * Extract SDK information from resourceSpans.
- * Gets scope name/version and telemetry SDK language from the OTEL structure.
- */
-export function getSdkInfoFromResourceSpans(
-  resourceSpans: ResourceSpan,
-): SdkInfo {
-  try {
-    // Get the first scopeSpan (all spans in a batch share the same scope)
-    const firstScopeSpan = resourceSpans?.scopeSpans?.[0];
-    const scopeName = firstScopeSpan?.scope?.name ?? null;
-    const scopeVersion = firstScopeSpan?.scope?.version ?? null;
-
-    // Extract telemetry SDK language from resource attributes
-    const resourceAttributes = resourceSpans?.resource?.attributes ?? [];
-    const telemetrySdkLanguage =
-      resourceAttributes.find((attr) => attr.key === "telemetry.sdk.language")
-        ?.value?.stringValue ?? null;
-
-    return { scopeName, scopeVersion, telemetrySdkLanguage };
-  } catch (error) {
-    logger.warn("Failed to extract SDK info from resourceSpans", error);
-    return { scopeName: null, scopeVersion: null, telemetrySdkLanguage: null };
-  }
-}
-
-/**
- * Check if SDK meets version requirements for direct event writes.
- *
- * Requirements:
- * - Scope name must contain 'langfuse' (case-insensitive)
- * - Python SDK: scope_version >= 3.9.0
- * - JS/JavaScript SDK: scope_version >= 4.4.0
- */
-export function checkSdkVersionRequirements(
-  sdkInfo: SdkInfo,
-  isSdkExperimentBatch: boolean,
-): boolean {
-  const { scopeName, scopeVersion, telemetrySdkLanguage } = sdkInfo;
-
-  // Must be a Langfuse SDK
-  if (!scopeName || !String(scopeName).toLowerCase().includes("langfuse")) {
-    return false;
-  }
-
-  if (!scopeVersion || !telemetrySdkLanguage) {
-    return false;
-  }
-
-  try {
-    // Python SDK >= 3.9.0
-    if (telemetrySdkLanguage === "python" && isSdkExperimentBatch) {
-      const comparison = compareVersions(scopeVersion, "v3.9.0");
-      return comparison === null; // null means current >= latest
-    }
-
-    // JS/JavaScript SDK >= 4.4.0
-    if (
-      (telemetrySdkLanguage === "js" ||
-        telemetrySdkLanguage === "javascript") &&
-      isSdkExperimentBatch
-    ) {
-      const comparison = compareVersions(scopeVersion, "v4.4.0");
-      return comparison === null; // null means current >= latest
-    }
-
-    return false;
-  } catch (error) {
-    logger.warn(
-      `Failed to parse SDK version ${scopeVersion} for language ${telemetrySdkLanguage}`,
-      error,
-    );
-    return false;
-  }
-}
 
 export const otelIngestionQueueProcessorBuilder = (
   enableRedirectToSecondaryQueue: boolean,
@@ -352,101 +191,15 @@ export const otelIngestionQueueProcessorBuilder = (
       // Decide whether observations should be processed via new flow (directly to events table)
       // or via the dual write (staging table and batch job to events).
       //
-      // Priority 1: HTTP headers from the SDK request (batch-level decision).
-      //   - x-langfuse-sdk-name/version: Python >= 4.0.0 or JS >= 5.0.0
-      //   - x-langfuse-ingestion-version: "4" (custom OTel exporter opt-in)
-      //   When headers qualify, ALL spans in the batch (including third-party scoped) use direct write.
-      //
-      // Priority 2 (fallback): Per-span OTEL scope inspection (legacy).
-      //   - scope.name contains "langfuse", sdk-experiment environment, Python >= 3.9.0 or JS >= 4.4.0
-      const headerBasedDirectWrite = checkHeaderBasedDirectWrite({
-        sdkName: job.data.payload.sdkName,
-        sdkVersion: job.data.payload.sdkVersion,
-        ingestionVersion: job.data.payload.ingestionVersion,
+      // Route traces AND observations through processEventBatch: it writes raw_events
+      // (post-sampling) and enqueues per-entity merge jobs that rebuild each projection from the
+      // full raw_events history (rebuildFromHistory=true => deterministic
+      // created_at=min(ingested_at)). Observations no longer use an inline read-merge-write
+      // against a ClickHouse baseline.
+      await processEventBatch([...traces, ...observations], auth, {
+        delay: 0,
+        source: "otel",
       });
-
-      // Priority 0: deployment-level override.
-      //   LANGFUSE_MIGRATION_V4_NATIVE_OTEL_BEHAVIOUR=direct forces every batch
-      //   onto the direct events_full path regardless of SDK headers/scopes.
-      const envForcesDirect = v4ForceDirectOtelWrite(env);
-      let useDirectEventWrite = envForcesDirect || headerBasedDirectWrite;
-
-      if (!useDirectEventWrite) {
-        const hasExperimentEnvironment = observations.some((o) => {
-          const body = o.body as { environment?: string };
-          return body.environment === "sdk-experiment";
-        });
-        const sdkInfo =
-          parsedSpans.length > 0
-            ? getSdkInfoFromResourceSpans(parsedSpans[0])
-            : {
-                scopeName: null,
-                scopeVersion: null,
-                telemetrySdkLanguage: null,
-              };
-        useDirectEventWrite = checkSdkVersionRequirements(
-          sdkInfo,
-          hasExperimentEnvironment,
-        );
-      }
-
-      let writePath: "dual" | "direct_header" | "direct_env" | "direct_scope";
-      if (!useDirectEventWrite) {
-        writePath = "dual";
-      } else if (headerBasedDirectWrite) {
-        writePath = "direct_header";
-      } else if (envForcesDirect) {
-        writePath = "direct_env";
-      } else {
-        writePath = "direct_scope";
-      }
-
-      span?.setAttribute("langfuse.ingestion.otel.write_path", writePath);
-      recordIncrement("langfuse.ingestion.otel.write_path", 1, {
-        path: writePath,
-      });
-
-      // V4 events_only mode: skip the legacy traces/observations projection writes. The direct
-      // events_full write path is gone, so in this mode only raw_events (the worker replay source
-      // of truth) is written, letting a later mode flip rebuild the projections.
-      const skipLegacyWrites = !v4WritesToLegacyTables(env);
-
-      if (skipLegacyWrites) {
-        // GreptimeDB SoT completeness (02-write-path.md): events-only batches still land in
-        // raw_events for both traces and observations. Index-offset ingested_at preserves request
-        // order (same tie-break as the public path: (ingested_at, event_id)). Fail-closed.
-        const otelIngestedAt = Date.now();
-        await writeRawEvents(
-          [...traces, ...observations]
-            .map((event, index) =>
-              ingestionEventToRawEvent(
-                event,
-                auth.scope.projectId,
-                otelIngestedAt + index,
-              ),
-            )
-            .filter((row): row is NonNullable<typeof row> => row !== null),
-        );
-        span?.setAttribute(
-          "langfuse.ingestion.otel.skipped_legacy_writes",
-          true,
-        );
-        recordIncrement("langfuse.ingestion.otel.skipped_legacy_writes", 1);
-      } else {
-        const shouldForwardToEventsTable =
-          !useDirectEventWrite && v4WritesToEventsTable(env);
-
-        // Route traces AND observations through processEventBatch: it writes raw_events
-        // (post-sampling) and enqueues per-entity merge jobs that rebuild each projection from the
-        // full raw_events history (rebuildFromHistory=true => deterministic
-        // created_at=min(ingested_at)). Observations no longer use an inline read-merge-write
-        // against a ClickHouse baseline.
-        await processEventBatch([...traces, ...observations], auth, {
-          delay: 0,
-          source: "otel",
-          forwardToEventsTable: shouldForwardToEventsTable,
-        });
-      }
 
       // Schedule observation-level evals for the parsed spans. This requires
       // enriched event records with trace-level attributes (userId, sessionId,
