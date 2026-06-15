@@ -59,7 +59,6 @@ import {
   ScoreDeleteQueue,
   QueueJobs,
   getScoreMetadataById,
-  deleteScores,
   deleteEntitiesFromGreptime,
   getTracesIdentifierForSession,
   validateConfigAgainstBody,
@@ -909,14 +908,11 @@ export const scoresRouter = createTRPCRouter({
         before: clickhouseScore,
       });
 
-      await Promise.all([
-        deleteEntitiesFromGreptime({
-          projectId: input.projectId,
-          entityType: "score",
-          entityIds: [clickhouseScore.id],
-        }),
-        deleteScores(input.projectId, [clickhouseScore.id]),
-      ]);
+      await deleteEntitiesFromGreptime({
+        projectId: input.projectId,
+        entityType: "score",
+        entityIds: [clickhouseScore.id],
+      });
 
       return validateDbScore(clickhouseScore);
     }),

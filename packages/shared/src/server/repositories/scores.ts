@@ -12,7 +12,7 @@ import { InvalidRequestError, InternalServerError } from "../../errors";
 import type { APIScoreV3 } from "../../features/scores/interfaces/api/v3/schemas";
 import type { ScoreFieldGroupV3 } from "../../features/scores/interfaces/api/v3/endpoints";
 import { filterAndValidateV3GetScoreList } from "../../features/scores/interfaces/api/v3/validation";
-import { commandClickhouse, queryClickhouse } from "./clickhouse";
+import { queryClickhouse } from "./clickhouse";
 import { FilterList, orderByToClickhouseSql } from "../queries";
 import { FilterCondition, FilterState, TimeFilter } from "../../types";
 import {
@@ -599,88 +599,6 @@ export const getScoreStringValues = (
   projectId: string,
   timestampFilter: FilterState,
 ) => greptimeScoreReads.getScoreStringValues(projectId, timestampFilter);
-
-export const deleteScores = async (projectId: string, scoreIds: string[]) => {
-  const query = `
-    DELETE FROM scores
-    WHERE project_id = {projectId: String}
-    AND id in ({scoreIds: Array(String)});
-  `;
-  await commandClickhouse({
-    query: query,
-    params: {
-      projectId,
-      scoreIds,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-    },
-    tags: {
-      feature: "tracing",
-      type: "score",
-      kind: "delete",
-      projectId,
-    },
-  });
-};
-
-export const deleteScoresByTraceIds = async (
-  projectId: string,
-  traceIds: string[],
-) => {
-  const query = `
-    DELETE FROM scores
-    WHERE project_id = {projectId: String}
-    AND trace_id IN ({traceIds: Array(String)});
-  `;
-  await commandClickhouse({
-    query: query,
-    params: {
-      projectId,
-      traceIds,
-    },
-    clickhouseConfigs: {
-      request_timeout: 120_000, // 2 minutes
-    },
-    tags: {
-      feature: "tracing",
-      type: "score",
-      kind: "delete",
-      projectId,
-    },
-  });
-};
-
-export const deleteScoresByProjectId = async (
-  projectId: string,
-): Promise<boolean> => {
-  const hasData = await hasAnyScore(projectId);
-  if (!hasData) {
-    return false;
-  }
-
-  const query = `
-    DELETE FROM scores
-    WHERE project_id = {projectId: String};
-  `;
-  const tags = {
-    feature: "tracing",
-    type: "score",
-    kind: "delete",
-    projectId,
-  };
-
-  await commandClickhouse({
-    query,
-    params: { projectId },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-    },
-    tags,
-  });
-
-  return true;
-};
 
 export const hasAnyScoreOlderThan = (projectId: string, beforeDate: Date) =>
   greptimeScoreReads.hasAnyScoreOlderThan(projectId, beforeDate);
