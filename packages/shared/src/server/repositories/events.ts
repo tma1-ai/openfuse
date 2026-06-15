@@ -271,61 +271,32 @@ export const getTraceByIdFromEventsTable = async ({
 };
 
 /**
- * Routing wrapper for "trace by id" reads.
- *
- * If data is only written into the events tables, we look there and go to
- * traces otherwise.
- *
- * @deprecated Please prefer `getTraceByIdFromEventsTable` for new use-cases.
- * This should be exclusively used for backwards compatibility if the write mode
- * is events_only.
+ * Reads a trace by id from the GreptimeDB-backed projection.
  */
 export const getTraceById = async (
   params: Parameters<typeof getTraceByIdFromTracesTable>[0],
 ) => {
-  if (env.LANGFUSE_MIGRATION_V4_WRITE_MODE !== "events_only") {
-    return getTraceByIdFromTracesTable(params);
-  }
-  return getTraceByIdFromEventsTable(params);
+  return getTraceByIdFromTracesTable(params);
 };
 
 /**
- * Routing wrapper for "observation by id" reads.
- *
- * If data is only written into the events tables, we look there and go to the
- * legacy observations table otherwise.
- *
- * @deprecated Please prefer `getObservationByIdFromEventsTable` for new
- * use-cases. This should be exclusively used for backwards compatibility if the
- * write mode is events_only.
+ * Reads an observation by id from the GreptimeDB-backed projection.
  */
 export const getObservationById = async (
   params: Parameters<typeof getObservationByIdFromObservationsTable>[0],
 ) => {
-  if (env.LANGFUSE_MIGRATION_V4_WRITE_MODE !== "events_only") {
-    return getObservationByIdFromObservationsTable(params);
-  }
-  return getObservationByIdFromEventsTable(params);
+  return getObservationByIdFromObservationsTable(params);
 };
 
 /**
- * Routing wrapper for "trace identifiers for session" reads.
- *
- * If data is only written into the events tables, we look there and go to the
- * legacy traces table otherwise.
- *
- * @deprecated Please prefer `getTracesIdentifierForSessionFromEvents` for new
- * use-cases. This should be exclusively used for backwards compatibility if the
- * write mode is events_only.
+ * Reads the trace identifiers for a session from the GreptimeDB-backed
+ * projection.
  */
 export const getTracesIdentifierForSession = async (
   projectId: string,
   sessionId: string,
 ) => {
-  if (env.LANGFUSE_MIGRATION_V4_WRITE_MODE !== "events_only") {
-    return getTracesIdentifierForSessionFromTracesTable(projectId, sessionId);
-  }
-  return getTracesIdentifierForSessionFromEvents(projectId, sessionId);
+  return getTracesIdentifierForSessionFromTracesTable(projectId, sessionId);
 };
 
 type PublicApiObservationsQuery = {
