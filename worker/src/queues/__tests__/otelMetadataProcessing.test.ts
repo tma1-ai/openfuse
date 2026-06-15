@@ -11,32 +11,6 @@ import {
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
 import { IngestionService } from "../../services/IngestionService";
-import * as clickhouseWriterExports from "../../services/ClickhouseWriter";
-
-// vi.hoisted ensures this is declared before vi.mock's hoisted factory runs.
-// Without it, the variable would be undefined when the factory executes.
-const { mockAddToClickhouseWriter } = vi.hoisted(() => ({
-  mockAddToClickhouseWriter: vi.fn(),
-}));
-vi.mock("../../services/ClickhouseWriter", async (importOriginal) => {
-  const original = (await importOriginal()) as object;
-  return {
-    ...original,
-    ClickhouseWriter: {
-      getInstance: () => ({
-        addToQueue: mockAddToClickhouseWriter,
-      }),
-    },
-  };
-});
-
-const mockClickhouseClient = {
-  query: async () => ({
-    json: async () => [],
-    query_id: "test-query-id",
-    response_headers: { "x-clickhouse-summary": "[]" },
-  }),
-};
 
 const ingestionService = new IngestionService(
   null as any,
