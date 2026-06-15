@@ -4,9 +4,9 @@
  *
  * Drives the REAL IngestionService with rebuildFromHistory=true over a trace's full event history
  * fed in REVERSE order, proving:
- *   - the ClickHouse baseline read is skipped (pure raw_events replay),
+ *   - the merge runs as a pure raw_events replay (no baseline projection read),
  *   - deterministic sort (invariant 8) reorders events so the merge result is order-independent,
- *   - the merged projection is written to GreptimeDB (dual-write also hits ClickHouse).
+ *   - the merged projection is written to GreptimeDB (the only backend).
  */
 import { redis } from "@langfuse/shared/src/server";
 import {
