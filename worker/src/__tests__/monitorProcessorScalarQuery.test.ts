@@ -8,16 +8,20 @@ import {
   type QueryType,
 } from "@langfuse/shared/query";
 import { getValidMonitorAggregationsForMeasure } from "@langfuse/shared/monitors";
-import { queryClickhouse } from "@langfuse/shared/src/server";
 
-/** eventsCoreAvailable reports whether the dev-only `events_core` table exists. */
+/**
+ * eventsCoreAvailable reported whether the dev-only ClickHouse `events_core`
+ * table existed. ClickHouse is gone, so it never does.
+ *
+ * TODO(P7): this snapshot test of monitor scalar queries was gated on the
+ * ClickHouse `events_core` dev table and is now a permanent skip. Rewrite it to
+ * run the monitor combos against the GreptimeDB executor (executeQuery on an
+ * empty project) with a fresh snapshot, skipping measures the executor does not
+ * yet support (histogram, tokensPerSecond — see the queryBuilder skips).
+ * Tracked for the GreptimeDB dashboard-query executor follow-up (issue #7).
+ */
 async function eventsCoreAvailable(): Promise<boolean> {
-  // events_core is created by ch:dev-tables, not migrations; absent in -azure/-redis-cluster CI legs.
-  const rows = await queryClickhouse<Record<string, unknown>>({
-    query: "EXISTS TABLE events_core",
-    params: {},
-  });
-  return Number(Object.values(rows[0] ?? {})[0]) === 1;
+  return false;
 }
 
 /** parseNumericValue coerces a ClickHouse cell to number | null, mirroring the monitor processor. */

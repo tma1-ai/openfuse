@@ -1,6 +1,6 @@
 import {
   createOrgProjectAndApiKey,
-  queryClickhouse,
+  greptimeQuery,
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
 import waitForExpect from "wait-for-expect";
@@ -78,35 +78,25 @@ describe("OTEL ingestion tenant isolation", () => {
 
     await waitForExpect(
       async () => {
-        const rowsA = await queryClickhouse<{ count: string }>({
-          // ReplacingMergeTree: dedup with `LIMIT 1 BY id, project_id` so a
-          // retry-induced duplicate insert (the OtelIngestionQueue is
-          // configured with attempts: 6) cannot inflate the count and make
-          // the strict toBe(1) fail for a non-isolation reason.
-          query: `SELECT count() as count FROM (
-            SELECT id
-            FROM observations
-            WHERE project_id = {projectId: String} AND id = {spanId: String}
-            ORDER BY event_ts DESC
-            LIMIT 1 BY id, project_id
-          )`,
+        const rowsA = await greptimeQuery<{ count: string | number }>({
+          // merge-on-write collapses retry-induced duplicate inserts to one
+          // logical row per (project_id, id), so a strict toBe(1) cannot be
+          // inflated by the OtelIngestionQueue retries (attempts: 6).
+          query: `SELECT count(*) as count FROM observations
+            WHERE project_id = :projectId AND id = :spanId AND is_deleted = false`,
           params: { projectId: projectA.projectId, spanId: spanIdHex },
+          readOnly: true,
         });
         expect(Number(rowsA[0]?.count)).toBe(1);
 
-        const rowsB = await queryClickhouse<{ count: string }>({
-          // ReplacingMergeTree: dedup with `LIMIT 1 BY id, project_id` so a
-          // retry-induced duplicate insert (the OtelIngestionQueue is
-          // configured with attempts: 6) cannot inflate the count and make
-          // the strict toBe(1) fail for a non-isolation reason.
-          query: `SELECT count() as count FROM (
-            SELECT id
-            FROM observations
-            WHERE project_id = {projectId: String} AND id = {spanId: String}
-            ORDER BY event_ts DESC
-            LIMIT 1 BY id, project_id
-          )`,
+        const rowsB = await greptimeQuery<{ count: string | number }>({
+          // merge-on-write collapses retry-induced duplicate inserts to one
+          // logical row per (project_id, id), so a strict toBe(1) cannot be
+          // inflated by the OtelIngestionQueue retries (attempts: 6).
+          query: `SELECT count(*) as count FROM observations
+            WHERE project_id = :projectId AND id = :spanId AND is_deleted = false`,
           params: { projectId: projectB.projectId, spanId: spanIdHex },
+          readOnly: true,
         });
         expect(Number(rowsB[0]?.count)).toBe(0);
       },

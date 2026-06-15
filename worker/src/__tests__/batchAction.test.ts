@@ -24,7 +24,7 @@ import {
   getScoresByIds,
   QueueJobs,
   QueueName,
-  createDatasetRunItemsCh,
+  createDatasetRunItemsGreptime,
   createDatasetRunItem,
   createDatasetItem,
   createNewRedisInstance,
@@ -521,7 +521,7 @@ describe("select all test suite", () => {
       event_ts: datasetRunItemTimestamp.getTime(),
     });
 
-    await createDatasetRunItemsCh([datasetRunItem1, datasetRunItem2]);
+    await createDatasetRunItemsGreptime([datasetRunItem1, datasetRunItem2]);
 
     const templateId = uuidv4();
 
