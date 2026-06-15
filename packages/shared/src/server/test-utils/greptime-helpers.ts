@@ -122,7 +122,10 @@ const microsToMillis = (micros: number): number => Math.floor(micros / 1000);
 export const eventRecordToObservationInsert = (
   event: EventRecordInsertType,
 ): ObservationRecordInsertType => ({
-  id: event.id,
+  // The observations projection is keyed by span id; `event.id` equals `span_id`
+  // for normal events but tests may set them apart, and the experiment
+  // root-span latency join resolves on `span_id == experiment_item_root_span_id`.
+  id: event.span_id,
   trace_id: event.trace_id,
   project_id: event.project_id,
   type: event.type,
@@ -231,4 +234,81 @@ export const createEventsAsGreptime = async (
     ? eventRecordsToTraceInserts(events)
     : [];
   await writeRecordsToGreptime({ traces, observations });
+};
+
+/* ------------------------------------------------------------------------- *
+ * Experiment-event-collapse seeding
+ *
+ * The GreptimeDB experiment readers (`getExperiments*FromEvents`) read
+ * `dataset_run_items` joined to traces/observations/scores — an experiment IS a
+ * dataset run (`experiment_id == dataset_run_id`,
+ * `experiment_item_id == dataset_item_id`,
+ * `experiment_item_root_span_id == observation_id`, name/description/dataset_id
+ * denormalised onto the run item). Events carrying `experiment_*` columns must
+ * therefore seed `dataset_run_items` (+ observations for cost/latency metrics),
+ * not the bare observations projection.
+ * ------------------------------------------------------------------------- */
+
+// metadata_values on experiment columns are (string | null)[]; coerce for the
+// shared string-array zipper.
+const coerceValues = (values: (string | null | undefined)[]): string[] =>
+  values.map((v) => v ?? "");
+
+/**
+ * Maps an experiment-bearing event onto a `dataset_run_items` projection row,
+ * following the `experiment_* -> dataset_run_*` contract the GreptimeDB
+ * experiment readers expect.
+ */
+export const eventRecordToDatasetRunItemInsert = (
+  event: EventRecordInsertType,
+): DatasetRunItemRecordInsertType => ({
+  id: event.id,
+  project_id: event.project_id,
+  trace_id: event.trace_id,
+  observation_id: event.experiment_item_root_span_id ?? null,
+  dataset_id: event.experiment_dataset_id ?? "",
+  dataset_run_id: event.experiment_id ?? "",
+  dataset_item_id: event.experiment_item_id ?? "",
+  dataset_run_name: event.experiment_name ?? "",
+  dataset_run_description: event.experiment_description,
+  dataset_run_metadata:
+    metadataArraysToRecord(
+      event.experiment_metadata_names,
+      coerceValues(event.experiment_metadata_values),
+    ) ?? {},
+  dataset_item_input: event.input ?? "{}",
+  dataset_item_expected_output: event.experiment_item_expected_output ?? "{}",
+  dataset_item_metadata:
+    metadataArraysToRecord(
+      event.experiment_item_metadata_names,
+      coerceValues(event.experiment_item_metadata_values),
+    ) ?? {},
+  // Run-item recency is the iteration's execution time: the dedup that picks the
+  // "latest" run item per (run,item) orders by created_at, and tests express
+  // iteration order via start_time. Derive all run-item timestamps from it so a
+  // later-started iteration deterministically wins.
+  dataset_run_created_at: microsToMillis(event.start_time),
+  created_at: microsToMillis(event.start_time),
+  updated_at: microsToMillis(event.start_time),
+  event_ts: microsToMillis(event.start_time),
+  is_deleted: event.is_deleted,
+  error: null,
+});
+
+/**
+ * Drop-in replacement for the old `createEventsCh` seed in experiment tests.
+ * Seeds a `dataset_run_items` row per event and (by default) a matching
+ * observation row so the experiment cost/latency metrics readers — which join
+ * observations on `dataset_run_items.trace_id`/`observation_id` — resolve.
+ */
+export const createExperimentEventsAsGreptime = async (
+  events: EventRecordInsertType[],
+  opts?: { withObservations?: boolean },
+): Promise<void> => {
+  const datasetRunItems = events.map(eventRecordToDatasetRunItemInsert);
+  const observations =
+    (opts?.withObservations ?? true)
+      ? events.map(eventRecordToObservationInsert)
+      : [];
+  await writeRecordsToGreptime({ datasetRunItems, observations });
 };
