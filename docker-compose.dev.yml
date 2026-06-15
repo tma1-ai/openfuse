@@ -1,31 +1,4 @@
 services:
-  clickhouse:
-    # Upgrade from 24.3 to check behaviour on new events table.
-    # Unit tests still verify 24.3 behaviour using -azure and -redis-cluster configs.
-    image: docker.io/clickhouse/clickhouse-server:25.12
-    user: "101:101"
-    container_name: ${CLICKHOUSE_CONTAINER_NAME:-langfuse-clickhouse}
-    environment:
-      CLICKHOUSE_DB: default
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
-    volumes:
-      - langfuse_clickhouse_data:/var/lib/clickhouse
-      - langfuse_clickhouse_logs:/var/log/clickhouse-server
-    ports:
-      - ${HOST_IP:-127.0.0.1}:${CLICKHOUSE_HTTP_PORT:-8123}:8123
-      - ${HOST_IP:-127.0.0.1}:${CLICKHOUSE_NATIVE_PORT:-9000}:9000
-    healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 1s
-    depends_on:
-      - postgres
-    networks:
-      - default
-
   greptimedb:
     # GreptimeDB backend for the fork. Replaces ClickHouse as the analytics store; the read/write
     # paths and the test harness target this. Standalone mode exposes HTTP (4000), gRPC (4001,
@@ -138,12 +111,6 @@ services:
 volumes:
   langfuse_postgres_data:
     name: ${POSTGRES_VOLUME_NAME:-langfuse_postgres_data}
-    driver: local
-  langfuse_clickhouse_data:
-    name: ${CLICKHOUSE_DATA_VOLUME_NAME:-langfuse_clickhouse_data}
-    driver: local
-  langfuse_clickhouse_logs:
-    name: ${CLICKHOUSE_LOGS_VOLUME_NAME:-langfuse_clickhouse_logs}
     driver: local
   langfuse_greptimedb_data:
     name: ${GREPTIME_DATA_VOLUME_NAME:-langfuse_greptimedb_data}
