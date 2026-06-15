@@ -18,9 +18,6 @@ export default withMiddlewares({
     name: "Create Span (Legacy)",
     bodySchema: PostSpansV1Body,
     responseSchema: PostSpansV1Response,
-    // Writes an observation-create event that lands in the legacy observations
-    // ClickHouse table; events_only deployments expect OTel ingestion.
-    rejectInEventsOnlyMode: true,
     fn: async ({ body, auth, res }) => {
       const event = {
         id: v4(),
@@ -53,7 +50,6 @@ export default withMiddlewares({
     name: "Update Span (Legacy)",
     bodySchema: PatchSpansV1Body,
     responseSchema: PatchSpansV1Response,
-    rejectInEventsOnlyMode: true,
     fn: async ({ body, auth, res }) => {
       const event = {
         id: v4(),
