@@ -6,11 +6,10 @@ import {
 } from "@/src/server/api/trpc";
 import {
   getScoresGroupedByNameSourceType,
-  queryClickhouse,
-  convertDateToClickhouseDateTime,
+  estimateScoreComparisonGreptime,
+  getScoreComparisonAnalyticsGreptime,
+  greptimeScoreSamplingExpression,
 } from "@langfuse/shared/src/server";
-import { buildEstimateQuery } from "./buildEstimateQuery";
-import { buildScoreComparisonQuery } from "./buildScoreComparisonQuery";
 
 /**
  * Adaptive FINAL threshold
@@ -94,7 +93,7 @@ export const scoreAnalyticsRouter = createTRPCRouter({
       } = input;
 
       // Run preflight estimate (uses 1% sampling)
-      const estimates = await buildEstimateQuery({
+      const estimates = await estimateScoreComparisonGreptime({
         projectId,
         score1Name: score1.name,
         score1Source: score1.source,
@@ -246,7 +245,7 @@ export const scoreAnalyticsRouter = createTRPCRouter({
       // This avoids duplicate estimate queries when client already called estimateScoreComparisonSize
       const estimates =
         input.estimateResults ??
-        (await buildEstimateQuery({
+        (await estimateScoreComparisonGreptime({
           projectId,
           score1Name: score1.name,
           score1Source: score1.source,
@@ -277,15 +276,10 @@ export const scoreAnalyticsRouter = createTRPCRouter({
         : 1.0;
       const samplingPercent = Math.round(samplingRate * 100); // Convert to 0-100 for modulo
 
-      // Sampling expression using cityHash64 on composite key (trace_id, observation_id, session_id, dataset_run_id)
-      // This ensures deterministic pseudo-random sampling that preserves matched pairs
+      // Deterministic hash-bucket sampling on the composite key (trace/observation/session/run).
+      // Same composite key -> same bucket, so a score and its pair sample together (preserves matches).
       const samplingExpression = shouldSample
-        ? `cityHash64(
-            coalesce(trace_id, ''),
-            coalesce(observation_id, ''),
-            coalesce(session_id, ''),
-            coalesce(dataset_run_id, '')
-          ) % 100 < ${samplingPercent}`
+        ? greptimeScoreSamplingExpression(samplingPercent)
         : null;
 
       // Determine if this is a single-score or two-score query
@@ -306,8 +300,9 @@ export const scoreAnalyticsRouter = createTRPCRouter({
           score2.dataType === "CATEGORICAL" ||
           isCrossType);
 
-      // Build comprehensive analytics query
-      const query = buildScoreComparisonQuery({
+      // Build + execute comprehensive analytics query against GreptimeDB.
+      // Returns the raw result_type + col1..col12 rows; parsing below is unchanged.
+      const results = await getScoreComparisonAnalyticsGreptime({
         projectId,
         score1,
         score2,
@@ -316,55 +311,12 @@ export const scoreAnalyticsRouter = createTRPCRouter({
         interval,
         nBins,
         objectType,
-        shouldUseFinal,
         shouldSample,
         samplingPercent,
         isIdenticalScores,
         isSingleScore,
         isNumeric,
         isCategoricalComparison,
-      });
-
-      // Execute query
-      const results = await queryClickhouse<{
-        result_type: string;
-        col1: number | null;
-        col2: number | null;
-        col3: number | null;
-        col4: number | null;
-        col5: number | null;
-        col6: number | null;
-        col7: number | null;
-        col8: number | null;
-        col9: string | null;
-        col10: string | null;
-        col11: number | null;
-        col12: number | null;
-      }>({
-        query,
-        params: {
-          projectId,
-          score1Name: score1.name,
-          score1Source: score1.source,
-          score2Name: score2.name,
-          score2Source: score2.source,
-          dataType1: score1.dataType,
-          dataType2: score2.dataType,
-          fromTimestamp: convertDateToClickhouseDateTime(fromTimestamp),
-          toTimestamp: convertDateToClickhouseDateTime(toTimestamp),
-          nBins,
-        },
-        tags: {
-          feature: "scores",
-          type: "analytics",
-          kind: "comparison",
-          projectId,
-        },
-        clickhouseSettings: {
-          // Enable short-circuit evaluation to prevent correlation errors
-          // This ensures if() conditions are evaluated before function calls
-          short_circuit_function_evaluation: "enable",
-        },
       });
 
       // Parse results by result_type

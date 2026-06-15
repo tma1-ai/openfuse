@@ -4,14 +4,16 @@ import { appRouter } from "@/src/server/api/root";
 import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
   createTraceScore,
-  createScoresCh,
+  createScoresGreptime,
   createSessionScore,
   createDatasetRunScore,
 } from "@langfuse/shared/src/server";
 import { v4 } from "uuid";
 
 describe("Score Comparison Analytics tRPC", () => {
-  const projectId = "7a88fb47-b4e2-43b8-a06c-a5ce950dc53a";
+  // Unique per run so the project-scoped reads prune away any data left by earlier runs or other
+  // suites (GreptimeDB tombstones do not shrink scan cost; the PK lead column project_id does).
+  const projectId = v4();
 
   const session: Session = {
     user: {
@@ -94,27 +96,30 @@ describe("Score Comparison Analytics tRPC", () => {
     getScoreComparisonAnalytics,
   });
 
-  const createOneHourWindow = () => {
-    const now = new Date();
-    return {
-      now,
-      fromTimestamp: new Date(now.getTime() - 3600000),
-      toTimestamp: new Date(now.getTime() + 3600000),
-    };
-  };
+  // The bulk-volume tests seed 100k+ co-temporal scores. Anchoring them in a fixed historical
+  // window (instead of "now") keeps that volume out of the time range every other test queries, so
+  // the GreptimeDB time index prunes it away — those small tests never scan the bulk data.
+  const HISTORICAL_BASE_MS = new Date("2020-06-01T00:00:00Z").getTime();
+  const createHistoricalWindow = () => ({
+    base: HISTORICAL_BASE_MS,
+    fromTimestamp: new Date(HISTORICAL_BASE_MS - 3600000),
+    toTimestamp: new Date(HISTORICAL_BASE_MS + 3600000),
+  });
 
   const insertLargeTraceLevelScorePairs = async ({
     batchSize = 10_000,
     totalRows,
     scoreName1,
     scoreName2,
+    timestamp,
   }: {
     batchSize?: number;
     totalRows: number;
     scoreName1: string;
     scoreName2: string;
+    timestamp: number;
   }) => {
-    const scoreTimestamp = Date.now();
+    const scoreTimestamp = timestamp;
 
     for (let offset = 0; offset < totalRows; offset += batchSize) {
       const currentBatchSize = Math.min(batchSize, totalRows - offset);
@@ -150,7 +155,7 @@ describe("Score Comparison Analytics tRPC", () => {
         );
       }
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
     }
   };
 
@@ -158,12 +163,14 @@ describe("Score Comparison Analytics tRPC", () => {
     batchSize = 10_000,
     totalRows,
     scoreName,
+    timestamp,
   }: {
     batchSize?: number;
     totalRows: number;
     scoreName: string;
+    timestamp: number;
   }) => {
-    const scoreTimestamp = Date.now();
+    const scoreTimestamp = timestamp;
 
     for (let offset = 0; offset < totalRows; offset += batchSize) {
       const currentBatchSize = Math.min(batchSize, totalRows - offset);
@@ -186,7 +193,7 @@ describe("Score Comparison Analytics tRPC", () => {
         );
       }
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
     }
   };
 
@@ -227,7 +234,7 @@ describe("Score Comparison Analytics tRPC", () => {
         timestamp: now.getTime(),
       });
 
-      await createScoresCh([score1, score2]);
+      await createScoresGreptime([score1, score2]);
 
       const result = await getScoreComparisonAnalyticsWithPreflight({
         projectId,
@@ -407,7 +414,7 @@ describe("Score Comparison Analytics tRPC", () => {
         timestamp: now.getTime(),
       });
 
-      await createScoresCh([score1, score2]);
+      await createScoresGreptime([score1, score2]);
 
       const result = await getScoreComparisonAnalyticsWithPreflight({
         projectId,
@@ -450,7 +457,7 @@ describe("Score Comparison Analytics tRPC", () => {
 
     // Test 5: Large matched datasets should skip FINAL and use hash sampling
     it("should skip FINAL and apply hash-based sampling for large matched datasets", async () => {
-      const { fromTimestamp, toTimestamp } = createOneHourWindow();
+      const { base, fromTimestamp, toTimestamp } = createHistoricalWindow();
       const scoreName1 = `test-large-score1-${v4()}`;
       const scoreName2 = `test-large-score2-${v4()}`;
       const totalRows = 120_000;
@@ -459,6 +466,7 @@ describe("Score Comparison Analytics tRPC", () => {
         totalRows,
         scoreName1,
         scoreName2,
+        timestamp: base,
       });
 
       const result = await getScoreComparisonAnalyticsWithPreflight({
@@ -499,9 +507,7 @@ describe("Score Comparison Analytics tRPC", () => {
       expect(result.samplingMetadata.samplingMethod).toBe("hash");
       expect(result.samplingMetadata.samplingRate).toBeLessThan(1);
       expect(result.samplingMetadata.samplingRate).toBeGreaterThan(0);
-      expect(result.samplingMetadata.samplingExpression).toContain(
-        "cityHash64",
-      );
+      expect(result.samplingMetadata.samplingExpression).toContain("md5");
       expect(result.samplingMetadata.actualSampleSize).toBeGreaterThan(80_000);
       expect(result.samplingMetadata.actualSampleSize).toBeLessThan(totalRows);
 
@@ -516,7 +522,7 @@ describe("Score Comparison Analytics tRPC", () => {
 
     // Test 6: Identical scores should stay perfectly aligned under sampling
     it("should return perfect correlation for identical scores with sampling", async () => {
-      const { fromTimestamp, toTimestamp } = createOneHourWindow();
+      const { base, fromTimestamp, toTimestamp } = createHistoricalWindow();
       const scoreName = `test-identical-${v4()}`;
       const totalRows = 20_000;
       const forcedEstimateResults = buildEstimateResults(120_000);
@@ -524,6 +530,7 @@ describe("Score Comparison Analytics tRPC", () => {
       await insertLargeIdenticalTraceLevelScores({
         totalRows,
         scoreName,
+        timestamp: base,
       });
 
       // Compare score to itself
@@ -620,7 +627,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -673,7 +680,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -728,7 +735,7 @@ describe("Score Comparison Analytics tRPC", () => {
         ];
       });
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -797,7 +804,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -854,7 +861,7 @@ describe("Score Comparison Analytics tRPC", () => {
         ),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -915,7 +922,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ]);
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -986,7 +993,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ]);
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1060,7 +1067,7 @@ describe("Score Comparison Analytics tRPC", () => {
         ];
       });
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1118,7 +1125,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ]);
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1210,7 +1217,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh([...scores, ...matchedScores]);
+      await createScoresGreptime([...scores, ...matchedScores]);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1289,7 +1296,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1345,7 +1352,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const [weekResult, monthResult] = await Promise.all([
         caller.scoreAnalytics.getScoreComparisonAnalytics({
@@ -1407,7 +1414,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ]);
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1471,7 +1478,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ]);
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1540,7 +1547,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1604,7 +1611,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1664,7 +1671,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1755,7 +1762,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -1809,7 +1816,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       // Query with 7-day interval starting from Thursday (90 days back)
       const fromTimestamp = new Date(
@@ -1905,7 +1912,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const fromTimestamp = new Date(day.getTime() - 24 * 60 * 60 * 1000); // Day before
       const toTimestamp = new Date(day.getTime() + 2 * 24 * 60 * 60 * 1000); // Day after
@@ -2022,7 +2029,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const fromTimestamp = new Date("2025-10-01T00:00:00.000Z"); // Oct 1
       const toTimestamp = new Date("2025-12-01T00:00:00.000Z"); // Dec 1
@@ -2118,7 +2125,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -2197,7 +2204,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -2291,7 +2298,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -2367,7 +2374,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ]);
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -2455,7 +2462,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ]);
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -2531,7 +2538,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ]);
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -2586,7 +2593,7 @@ describe("Score Comparison Analytics tRPC", () => {
         ),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -2723,7 +2730,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -2801,7 +2808,7 @@ describe("Score Comparison Analytics tRPC", () => {
         ),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       // Query with same score for both score1 and score2 (single-score mode)
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
@@ -2859,7 +2866,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -2943,7 +2950,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -3000,7 +3007,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ]);
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -3056,7 +3063,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       );
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -3124,7 +3131,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ]);
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -3199,7 +3206,7 @@ describe("Score Comparison Analytics tRPC", () => {
         );
       }
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -3279,7 +3286,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }
       }
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -3392,7 +3399,7 @@ describe("Score Comparison Analytics tRPC", () => {
         );
       }
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -3482,7 +3489,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }
       }
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const result = await caller.scoreAnalytics.getScoreComparisonAnalytics({
         projectId,
@@ -3616,7 +3623,7 @@ describe("Score Comparison Analytics tRPC", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const baseParams = {
         projectId,
