@@ -4,16 +4,22 @@ import { appRouter } from "@/src/server/api/root";
 import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createTraceScore,
-  createScoresCh,
+  createScoresGreptime,
   getTraceByIdFromTracesTable,
-  createEventsCh,
+  createEventsAsGreptime,
   createEvent,
   getTraceByIdFromEventsTable,
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
 } from "@langfuse/shared/src/server";
+
+// events_full is gone: seed the GreptimeDB observations projection plus a
+// synthesized denormalised trace so the events read path resolves on GreptimeDB.
+const seedObservationEvents = (
+  events: Parameters<typeof createEventsAsGreptime>[0],
+) => createEventsAsGreptime(events, { synthesizeTraces: true });
 import waitForExpect from "wait-for-expect";
 import { randomUUID } from "crypto";
 import { env } from "@/src/env.mjs";
@@ -88,7 +94,7 @@ describe("traces trpc", () => {
         }),
       ];
 
-      await createTracesCh(traces);
+      await createTracesGreptime(traces);
 
       const result = await caller.traces.all({
         projectId,
@@ -126,7 +132,7 @@ describe("traces trpc", () => {
         project_id: projectId,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const traces = await caller.traces.all({
         projectId,
@@ -156,7 +162,7 @@ describe("traces trpc", () => {
         project_id: projectId,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const traces = await caller.traces.all({
         projectId,
@@ -186,7 +192,7 @@ describe("traces trpc", () => {
         project_id: projectId,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const traces = await caller.traces.all({
         projectId,
@@ -216,7 +222,7 @@ describe("traces trpc", () => {
         project_id: projectId,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const traces = await caller.traces.all({
         projectId,
@@ -274,7 +280,7 @@ describe("traces trpc", () => {
         name: "input-search-trace",
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const traces = await caller.traces.all({
         projectId,
@@ -308,7 +314,7 @@ describe("traces trpc", () => {
         name: "output-search-trace",
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const traces = await caller.traces.all({
         projectId,
@@ -337,7 +343,7 @@ describe("traces trpc", () => {
 
   describe("traces.countAll", () => {
     it("count traces correctly", async () => {
-      await createTracesCh(
+      await createTracesGreptime(
         Array(120)
           .fill(0)
           .map(() =>
@@ -384,7 +390,7 @@ describe("traces trpc", () => {
         project_id: projectId,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const traceRes = await caller.traces.byId({
         projectId,
@@ -408,7 +414,7 @@ describe("traces trpc", () => {
         metadata: { prototype: "test" },
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const traceRes = await caller.traces.byId({
         projectId,
@@ -427,7 +433,7 @@ describe("traces trpc", () => {
         public: true,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const traceRes = await caller.traces.byId({
         projectId: differentProjectId,
@@ -452,7 +458,7 @@ describe("traces trpc", () => {
         public: true,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const traceRes = await unAuthedCaller.traces.byId({
         projectId,
@@ -472,7 +478,7 @@ describe("traces trpc", () => {
       const trace = createTrace({
         project_id: projectId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Create a categorical score config with multiple possible values
       const scoreConfig = await prisma.scoreConfig.create({
@@ -497,7 +503,7 @@ describe("traces trpc", () => {
         data_type: "CATEGORICAL",
         config_id: scoreConfig.id,
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       // Get filter options
       const filterOptions = await caller.traces.filterOptions({
@@ -525,8 +531,8 @@ describe("traces trpc", () => {
         project_id: projectId,
         trace_id: trace.id,
       });
-      await createTracesCh([trace]);
-      await createObservationsCh([observation]);
+      await createTracesGreptime([trace]);
+      await createObservationsGreptime([observation]);
 
       const observationScore = createTraceScore({
         project_id: projectId,
@@ -546,7 +552,7 @@ describe("traces trpc", () => {
         data_type: "NUMERIC",
         value: 0.5,
       });
-      await createScoresCh([observationScore, sessionScore]);
+      await createScoresGreptime([observationScore, sessionScore]);
 
       const filterOptions = await caller.traces.filterOptions({
         projectId,
@@ -573,9 +579,9 @@ describe("traces trpc", () => {
         trace_id: trace.id,
       });
 
-      await createTracesCh([trace]);
-      await createObservationsCh([firstObservation, secondObservation]);
-      await createScoresCh([
+      await createTracesGreptime([trace]);
+      await createObservationsGreptime([firstObservation, secondObservation]);
+      await createScoresGreptime([
         createTraceScore({
           project_id: projectId,
           trace_id: trace.id,
@@ -659,8 +665,8 @@ describe("traces trpc", () => {
         type: "GENERATION",
       });
 
-      await createTracesCh([trace]);
-      await createObservationsCh([observation]);
+      await createTracesGreptime([trace]);
+      await createObservationsGreptime([observation]);
 
       const minStartTime = new Date(
         new Date(trace.timestamp).getTime() - 1000,
@@ -698,8 +704,8 @@ describe("traces trpc", () => {
         type: "GENERATION",
       });
 
-      await createTracesCh([trace]);
-      await createObservationsCh([observation]);
+      await createTracesGreptime([trace]);
+      await createObservationsGreptime([observation]);
 
       const minStartTime = new Date(
         new Date(trace.timestamp).getTime() - 1000,
@@ -731,10 +737,10 @@ describe("traces trpc", () => {
         bookmarked: false,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       if (useEventsTable) {
-        await createEventsCh([
+        await seedObservationEvents([
           createEvent({
             id: trace.id,
             span_id: trace.id,
@@ -812,10 +818,10 @@ describe("traces trpc", () => {
         public: false,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       if (useEventsTable) {
-        await createEventsCh([
+        await seedObservationEvents([
           createEvent({
             id: trace.id,
             span_id: trace.id,

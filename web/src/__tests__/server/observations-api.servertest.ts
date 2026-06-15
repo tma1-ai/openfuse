@@ -1,14 +1,20 @@
 import {
   createObservation,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createEvent,
   createOrgProjectAndApiKey,
 } from "@langfuse/shared/src/server";
 import {
-  createObservationsCh,
-  createEventsCh,
+  createObservationsGreptime,
+  createEventsAsGreptime,
 } from "@langfuse/shared/src/server";
+
+// events_full is gone: seed the GreptimeDB observations projection plus a
+// synthesized denormalised trace so the events read path resolves on GreptimeDB.
+const seedObservationEvents = (
+  events: Parameters<typeof createEventsAsGreptime>[0],
+) => createEventsAsGreptime(events, { synthesizeTraces: true });
 import {
   makeAPICall,
   makeZodVerifiedAPICall,
@@ -96,16 +102,16 @@ const createAndInsertObservations = async (
   trace: ReturnType<typeof createTrace>,
   observations: ObservationData[],
 ) => {
-  await createTracesCh([trace]);
+  await createTracesGreptime([trace]);
 
   const data = observations.map((obs) =>
     createObservationData(useEventsTable, obs, trace),
   );
 
   if (useEventsTable) {
-    await createEventsCh(data as any);
+    await seedObservationEvents(data as any);
   } else {
-    await createObservationsCh(data as any);
+    await createObservationsGreptime(data as any);
   }
 };
 
@@ -828,7 +834,7 @@ describe("/api/public/observations API Endpoint", () => {
           });
 
           if (useEventsTable) {
-            createEventsCh([
+            seedObservationEvents([
               createEvent({
                 ...trace1,
                 span_id: trace1.id,
@@ -950,10 +956,10 @@ describe("/api/public/observations API Endpoint", () => {
           const childObsId = randomUUID();
 
           // Create parent (root) observation and child observation
-          await createTracesCh([createdTrace]);
+          await createTracesGreptime([createdTrace]);
 
           if (useEventsTable) {
-            await createEventsCh([
+            await seedObservationEvents([
               createEvent({
                 id: parentObsId,
                 span_id: parentObsId,
@@ -978,7 +984,7 @@ describe("/api/public/observations API Endpoint", () => {
               }),
             ]);
           } else {
-            await createObservationsCh([
+            await createObservationsGreptime([
               createObservation({
                 id: parentObsId,
                 trace_id: traceId,
@@ -1043,10 +1049,10 @@ describe("/api/public/observations API Endpoint", () => {
           const parentObsId = randomUUID();
           const childObsId = randomUUID();
 
-          await createTracesCh([createdTrace]);
+          await createTracesGreptime([createdTrace]);
 
           if (useEventsTable) {
-            await createEventsCh([
+            await seedObservationEvents([
               createEvent({
                 id: parentObsId,
                 span_id: parentObsId,
@@ -1071,7 +1077,7 @@ describe("/api/public/observations API Endpoint", () => {
               }),
             ]);
           } else {
-            await createObservationsCh([
+            await createObservationsGreptime([
               createObservation({
                 id: parentObsId,
                 trace_id: traceId,
@@ -1138,10 +1144,10 @@ describe("/api/public/observations API Endpoint", () => {
           const child1Id = randomUUID();
           const child2Id = randomUUID();
 
-          await createTracesCh([createdTrace]);
+          await createTracesGreptime([createdTrace]);
 
           if (useEventsTable) {
-            await createEventsCh([
+            await seedObservationEvents([
               createEvent({
                 id: parent1Id,
                 span_id: parent1Id,
@@ -1188,7 +1194,7 @@ describe("/api/public/observations API Endpoint", () => {
               }),
             ]);
           } else {
-            await createObservationsCh([
+            await createObservationsGreptime([
               createObservation({
                 id: parent1Id,
                 trace_id: traceId,

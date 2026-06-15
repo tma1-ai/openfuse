@@ -19,19 +19,25 @@ import { env } from "../env";
 import { randomUUID } from "crypto";
 import {
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createOrgProjectAndApiKey,
   createTraceScore,
   createSessionScore,
   createDatasetRunScore,
-  createScoresCh,
+  createScoresGreptime,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createEvent,
-  createEventsCh,
+  createEventsAsGreptime,
   StorageService,
   StorageServiceFactory,
 } from "@langfuse/shared/src/server";
+
+// events_full is gone: seed the GreptimeDB observations projection plus a
+// synthesized denormalised trace so the events read path resolves on GreptimeDB.
+const seedObservationEvents = (
+  events: Parameters<typeof createEventsAsGreptime>[0],
+) => createEventsAsGreptime(events, { synthesizeTraces: true });
 import { prisma } from "@langfuse/shared/src/db";
 import { Job } from "bullmq";
 import {
@@ -228,7 +234,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
       // Create trace, observation, score, and event in Clickhouse
       // Data is at 90 minutes ago, which falls within the chunked export window
       await Promise.all([
-        createTracesCh([
+        createTracesGreptime([
           createTrace({
             id: traceId,
             project_id: projectId,
@@ -236,7 +242,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
             name: "Test Trace",
           }),
         ]),
-        createObservationsCh([
+        createObservationsGreptime([
           createObservation({
             id: observationId,
             trace_id: traceId,
@@ -250,7 +256,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
             name: "Test Observation",
           }),
         ]),
-        createScoresCh([
+        createScoresGreptime([
           createTraceScore({
             id: scoreId,
             trace_id: traceId,
@@ -276,7 +282,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
             value: 0.7,
           }),
         ]),
-        createEventsCh([event]),
+        seedObservationEvents([event]),
       ]);
 
       // When
@@ -449,7 +455,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
         metadata_values: ["should-not-appear"],
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       await handleBlobStorageIntegrationProjectJob({
         data: { payload: { projectId } },
@@ -511,7 +517,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
 
       // Create test data
       const traceId = randomUUID();
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({
           id: traceId,
           project_id: projectId,
@@ -578,7 +584,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
 
       // Create test data
       const traceId = randomUUID();
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({
           id: traceId,
           project_id: projectId,
@@ -621,7 +627,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
       });
 
       await Promise.all([
-        createTracesCh([
+        createTracesGreptime([
           createTrace({
             id: traceId,
             project_id: projectId,
@@ -629,7 +635,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
             name: "Test Trace",
           }),
         ]),
-        createObservationsCh([
+        createObservationsGreptime([
           createObservation({
             id: observationId,
             trace_id: traceId,
@@ -638,7 +644,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
             name: "Test Observation",
           }),
         ]),
-        createScoresCh([
+        createScoresGreptime([
           createTraceScore({
             id: scoreId,
             trace_id: traceId,
@@ -648,7 +654,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
             value: 0.95,
           }),
         ]),
-        createEventsCh([event]),
+        seedObservationEvents([event]),
       ]);
 
       // Test each file type
@@ -785,7 +791,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
       });
 
       const traceId = randomUUID();
-      await createObservationsCh([
+      await createObservationsGreptime([
         createObservation({
           id: randomUUID(),
           trace_id: traceId,
@@ -853,7 +859,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
           timestamp: twoDaysAgo.getTime(),
           name: "Old Trace",
         });
-        await createTracesCh([oldTrace]);
+        await createTracesGreptime([oldTrace]);
 
         // Create integration with FULL_HISTORY mode and no lastSyncAt
         await prisma.blobStorageIntegration.create({
@@ -930,7 +936,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
         timestamp: veryOldTrace.getTime(),
         name: "Very Old Trace",
       });
-      await createTracesCh([oldTrace, veryOldTraceObj]);
+      await createTracesGreptime([oldTrace, veryOldTraceObj]);
 
       // Create integration with FROM_TODAY mode
       await prisma.blobStorageIntegration.create({
@@ -994,7 +1000,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
         timestamp: afterCustomDate.getTime(),
         name: "After Custom Date Trace",
       });
-      await createTracesCh([oldTrace, recentTrace]);
+      await createTracesGreptime([oldTrace, recentTrace]);
 
       // Create integration with FROM_CUSTOM_DATE mode
       await prisma.blobStorageIntegration.create({
@@ -1054,7 +1060,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
           timestamp: veryOldTimestamp.getTime(),
           name: "Old Trace",
         });
-        await createTracesCh([oldTrace]);
+        await createTracesGreptime([oldTrace]);
 
         // Create integration with FULL_HISTORY and hourly frequency (first export)
         await prisma.blobStorageIntegration.create({
@@ -1133,7 +1139,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
         timestamp: twoDaysAgo.getTime() + 60 * 60 * 1000, // 1 hour later
         name: "Old Trace 2",
       });
-      await createTracesCh([trace1, trace2]);
+      await createTracesGreptime([trace1, trace2]);
 
       // Create integration with hourly frequency starting 2 days ago
       await prisma.blobStorageIntegration.create({
@@ -1191,7 +1197,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
         timestamp: now.getTime() - 40 * 60 * 1000, // 40 minutes ago
         name: "Recent Trace",
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Create integration with lastSyncAt 1 hour ago (within normal range)
       await prisma.blobStorageIntegration.create({
@@ -1279,7 +1285,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
         });
 
         const traceId = randomUUID();
-        await createTracesCh([
+        await createTracesGreptime([
           createTrace({
             id: traceId,
             project_id: projectId,
@@ -1331,7 +1337,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
         });
 
         const traceId = randomUUID();
-        await createTracesCh([
+        await createTracesGreptime([
           createTrace({
             id: traceId,
             project_id: projectId,
@@ -1393,7 +1399,7 @@ describe("BlobStorageIntegrationProcessingJob", () => {
         });
 
         const traceId = randomUUID();
-        await createTracesCh([
+        await createTracesGreptime([
           createTrace({
             id: traceId,
             project_id: projectId,

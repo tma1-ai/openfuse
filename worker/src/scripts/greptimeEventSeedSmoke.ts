@@ -114,11 +114,9 @@ async function main() {
   });
   check("obs-by-id resolves generation", gen?.id === genId, gen?.id);
   check("obs-by-id type GENERATION", gen?.type === "GENERATION", gen?.type);
-  check(
-    "obs-by-id model name preserved",
-    gen?.providedModelName === "gpt-4o" || gen?.model === "gpt-4o",
-    { providedModelName: gen?.providedModelName, model: gen?.model },
-  );
+  check("obs-by-id model name preserved", gen?.model === "gpt-4o", {
+    model: gen?.model,
+  });
   check(
     "obs-by-id parentObservationId preserved",
     gen?.parentObservationId === rootId,
