@@ -2,9 +2,6 @@ import { Job, Processor } from "bullmq";
 import {
   deleteMediaLinkRowsByProjectId,
   deleteMediaFiles,
-  deleteObservationsByProjectId,
-  deleteScoresByProjectId,
-  deleteTracesByProjectId,
   deleteDatasetRunItemsByProjectId,
   deleteProjectFromGreptime,
   findAllMediaByProjectId,
@@ -58,12 +55,7 @@ export const projectDeleteProcessor: Processor = async (
   );
 
   // Delete project data from ClickHouse first
-  await Promise.all([
-    deleteProjectFromGreptime(projectId),
-    deleteTracesByProjectId(projectId),
-    deleteObservationsByProjectId(projectId),
-    deleteScoresByProjectId(projectId),
-  ]);
+  await deleteProjectFromGreptime(projectId);
 
   // Trigger async delete of dataset run items
   await deleteDatasetRunItemsByProjectId(projectId);

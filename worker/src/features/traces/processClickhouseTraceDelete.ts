@@ -1,8 +1,5 @@
 import {
-  deleteObservationsByTraceIds,
-  deleteScoresByTraceIds,
   deleteTracesFromGreptime,
-  deleteTraces,
   getS3MediaStorageClient,
   logger,
   traceException,
@@ -133,12 +130,7 @@ export const processClickhouseTraceDelete = async (
   await deleteMediaItemsForTraces(projectId, traceIds);
 
   try {
-    await Promise.all([
-      deleteTracesFromGreptime({ projectId, traceIds }),
-      deleteTraces(projectId, traceIds),
-      deleteObservationsByTraceIds(projectId, traceIds),
-      deleteScoresByTraceIds(projectId, traceIds),
-    ]);
+    await deleteTracesFromGreptime({ projectId, traceIds });
   } catch (e) {
     logger.error(
       `Error deleting trace ${JSON.stringify(traceIds)} in project ${projectId} from Clickhouse`,
