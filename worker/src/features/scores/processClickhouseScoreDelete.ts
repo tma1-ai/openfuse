@@ -3,9 +3,7 @@ import {
   deleteEntitiesFromGreptime,
   logger,
   traceException,
-  deleteIngestionEventsFromS3AndClickhouseForScores,
 } from "@langfuse/shared/src/server";
-import { env } from "../../env";
 
 export const processClickhouseScoreDelete = async (
   projectId: string,
@@ -17,12 +15,6 @@ export const processClickhouseScoreDelete = async (
 
   try {
     await Promise.all([
-      env.LANGFUSE_ENABLE_BLOB_STORAGE_FILE_LOG === "true"
-        ? deleteIngestionEventsFromS3AndClickhouseForScores({
-            projectId,
-            scoreIds,
-          })
-        : Promise.resolve(),
       deleteEntitiesFromGreptime({
         projectId,
         entityType: "score",

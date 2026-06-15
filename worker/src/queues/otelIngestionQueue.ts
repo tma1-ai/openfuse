@@ -251,11 +251,6 @@ export const otelIngestionQueueProcessorBuilder = (
         }
       }
 
-      // TODO: Do we need to add these files into the blob_storage_file_log?
-      // We could recommend lifecycle rules due to the immutability properties.
-      // Otherwise, we'd probably have to upsert one row per generated event further below.
-      // Easy change, but needs alignment.
-
       // Download file from blob storage
       const resourceSpans = await getS3EventStorageClient(
         env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET,

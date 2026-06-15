@@ -15,7 +15,7 @@ import {
   getEventsForBlobStorageExport,
   getCurrentSpan,
   BlobStorageIntegrationProcessingQueue,
-  queryClickhouse,
+  getMinExportTimestampGreptime,
   QueueJobs,
   sendBlobStorageExportFailedEmail,
   getProjectAdminEmails,
@@ -94,58 +94,25 @@ const getMinTimestampForExport = async (
   // For first export, use the export mode to determine start date
   switch (exportMode) {
     case BlobStorageExportMode.FULL_HISTORY:
-      // Query ClickHouse for the actual minimum timestamp from traces, observations, and scores tables
+      // Query GreptimeDB for the actual minimum timestamp across traces/observations/scores.
       try {
-        const result = await queryClickhouse<{ min_timestamp: number | null }>({
-          query: `
-              SELECT min(toUnixTimestamp(ts)) * 1000 as min_timestamp
-              FROM (
-                SELECT min(timestamp) as ts
-                FROM traces
-                WHERE project_id = {projectId: String}
-
-                UNION ALL
-
-                SELECT min(start_time) as ts
-                FROM observations
-                WHERE project_id = {projectId: String}
-
-                UNION ALL
-
-                SELECT min(timestamp) as ts
-                FROM scores
-                WHERE project_id = {projectId: String}
-              )
-              WHERE ts > 0 -- Ignore 0 results (usually empty tables)
-            `,
-          params: { projectId },
-        });
-
-        // Extract the minimum timestamp
-        logger.info(
-          `[BLOB INTEGRATION] ClickHouse min_timestamp for project ${projectId}: ${result[0]?.min_timestamp}, type: ${typeof result[0]?.min_timestamp}`,
-        );
-        const minTimestampValue = Number(result[0]?.min_timestamp);
-
-        if (minTimestampValue && minTimestampValue > 0) {
-          const date = new Date(minTimestampValue);
-          logger.info(
-            `[BLOB INTEGRATION] Created Date from min_timestamp for project ${projectId}: ${date}, isValid: ${!isNaN(date.getTime())}, getTime: ${date.getTime()}`,
-          );
-          return date;
+        const minTimestamp = await getMinExportTimestampGreptime(projectId);
+        if (minTimestamp) {
+          return minTimestamp;
         }
-
-        // If no data exists, use current time as a fallback
+        // If no data exists, fall back to the epoch (export from the beginning).
         logger.info(
-          `[BLOB INTEGRATION] No historical data found for project ${projectId}, using current time`,
+          `[BLOB INTEGRATION] No historical data found for project ${projectId}, using epoch`,
         );
         return new Date(0);
       } catch (error) {
         logger.error(
-          `[BLOB INTEGRATION] Error querying ClickHouse for minimum timestamp for project ${projectId}`,
+          `[BLOB INTEGRATION] Error querying GreptimeDB for minimum timestamp for project ${projectId}`,
           error,
         );
-        throw new Error(`Failed to fetch minimum timestamp: ${error}`);
+        throw new Error(
+          `Failed to fetch minimum timestamp: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     case BlobStorageExportMode.FROM_TODAY:
     case BlobStorageExportMode.FROM_CUSTOM_DATE:

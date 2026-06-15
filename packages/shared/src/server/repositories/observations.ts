@@ -1,7 +1,6 @@
 import {
   commandClickhouse,
   queryClickhouse,
-  queryClickhouseStream,
   upsertClickhouse,
 } from "./clickhouse";
 import { logger } from "../logger";
@@ -11,30 +10,26 @@ import { FilterState } from "../../types";
 import { FilterList, FullObservations } from "../queries";
 import { OrderByState } from "../../interfaces/orderBy";
 import { getTracesByIds } from "./traces";
-import {
-  convertDateToClickhouseDateTime,
-  PreferredClickhouseService,
-} from "../clickhouse/client";
+import { PreferredClickhouseService } from "../clickhouse/client";
 import {
   convertObservation,
   enrichObservationWithModelData,
 } from "./observations_converters";
-import {
-  OBSERVATIONS_TO_TRACE_INTERVAL,
-  TRACE_TO_OBSERVATIONS_INTERVAL,
-} from "./constants";
 import { env } from "../../env";
 import { TracingSearchType } from "../../interfaces/search";
 import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import type { AnalyticsGenerationEvent } from "../analytics-integrations/types";
 import { ObservationType } from "../../domain";
 import {
-  LEGACY_OBSERVATION_EXPORT_FIELDS,
   OBSERVATION_FIELD_GROUPS_FULL,
   type ObservationFieldGroupFull,
 } from "../../domain/observation-field-groups";
 import { DEFAULT_RENDERING_PROPS, RenderingProps } from "../utils/rendering";
 import * as greptimeObservationReads from "./greptime/observations";
+import {
+  streamGenerationsForAnalyticsGreptime,
+  streamObservationsForBlobGreptime,
+} from "./greptime/exportToSink";
 import {
   getObservationsTableCountGreptime,
   getObservationsTableRowsGreptime,
@@ -395,40 +390,6 @@ export const hasAnyObservationOlderThan = async (
   beforeDate: Date,
 ) => greptimeObservationReads.hasAnyObservationOlderThan(projectId, beforeDate);
 
-export const deleteObservationsOlderThanDays = async (
-  projectId: string,
-  beforeDate: Date,
-): Promise<boolean> => {
-  const hasData = await hasAnyObservationOlderThan(projectId, beforeDate);
-  if (!hasData) {
-    return false;
-  }
-
-  const query = `
-    DELETE FROM observations
-    WHERE project_id = {projectId: String}
-    AND start_time < {cutoffDate: DateTime64(3)};
-  `;
-  await commandClickhouse({
-    query: query,
-    params: {
-      projectId,
-      cutoffDate: convertDateToClickhouseDateTime(beforeDate),
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-    },
-    tags: {
-      feature: "tracing",
-      type: "observation",
-      kind: "delete",
-      projectId,
-    },
-  });
-
-  return true;
-};
-
 export const getObservationsWithPromptName = (
   projectId: string,
   promptNames: string[],
@@ -526,67 +487,18 @@ export const getTraceIdsForObservations = (
     observationIds,
   );
 
-// SQL expressions for the export fields of LEGACY_OBSERVATION_EXPORT_FIELDS
-// (the domain-level export contract) that are not plain column reads. Every
-// other field selects the table column of the same name.
-const LEGACY_OBSERVATION_EXPORT_SQL_OVERRIDES: Record<string, string> = {
-  latency:
-    "if(isNull(end_time), NULL, date_diff('millisecond', start_time, end_time) / 1000) as latency",
-  time_to_first_token:
-    "if(isNull(completion_start_time), NULL, date_diff('millisecond', start_time, completion_start_time) / 1000) as time_to_first_token",
-  model_id: "internal_model_id as model_id",
-};
-
 export const getObservationsForBlobStorageExport = function (
   projectId: string,
   minTimestamp: Date,
   maxTimestamp: Date,
   fieldGroups: ObservationFieldGroupFull[] = [...OBSERVATION_FIELD_GROUPS_FULL],
 ) {
-  // core is always required (provides id, trace_id, start/end_time used for deduplication)
-  const effectiveGroups = new Set<ObservationFieldGroupFull>([
-    "core",
-    ...fieldGroups,
-  ]);
-
-  const selectedColumns = LEGACY_OBSERVATION_EXPORT_FIELDS.filter((column) =>
-    effectiveGroups.has(column.group),
-  ).map(
-    (column) =>
-      LEGACY_OBSERVATION_EXPORT_SQL_OVERRIDES[column.field] ?? column.field,
+  return streamObservationsForBlobGreptime(
+    projectId,
+    minTimestamp,
+    maxTimestamp,
+    fieldGroups,
   );
-
-  const query = `
-    SELECT
-      ${selectedColumns.join(",\n      ")}
-    FROM observations
-    WHERE project_id = {projectId: String}
-    AND start_time >= {minTimestamp: DateTime64(3)}
-    AND start_time <= {maxTimestamp: DateTime64(3)}
-    ORDER BY event_ts DESC
-    LIMIT 1 BY id, project_id, type
-  `;
-
-  const records = queryClickhouseStream<Record<string, unknown>>({
-    query,
-    params: {
-      projectId,
-      minTimestamp: convertDateToClickhouseDateTime(minTimestamp),
-      maxTimestamp: convertDateToClickhouseDateTime(maxTimestamp),
-    },
-    tags: {
-      feature: "blobstorage",
-      type: "observation",
-      kind: "analytic",
-      projectId,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-    },
-    preferredClickhouseService: "ReadOnly",
-  });
-
-  return records;
 };
 
 export const getGenerationsForAnalyticsIntegrations = async function* (
@@ -594,87 +506,13 @@ export const getGenerationsForAnalyticsIntegrations = async function* (
   projectName: string,
   minTimestamp: Date,
   maxTimestamp: Date,
-  options: { useGraceHash?: boolean } = {},
+  _options: { useGraceHash?: boolean } = {},
 ) {
-  // Pre-filter traces in a CTE so the trace timestamp window prunes partitions
-  // directly, instead of living alongside the LEFT JOIN where the planner
-  // cannot push it down. LEFT JOIN keeps generations whose trace is missing or
-  // outside the 7-day window — they still ship to PostHog with NULL trace
-  // fields rather than being silently dropped.
-  const query = `
-    WITH selected_traces AS (
-      SELECT
-        t.project_id as project_id,
-        t.id as id,
-        t.name as name,
-        t.session_id as session_id,
-        t.user_id as user_id,
-        t.release as release,
-        t.tags as tags,
-        t.metadata['$posthog_session_id'] as posthog_session_id,
-        t.metadata['$mixpanel_session_id'] as mixpanel_session_id
-      FROM traces t FINAL
-      WHERE t.project_id = {projectId: String}
-      AND t.timestamp >= {minTimestamp: DateTime64(3)} - ${OBSERVATIONS_TO_TRACE_INTERVAL}
-      AND t.timestamp <= {maxTimestamp: DateTime64(3)} + ${TRACE_TO_OBSERVATIONS_INTERVAL}
-    )
-
-    SELECT
-      o.name as name,
-      o.start_time as start_time,
-      o.id as id,
-      o.total_cost as total_cost,
-      if(isNull(completion_start_time), NULL, date_diff('millisecond', start_time, completion_start_time)) as time_to_first_token,
-      o.usage_details['total'] as input_tokens,
-      o.usage_details['output'] as output_tokens,
-      o.cost_details['total'] as total_tokens,
-      o.project_id as project_id,
-      if(isNull(end_time), NULL, date_diff('millisecond', start_time, end_time) / 1000) as latency,
-      o.provided_model_name as model,
-      o.level as level,
-      o.version as version,
-      o.environment as environment,
-      t.id as trace_id,
-      t.name as trace_name,
-      t.session_id as trace_session_id,
-      t.user_id as trace_user_id,
-      t.release as trace_release,
-      t.tags as trace_tags,
-      t.posthog_session_id as posthog_session_id,
-      t.mixpanel_session_id as mixpanel_session_id
-    FROM observations o FINAL
-    LEFT JOIN selected_traces t ON o.trace_id = t.id AND o.project_id = t.project_id
-    WHERE o.project_id = {projectId: String}
-    AND o.start_time >= {minTimestamp: DateTime64(3)}
-    AND o.start_time < {maxTimestamp: DateTime64(3)}
-    AND o.type = 'GENERATION'
-  `;
-
-  const records = queryClickhouseStream<Record<string, unknown>>({
-    query,
-    params: {
-      projectId,
-      minTimestamp: convertDateToClickhouseDateTime(minTimestamp),
-      maxTimestamp: convertDateToClickhouseDateTime(maxTimestamp),
-    },
-    tags: {
-      feature: "posthog",
-      type: "observation",
-      kind: "analytic",
-      projectId,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-      ...(options.useGraceHash
-        ? {
-            clickhouse_settings: {
-              join_algorithm: "grace_hash",
-              grace_hash_join_initial_buckets: "32",
-            },
-          }
-        : {}),
-    },
-  });
+  const records = streamGenerationsForAnalyticsGreptime(
+    projectId,
+    minTimestamp,
+    maxTimestamp,
+  );
 
   const baseUrl = env.NEXTAUTH_URL?.replace("/api/auth", "");
   for await (const record of records) {

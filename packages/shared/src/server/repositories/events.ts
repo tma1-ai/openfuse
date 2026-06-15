@@ -5,10 +5,7 @@ import type {
   ObservationType,
 } from "../../domain";
 import { env } from "../../env";
-import {
-  convertDateToClickhouseDateTime,
-  PreferredClickhouseService,
-} from "../clickhouse/client";
+import { PreferredClickhouseService } from "../clickhouse/client";
 import {
   getTraceByIdFromTracesTable,
   getTracesIdentifierForSessionFromTracesTable,
@@ -65,6 +62,10 @@ import {
   getObservationsV2ForPublicApiFromEventsGreptime,
 } from "./greptime/eventsObservations";
 import {
+  streamEventsForAnalyticsGreptime,
+  streamEventsForBlobGreptime,
+} from "./greptime/exportToSink";
+import {
   FullEventsObservations,
   createPublicApiTracesColumnMapping,
   deriveFilters,
@@ -83,16 +84,12 @@ import {
   type ObservationFieldGroupPublicApi,
   type ObservationFieldGroupFull,
 } from "../../domain/observation-field-groups";
-import { queryClickhouseStream } from "./clickhouse";
 import type { AnalyticsObservationEvent } from "../analytics-integrations/types";
 import {
   getObservationByIdFromObservationsTable,
   ObservationTableQuery,
 } from "./observations";
-import {
-  EventsQueryBuilder,
-  type SessionEventsMetricsRow,
-} from "../queries/clickhouse-sql/event-query-builder";
+import { type SessionEventsMetricsRow } from "../queries/clickhouse-sql/event-query-builder";
 import { type EventsObservationPublic } from "../queries/createGenerationsQuery";
 import { type NumericEventsTableColumnId } from "../../eventsTable";
 import { tracesTableCols } from "../../tableDefinitions/tracesTable";
@@ -866,13 +863,6 @@ export const hasAnyEventOlderThan = async (
  * Delete events older than a cutoff date
  * Used for data retention cleanup
  */
-export const deleteEventsOlderThanDays = async (
-  _projectId: string,
-  _beforeDate: Date,
-): Promise<boolean> => {
-  return false;
-};
-
 export const getObservationsBatchIOFromEventsTable = async <
   TIncludeExperiment extends boolean = false,
 >(opts: {
@@ -978,8 +968,8 @@ export const hasAnyUserFromEventsTable = async (
 };
 
 /**
- * Streams events from ClickHouse for blob storage export.
- * Uses EventsQueryBuilder for consistent query construction.
+ * Streams events (observation projection) from GreptimeDB for blob storage export.
+ * Delegates to streamEventsForBlobGreptime (keyset-paged scan + trace-denorm join).
  */
 export const getEventsForBlobStorageExport = function (
   projectId: string,
@@ -987,56 +977,18 @@ export const getEventsForBlobStorageExport = function (
   maxTimestamp: Date,
   fieldGroups: ObservationFieldGroupFull[] = [...OBSERVATION_FIELD_GROUPS_FULL],
 ) {
-  const queryBuilder = new EventsQueryBuilder({ projectId });
-
-  // core is always required (provides id, trace_id, start/end_time used for cursor and deduplication)
-  const effectiveGroups = fieldGroups.includes("core")
-    ? fieldGroups
-    : (["core", ...fieldGroups] as ObservationFieldGroupFull[]);
-
-  for (const group of effectiveGroups) {
-    if (group === "io") {
-      queryBuilder.selectIO(false); // Full I/O, no truncation
-    } else if (group === "model") {
-      queryBuilder.selectFieldSet("model_export"); // "model_export" is the SQL field set name for the "model" group
-    } else {
-      queryBuilder.selectFieldSet(group);
-    }
-  }
-
-  queryBuilder
-    .whereRaw(
-      "e.start_time >= {minTimestamp: DateTime64(3)} AND e.start_time <= {maxTimestamp: DateTime64(3)}",
-      {
-        minTimestamp: convertDateToClickhouseDateTime(minTimestamp),
-        maxTimestamp: convertDateToClickhouseDateTime(maxTimestamp),
-      },
-    )
-    .whereRaw("e.is_deleted = 0")
-    .limitBy("e.span_id", "e.project_id");
-
-  const { query, params } = queryBuilder.buildWithParams();
-
-  return queryClickhouseStream<Record<string, unknown>>({
-    query,
-    params,
-    tags: {
-      feature: "blobstorage",
-      type: "event",
-      kind: "analytic",
-      projectId,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-    },
-    preferredClickhouseService: "EventsReadOnly",
-  });
+  return streamEventsForBlobGreptime(
+    projectId,
+    minTimestamp,
+    maxTimestamp,
+    fieldGroups,
+  );
 };
 
 /**
- * Streams events from ClickHouse for analytics integrations (PostHog, Mixpanel).
- * Uses EventsQueryBuilder for consistent query construction.
- * All fields come directly from the events table (which has denormalized trace-level data).
+ * Streams events (observation projection) from GreptimeDB for analytics integrations
+ * (PostHog, Mixpanel). Delegates to streamEventsForAnalyticsGreptime, which pages the
+ * observation projection and joins trace-level denormalised fields per page.
  */
 export const getEventsForAnalyticsIntegrations = async function* (
   projectId: string,
@@ -1044,46 +996,11 @@ export const getEventsForAnalyticsIntegrations = async function* (
   minTimestamp: Date,
   maxTimestamp: Date,
 ) {
-  const queryBuilder = new EventsQueryBuilder({ projectId })
-    // Use export field set for most fields (id, traceId, name, type, level, version,
-    // environment, userId, sessionId, tags, release, traceName, totalCost, latency, etc.)
-    .selectFieldSet("export")
-    // Add analytics-specific computed fields
-    .selectRaw(
-      // Token counts from usage/cost details
-      "e.usage_details['input'] as input_tokens",
-      "e.usage_details['output'] as output_tokens",
-      "e.usage_details['total'] as total_tokens",
-      // Analytics integration session IDs from metadata (constructed from array columns)
-      "mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['$posthog_session_id'] as posthog_session_id",
-      "mapFromArrays(arrayReverse(e.metadata_names), arrayReverse(e.metadata_values))['$mixpanel_session_id'] as mixpanel_session_id",
-    )
-    .whereRaw(
-      "e.start_time >= {minTimestamp: DateTime64(3)} AND e.start_time < {maxTimestamp: DateTime64(3)}",
-      {
-        minTimestamp: convertDateToClickhouseDateTime(minTimestamp),
-        maxTimestamp: convertDateToClickhouseDateTime(maxTimestamp),
-      },
-    )
-    .whereRaw("e.is_deleted = 0")
-    .limitBy("e.span_id", "e.project_id");
-
-  const { query, params } = queryBuilder.buildWithParams();
-
-  const records = queryClickhouseStream<Record<string, unknown>>({
-    query,
-    params,
-    tags: {
-      feature: "analytics-integration",
-      type: "event",
-      kind: "analytic",
-      projectId,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS,
-    },
-    preferredClickhouseService: "EventsReadOnly",
-  });
+  const records = streamEventsForAnalyticsGreptime(
+    projectId,
+    minTimestamp,
+    maxTimestamp,
+  );
 
   const baseUrl = env.NEXTAUTH_URL?.replace("/api/auth", "");
   for await (const record of records) {

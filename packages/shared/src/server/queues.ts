@@ -133,10 +133,6 @@ export const ExperimentCreateEventSchema = z.object({
   runId: z.string(),
   description: z.string().optional(),
 });
-export const DataRetentionProcessingEventSchema = z.object({
-  projectId: z.string(),
-  retention: z.number(),
-});
 export const BatchActionProcessingEventSchema = z.discriminatedUnion(
   "actionId",
   [
@@ -317,9 +313,6 @@ export type PostHogIntegrationProcessingEventType = z.infer<
 export type MixpanelIntegrationProcessingEventType = z.infer<
   typeof MixpanelIntegrationProcessingEventSchema
 >;
-export type DataRetentionProcessingEventType = z.infer<
-  typeof DataRetentionProcessingEventSchema
->;
 export type BatchActionProcessingEventType = z.infer<
   typeof BatchActionProcessingEventSchema
 >;
@@ -364,8 +357,6 @@ export enum QueueName {
   BlobStorageIntegrationProcessingQueue = "blobstorage-integration-processing-queue",
   CoreDataS3ExportQueue = "core-data-s3-export-queue",
   MeteringDataPostgresExportQueue = "metering-data-postgres-export-queue",
-  DataRetentionQueue = "data-retention-queue",
-  DataRetentionProcessingQueue = "data-retention-processing-queue",
   BatchActionQueue = "batch-action-queue",
   CreateEvalQueue = "create-eval-queue",
   ScoreDelete = "score-delete",
@@ -401,8 +392,6 @@ export enum QueueJobs {
   BlobStorageIntegrationProcessingJob = "blobstorage-integration-processing-job",
   CoreDataS3ExportJob = "core-data-s3-export-job",
   MeteringDataPostgresExportJob = "metering-data-postgres-export-job",
-  DataRetentionJob = "data-retention-job",
-  DataRetentionProcessingJob = "data-retention-processing-job",
   BatchActionProcessingJob = "batch-action-processing-job",
   CreateEvalJob = "create-eval-job",
   ScoreDelete = "score-delete",
@@ -529,12 +518,6 @@ export type TQueueJobTypes = {
     id: string;
     payload: MixpanelIntegrationProcessingEventType;
     name: QueueJobs.MixpanelIntegrationProcessingJob;
-  };
-  [QueueName.DataRetentionProcessingQueue]: {
-    timestamp: Date;
-    id: string;
-    payload: DataRetentionProcessingEventType;
-    name: QueueJobs.DataRetentionProcessingJob;
   };
   [QueueName.BatchActionQueue]: {
     timestamp: Date;

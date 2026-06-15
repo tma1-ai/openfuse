@@ -59,6 +59,28 @@ describe("GreptimeQueryBuilder", () => {
     expect(query).toMatch(/INNER JOIN .*observations/);
   });
 
+  it("dedupes a relation measure shared by several aggregations in the inner projection", () => {
+    // Home LatencyTables asks for traces latency at p50/p90/p95/p99 — one relation measure, four
+    // aggregations. The inner per-trace `latency` value is identical for all four, so it must be
+    // projected once; emitting it per metric produces duplicate projection names that GreptimeDB
+    // rejects ("Projections require unique expression names ... AS latency").
+    const { query } = build({
+      view: "traces",
+      dimensions: [{ field: "name" }],
+      metrics: [
+        { measure: "latency", aggregation: "p50" },
+        { measure: "latency", aggregation: "p90" },
+        { measure: "latency", aggregation: "p95" },
+        { measure: "latency", aggregation: "p99" },
+      ],
+    });
+    const innerLatencyProjections = query.match(/ AS `latency`/g) ?? [];
+    expect(innerLatencyProjections).toHaveLength(1);
+    // outer still applies all four quantiles over the single inner column
+    expect(query).toMatch(/p50_latency/);
+    expect(query).toMatch(/p99_latency/);
+  });
+
   it("by-type query is a per-entity raw fetch with a byType post-process", () => {
     const { query, postProcess } = build({
       view: "observations",

@@ -277,10 +277,6 @@ const EnvSchema = z.object({
   NODE_EXTRA_CA_CERTS: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
 
-  LANGFUSE_ENABLE_BLOB_STORAGE_FILE_LOG: z
-    .enum(["true", "false"])
-    .default("true"),
-
   // V4 write mode. Mirrors worker/src/env.ts so the web package can gate
   // public API routes that rely on the legacy traces/observations tables.
   // The worker owns the writes; the web only needs to know whether legacy

@@ -1,7 +1,6 @@
 import {
   clickhouseClient,
   ClickhouseClientType,
-  BlobStorageFileLogInsertType,
   getCurrentSpan,
   ObservationRecordInsertType,
   ObservationBatchStagingRecordInsertType,
@@ -53,7 +52,6 @@ export class ClickhouseWriter {
       [TableName.Scores]: [],
       [TableName.Observations]: [],
       [TableName.ObservationsBatchStaging]: [],
-      [TableName.BlobStorageFileLog]: [],
       [TableName.DatasetRunItems]: [],
       [TableName.EventsFull]: [],
     };
@@ -121,7 +119,6 @@ export class ClickhouseWriter {
           this.flush(TableName.Scores, fullQueue),
           this.flush(TableName.Observations, fullQueue),
           this.flush(TableName.ObservationsBatchStaging, fullQueue),
-          this.flush(TableName.BlobStorageFileLog, fullQueue),
           this.flush(TableName.DatasetRunItems, fullQueue),
           this.flush(TableName.EventsFull, fullQueue),
         ]).catch((err) => {
@@ -608,7 +605,6 @@ export enum TableName {
   Scores = "scores",
   Observations = "observations",
   ObservationsBatchStaging = "observations_batch_staging",
-  BlobStorageFileLog = "blob_storage_file_log",
   DatasetRunItems = "dataset_run_items_rmt",
   EventsFull = "events_full", // Primary write target - MV auto-populates events_core
 }
@@ -623,13 +619,11 @@ type RecordInsertType<T extends TableName> = T extends TableName.Scores
         ? TraceRecordInsertType
         : T extends TableName.TracesNull
           ? TraceNullRecordInsertType
-          : T extends TableName.BlobStorageFileLog
-            ? BlobStorageFileLogInsertType
-            : T extends TableName.DatasetRunItems
-              ? DatasetRunItemRecordInsertType
-              : T extends TableName.EventsFull
-                ? EventRecordInsertType
-                : never;
+          : T extends TableName.DatasetRunItems
+            ? DatasetRunItemRecordInsertType
+            : T extends TableName.EventsFull
+              ? EventRecordInsertType
+              : never;
 
 type ClickhouseQueue = {
   [T in TableName]: ClickhouseWriterQueueItem<T>[];

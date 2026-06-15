@@ -520,7 +520,14 @@ export class GreptimeQueryBuilder {
         }
       }
       if (bucket) innerParts.push(`min(${bucket.expr}) AS time_dimension`);
+      // Project each measure once, keyed by its alias (the measure name). Several metrics may share
+      // one measure (e.g. latency at p50/p90/p95/p99); the inner per-entity value is identical, and
+      // the outer applies each aggregation to this single column. Emitting it per metric would
+      // produce duplicate projection names, which GreptimeDB/DataFusion rejects.
+      const seenInnerMeasure = new Set<string>();
       for (const m of measures) {
+        if (seenInnerMeasure.has(m.alias)) continue;
+        seenInnerMeasure.add(m.alias);
         const innerExpr = m.relationTable
           ? m.sql // already an aggregate over the child relation
           : m.sql === "*"

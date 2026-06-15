@@ -7,13 +7,12 @@ import {
 import { prisma } from "@langfuse/shared/src/db";
 import { MediaRetentionCleaner } from "../features/media-retention-cleaner";
 
-// Mock S3 and blob storage functions
+// Mock S3 media storage
 vi.mock("@langfuse/shared/src/server", async () => {
   const actual = await vi.importActual("@langfuse/shared/src/server");
   return {
     ...actual,
     getS3MediaStorageClient: vi.fn(),
-    removeIngestionEventsFromS3AndDeleteClickhouseRefsForProject: vi.fn(),
   };
 });
 
@@ -24,7 +23,6 @@ vi.mock("../../env", async () => {
     env: {
       ...(actual as { env: object }).env,
       LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: "test-bucket",
-      LANGFUSE_ENABLE_BLOB_STORAGE_FILE_LOG: "false",
     },
   };
 });

@@ -6,7 +6,6 @@ import {
   deleteTraces,
   getS3MediaStorageClient,
   logger,
-  removeIngestionEventsFromS3AndDeleteClickhouseRefsForTraces,
   traceException,
 } from "@langfuse/shared/src/server";
 import { env, v4WritesToEventsTable } from "../../env";
@@ -139,12 +138,6 @@ export const processClickhouseTraceDelete = async (
 
   try {
     await Promise.all([
-      env.LANGFUSE_ENABLE_BLOB_STORAGE_FILE_LOG === "true"
-        ? removeIngestionEventsFromS3AndDeleteClickhouseRefsForTraces({
-            projectId,
-            traceIds,
-          })
-        : Promise.resolve(),
       deleteTracesFromGreptime({ projectId, traceIds }),
       deleteTraces(projectId, traceIds),
       deleteObservationsByTraceIds(projectId, traceIds),
