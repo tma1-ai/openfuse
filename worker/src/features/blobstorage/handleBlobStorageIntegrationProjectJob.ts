@@ -110,7 +110,9 @@ const getMinTimestampForExport = async (
           `[BLOB INTEGRATION] Error querying GreptimeDB for minimum timestamp for project ${projectId}`,
           error,
         );
-        throw new Error(`Failed to fetch minimum timestamp: ${error}`);
+        throw new Error(
+          `Failed to fetch minimum timestamp: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
     case BlobStorageExportMode.FROM_TODAY:
     case BlobStorageExportMode.FROM_CUSTOM_DATE:

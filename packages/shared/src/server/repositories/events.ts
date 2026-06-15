@@ -968,8 +968,8 @@ export const hasAnyUserFromEventsTable = async (
 };
 
 /**
- * Streams events from ClickHouse for blob storage export.
- * Uses EventsQueryBuilder for consistent query construction.
+ * Streams events (observation projection) from GreptimeDB for blob storage export.
+ * Delegates to streamEventsForBlobGreptime (keyset-paged scan + trace-denorm join).
  */
 export const getEventsForBlobStorageExport = function (
   projectId: string,
@@ -986,9 +986,9 @@ export const getEventsForBlobStorageExport = function (
 };
 
 /**
- * Streams events from ClickHouse for analytics integrations (PostHog, Mixpanel).
- * Uses EventsQueryBuilder for consistent query construction.
- * All fields come directly from the events table (which has denormalized trace-level data).
+ * Streams events (observation projection) from GreptimeDB for analytics integrations
+ * (PostHog, Mixpanel). Delegates to streamEventsForAnalyticsGreptime, which pages the
+ * observation projection and joins trace-level denormalised fields per page.
  */
 export const getEventsForAnalyticsIntegrations = async function* (
   projectId: string,

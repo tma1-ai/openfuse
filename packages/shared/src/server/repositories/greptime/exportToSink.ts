@@ -16,7 +16,11 @@ import {
  *
  * The trace-level rollup (cost/latency/observation_count) and trace denormalisation that the
  * analytics transforms expect are not columns on the observation/score projections, so they are
- * fetched per page (two-phase) keyed on the page's ids — exact per-entity, no time-window slack.
+ * fetched per page (two-phase) keyed on the page's ids. Trace denorm is an exact lookup by id; the
+ * observation rollup additionally bounds `start_time` to the legacy window (minTimestamp - 1h ..
+ * maxTimestamp + 2d) because `observations` has no trace_id index — without a time bound the
+ * `trace_id IN (...)` scan would hit every partition. That window matches the ClickHouse legacy
+ * behaviour (observations more than 2d after their trace are not rolled up).
  *
  * Window boundaries are preserved per the legacy queries: blob export is inclusive of `maxTimestamp`
  * (`<=`), analytics export is exclusive (`<`). The primary scan is always project-scoped and
@@ -52,7 +56,9 @@ async function fetchTraceDenormByIds(
   projectId: string,
   traceIds: string[],
 ): Promise<Map<string, TraceDenorm>> {
-  const ids = traceIds.filter((id): id is string => Boolean(id));
+  // Dedupe: many observations/scores share a trace_id, and a duplicated IN list
+  // bloats the placeholder count for no benefit.
+  const ids = [...new Set(traceIds.filter((id): id is string => Boolean(id)))];
   if (ids.length === 0) return new Map();
   const inClause = greptimeInClause("t.id", ids, "trace");
   const rows: Record<string, unknown>[] = await greptimeQuery<
@@ -827,8 +833,13 @@ export async function getMinExportTimestampGreptime(
       params: { projectId },
       readOnly: true,
     });
+    // mysql2 returns TIMESTAMP as a Date (pool pins UTC), but coerce defensively
+    // in case the driver hands back a string/number for an aggregate result.
     const v = rows[0]?.min_ts;
-    return v instanceof Date ? v : null;
+    if (v == null) return null;
+    if (v instanceof Date) return v;
+    const d = new Date(v as string | number);
+    return Number.isNaN(d.getTime()) ? null : d;
   };
   const mins = (
     await Promise.all([
