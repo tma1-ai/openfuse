@@ -49,7 +49,6 @@ import {
   tracesTableUiColumnDefinitions,
   getTracesGroupedByUsers,
   getTracesGroupedBySessionId,
-  updateEvents,
   getScoresAndCorrectionsForTraces,
 } from "@langfuse/shared/src/server";
 import { TRPCError } from "@trpc/server";
@@ -60,7 +59,6 @@ import {
   type AgentGraphDataResponse,
   AgentGraphDataSchema,
 } from "@/src/features/trace-graph-view/types";
-import { env } from "@/src/env.mjs";
 import {
   toDomainWithStringifiedMetadata,
   toDomainArrayWithStringifiedMetadata,
@@ -521,19 +519,7 @@ export const traceRouter = createTRPCRouter({
         if (clickhouseTrace) {
           trace = clickhouseTrace;
           clickhouseTrace.bookmarked = input.bookmarked;
-          const promises = [
-            upsertTrace(convertTraceDomainToClickhouse(clickhouseTrace)),
-          ];
-          if (env.LANGFUSE_MIGRATION_V4_WRITE_MODE !== "legacy") {
-            promises.push(
-              updateEvents(
-                input.projectId,
-                { traceIds: [clickhouseTrace.id], rootOnly: true },
-                { bookmarked: input.bookmarked },
-              ),
-            );
-          }
-          await Promise.all(promises);
+          await upsertTrace(convertTraceDomainToClickhouse(clickhouseTrace));
         } else {
           logger.error(
             `Trace not found in Clickhouse: ${input.traceId}. Skipping bookmark.`,
@@ -586,19 +572,7 @@ export const traceRouter = createTRPCRouter({
           });
         }
         clickhouseTrace.public = input.public;
-        const promises = [
-          upsertTrace(convertTraceDomainToClickhouse(clickhouseTrace)),
-        ];
-        if (env.LANGFUSE_MIGRATION_V4_WRITE_MODE !== "legacy") {
-          promises.push(
-            updateEvents(
-              input.projectId,
-              { traceIds: [clickhouseTrace.id] },
-              { public: input.public },
-            ),
-          );
-        }
-        await Promise.all(promises);
+        await upsertTrace(convertTraceDomainToClickhouse(clickhouseTrace));
         return clickhouseTrace;
       } catch (error) {
         logger.error("Failed to call traces.publish", error);
