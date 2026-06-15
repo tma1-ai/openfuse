@@ -149,9 +149,11 @@ const collect = async <T>(gen: AsyncGenerator<T>): Promise<T[]> => {
 async function main() {
   await cleanup();
   const writer = GreptimeWriter.getInstance();
-  // 2 traces; trace t1 has a GENERATION + a SPAN observation, trace t2 has a GENERATION.
+  // 2 live traces; trace t1 has a GENERATION + a SPAN observation, trace t2 has a GENERATION.
+  // t3 is soft-deleted but has an orphan observation to verify trace denorm does not leak.
   writer.addToQueue(GreptimeTable.Traces, trace("t1"));
   writer.addToQueue(GreptimeTable.Traces, trace("t2"));
+  writer.addToQueue(GreptimeTable.Traces, { ...trace("t3"), is_deleted: 1 });
   writer.addToQueue(
     GreptimeTable.Observations,
     observation("o1", "t1", "GENERATION"),
@@ -163,6 +165,10 @@ async function main() {
   writer.addToQueue(
     GreptimeTable.Observations,
     observation("o3", "t2", "GENERATION"),
+  );
+  writer.addToQueue(
+    GreptimeTable.Observations,
+    observation("o4", "t3", "GENERATION"),
   );
   writer.addToQueue(GreptimeTable.Scores, score("s1", "t1"));
   await writer.flushAll(true);
@@ -204,7 +210,7 @@ async function main() {
   const obsBlobFull = await collect(
     getObservationsForBlobStorageExport(SMOKE_PROJECT, WIN_MIN, WIN_MAX),
   );
-  check("obs blob: 3 rows", obsBlobFull.length === 3, obsBlobFull.length);
+  check("obs blob: 4 rows", obsBlobFull.length === 4, obsBlobFull.length);
   const ob = obsBlobFull.find((r) => r.id === "o1");
   check("obs blob: model_id alias", !!ob && ob.model_id === "model-internal-1");
   check(
@@ -242,7 +248,7 @@ async function main() {
   const eventsBlob = await collect(
     getEventsForBlobStorageExport(SMOKE_PROJECT, WIN_MIN, WIN_MAX),
   );
-  check("events blob: 3 rows", eventsBlob.length === 3, eventsBlob.length);
+  check("events blob: 4 rows", eventsBlob.length === 4, eventsBlob.length);
   const eb = eventsBlob.find((r) => r.id === "o1");
   check(
     "events blob: trace denorm (trace_name/user_id/tags/release)",
@@ -260,6 +266,16 @@ async function main() {
   check(
     "events blob: model_id alias",
     !!eb && eb.model_id === "model-internal-1",
+  );
+  const deletedTraceEvent = eventsBlob.find((r) => r.id === "o4");
+  check(
+    "events blob: deleted trace denorm stays null",
+    !!deletedTraceEvent &&
+      deletedTraceEvent.trace_name == null &&
+      deletedTraceEvent.user_id == null &&
+      deletedTraceEvent.tags == null &&
+      deletedTraceEvent.release == null,
+    deletedTraceEvent,
   );
 
   // --- Analytics integrations (langfuse_* transform shape, exclusive window) ---
@@ -298,11 +314,13 @@ async function main() {
     ),
   );
   check(
-    "generations analytics: 2 (GENERATION only)",
-    generations.length === 2,
+    "generations analytics: 3 (GENERATION only)",
+    generations.length === 3,
     generations.length,
   );
-  const ga = generations[0] as Record<string, unknown>;
+  const ga = generations.find(
+    (r) => (r as Record<string, unknown>).langfuse_trace_id === "t1",
+  ) as Record<string, unknown> | undefined;
   check(
     "generations analytics: model + posthog from trace",
     !!ga && ga.langfuse_model === "gpt-4o" && ga.posthog_session_id === "ph-1",
@@ -312,8 +330,8 @@ async function main() {
     getEventsForAnalyticsIntegrations(SMOKE_PROJECT, "Smoke", WIN_MIN, WIN_MAX),
   );
   check(
-    "events analytics: 3 (all obs types)",
-    eventsAnalytics.length === 3,
+    "events analytics: 4 (all obs types)",
+    eventsAnalytics.length === 4,
     eventsAnalytics.length,
   );
   const ea = eventsAnalytics.find(

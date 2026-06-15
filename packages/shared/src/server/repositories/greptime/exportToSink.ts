@@ -24,6 +24,8 @@ import {
  */
 
 const PAGE_SIZE = 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const TWO_DAYS_MS = 2 * 24 * HOUR_MS;
 
 /** Lexicographic keyset predicate for a `(timeCol, id)` DESC scan (paged seek). */
 const keysetDesc = (prefix: string, timeCol: string): string =>
@@ -95,6 +97,12 @@ export async function* streamTracesForAnalyticsGreptime(
   minTimestamp: Date,
   maxTimestamp: Date,
 ): AsyncGenerator<Record<string, unknown>> {
+  const observationRollupMinTs = greptimeTsParam(
+    new Date(minTimestamp.getTime() - HOUR_MS),
+  );
+  const observationRollupMaxTs = greptimeTsParam(
+    new Date(maxTimestamp.getTime() + TWO_DAYS_MS),
+  );
   let cursor: Cursor = null;
   while (true) {
     const traceRows: Record<string, unknown>[] = await greptimeQuery<
@@ -144,8 +152,15 @@ export async function* streamTracesForAnalyticsGreptime(
             - arrow_cast(least(min(o.start_time), min(o.end_time)), 'Int64') AS latency_ms
         FROM observations o
         WHERE o.project_id = :projectId AND ${notDeleted("o")} AND ${rollupIn.sql}
+          AND o.start_time >= :observationRollupMinTs
+          AND o.start_time < :observationRollupMaxTs
         GROUP BY o.trace_id`,
-      params: { projectId, ...rollupIn.params },
+      params: {
+        projectId,
+        observationRollupMinTs,
+        observationRollupMaxTs,
+        ...rollupIn.params,
+      },
       readOnly: true,
     });
     const rollup = new Map<string, Record<string, unknown>>();
@@ -766,7 +781,7 @@ export async function* streamEventsForBlobGreptime(
         SELECT
           ${selectExprs.join(",\n          ")}
         FROM observations o
-        LEFT JOIN traces t ON o.trace_id = t.id AND o.project_id = t.project_id
+        LEFT JOIN traces t ON o.trace_id = t.id AND o.project_id = t.project_id AND ${notDeleted("t")}
         WHERE o.project_id = :projectId AND ${notDeleted("o")}
           AND o.start_time >= :minTs AND o.start_time <= :maxTs
           ${cursor ? `AND ${keysetDesc("o", "start_time")}` : ""}
