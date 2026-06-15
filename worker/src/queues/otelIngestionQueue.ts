@@ -1,6 +1,5 @@
 import { Job, Processor } from "bullmq";
 import {
-  clickhouseClient,
   createIngestionEventSchema,
   getClickhouseEntityType,
   getCurrentSpan,
@@ -34,7 +33,6 @@ import {
 } from "../env";
 import { IngestionService } from "../services/IngestionService";
 import { prisma } from "@langfuse/shared/src/db";
-import { ClickhouseWriter } from "../services/ClickhouseWriter";
 import { GreptimeWriter } from "../services/GreptimeWriter";
 import {
   ForbiddenError,
@@ -348,8 +346,6 @@ export const otelIngestionQueueProcessorBuilder = (
       const ingestionService = new IngestionService(
         redis,
         prisma,
-        ClickhouseWriter.getInstance(),
-        clickhouseClient(),
         GreptimeWriter.getInstance(),
       );
 

@@ -7,28 +7,21 @@ import { prisma } from "@langfuse/shared/src/db";
 import { createOrgProjectAndApiKey } from "@langfuse/shared/src/server";
 
 import { IngestionService } from "../../IngestionService";
-import * as clickhouseWriteExports from "../../ClickhouseWriter";
+import * as greptimeWriterExports from "../../GreptimeWriter";
 
 // vi.hoisted ensures this is declared before vi.mock's hoisted factory runs.
 // Without it, the variable would be undefined when the factory executes.
-const { mockAddToClickhouseWriter } = vi.hoisted(() => ({
-  mockAddToClickhouseWriter: vi.fn(),
+const { mockAddToGreptimeWriter } = vi.hoisted(() => ({
+  mockAddToGreptimeWriter: vi.fn(),
 }));
-const mockClickhouseClient = {
-  query: async () => ({
-    json: async () => [],
-    query_id: "1",
-    response_headers: { "x-clickhouse-summary": [] },
-  }),
-};
 
-vi.mock("../../ClickhouseWriter", async (importOriginal) => {
+vi.mock("../../GreptimeWriter", async (importOriginal) => {
   const original = (await importOriginal()) as {};
   return {
     ...original,
-    ClickhouseWriter: {
+    GreptimeWriter: {
       getInstance: () => ({
-        addToQueue: mockAddToClickhouseWriter,
+        addToQueue: mockAddToGreptimeWriter,
       }),
     },
   };
@@ -37,8 +30,7 @@ vi.mock("../../ClickhouseWriter", async (importOriginal) => {
 const mockIngestionService = new IngestionService(
   null as any,
   prisma,
-  clickhouseWriteExports.ClickhouseWriter.getInstance() as any,
-  mockClickhouseClient as any,
+  greptimeWriterExports.GreptimeWriter.getInstance() as any,
 );
 
 describe("Token Cost Calculation", () => {
@@ -460,8 +452,8 @@ describe("Token Cost Calculation", () => {
       createdAtTimestamp: new Date(),
       observationEventList: events,
     });
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 
@@ -541,8 +533,8 @@ describe("Token Cost Calculation", () => {
       createdAtTimestamp: new Date(),
       observationEventList: events,
     });
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 
@@ -620,8 +612,8 @@ describe("Token Cost Calculation", () => {
       createdAtTimestamp: new Date(),
       observationEventList: events,
     });
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 
@@ -701,8 +693,8 @@ describe("Token Cost Calculation", () => {
       createdAtTimestamp: new Date(),
       observationEventList: events,
     });
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 
@@ -785,8 +777,8 @@ describe("Token Cost Calculation", () => {
       createdAtTimestamp: new Date(),
       observationEventList: events,
     });
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 
@@ -875,8 +867,8 @@ describe("Token Cost Calculation", () => {
       createdAtTimestamp: new Date(),
       observationEventList: events,
     });
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 
@@ -960,8 +952,8 @@ describe("Token Cost Calculation", () => {
       createdAtTimestamp: new Date(),
       observationEventList: events,
     });
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 
@@ -1042,8 +1034,8 @@ describe("Token Cost Calculation", () => {
       createdAtTimestamp: new Date(),
       observationEventList: events,
     });
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 
@@ -1129,8 +1121,8 @@ describe("Token Cost Calculation", () => {
       createdAtTimestamp: new Date(),
       observationEventList: events,
     });
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 
@@ -1201,8 +1193,8 @@ describe("Token Cost Calculation", () => {
       createdAtTimestamp: new Date(),
       observationEventList: events,
     });
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 
@@ -1262,8 +1254,8 @@ describe("Token Cost Calculation", () => {
       observationEventList: events,
     });
 
-    expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-    const args = mockAddToClickhouseWriter.mock.calls[0];
+    expect(mockAddToGreptimeWriter).toHaveBeenCalled();
+    const args = mockAddToGreptimeWriter.mock.calls[0];
     const tableName = args[0];
     const generation = args[1];
 

@@ -10,7 +10,6 @@
  */
 import {
   redis,
-  clickhouseClient,
   greptimeQuery,
   closeGreptimeConnections,
   greptimeTraceReads,
@@ -18,7 +17,6 @@ import {
   greptimeScoreReads,
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
-import { ClickhouseWriter } from "../services/ClickhouseWriter";
 import { GreptimeWriter } from "../services/GreptimeWriter";
 import { IngestionService } from "../services/IngestionService";
 
@@ -47,14 +45,7 @@ async function main() {
   if (!redis) throw new Error("redis unavailable");
   if (!prisma) throw new Error("prisma unavailable");
 
-  const svc = new IngestionService(
-    redis,
-    prisma,
-    ClickhouseWriter.getInstance(),
-    clickhouseClient(),
-    GreptimeWriter.getInstance(),
-    /* rebuildFromHistory */ true,
-  );
+  const svc = new IngestionService(redis, prisma, GreptimeWriter.getInstance());
   const writer = GreptimeWriter.getInstance();
   const created = new Date(TS);
 

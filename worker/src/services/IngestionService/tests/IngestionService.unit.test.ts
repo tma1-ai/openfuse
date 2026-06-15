@@ -4,7 +4,7 @@ import {
   convertDateToClickhouseDateTime,
   type ObservationEvent,
 } from "@langfuse/shared/src/server";
-import { TableName } from "../../ClickhouseWriter";
+import { GreptimeTable } from "../../GreptimeWriter";
 
 describe("IngestionService unit tests", () => {
   it("correctly sorts events in ascending order by timestamp", async () => {
@@ -36,7 +36,6 @@ describe("IngestionService unit tests", () => {
       {} as any,
       {} as any,
       { addToQueue } as any,
-      {} as any,
     );
     const tool = {
       type: "function",
@@ -65,9 +64,6 @@ describe("IngestionService unit tests", () => {
       },
     ];
 
-    vi.spyOn(ingestionService as any, "getClickhouseRecord").mockResolvedValue(
-      null,
-    );
     vi.spyOn(ingestionService as any, "getPrompt").mockResolvedValue(null);
     vi.spyOn(ingestionService as any, "getGenerationUsage").mockResolvedValue(
       {},
@@ -78,11 +74,10 @@ describe("IngestionService unit tests", () => {
       entityId: "observation-id",
       createdAtTimestamp: new Date(timestamp),
       observationEventList,
-      writeToStagingTables: false,
     });
 
     const observationRecord = addToQueue.mock.calls.find(
-      ([table]) => table === TableName.Observations,
+      ([table]) => table === GreptimeTable.Observations,
     )?.[1];
 
     expect(observationRecord?.metadata).toEqual({

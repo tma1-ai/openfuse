@@ -54,8 +54,8 @@ const mockClickhouseClient = {
 const ingestionService = new IngestionService(
   null as any,
   prisma,
-  clickhouseWriterExports.ClickhouseWriter.getInstance() as any,
-  mockClickhouseClient as any,
+  // greptimeWriter is unused here; these tests only exercise createNormalizedEventRecord
+  { addToQueue: () => {} } as any,
 );
 
 /**

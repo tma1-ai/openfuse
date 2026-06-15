@@ -1,6 +1,5 @@
 import { Job, Processor } from "bullmq";
 import {
-  clickhouseClient,
   getClickhouseEntityType,
   getCurrentSpan,
   getS3EventStorageClient,
@@ -24,7 +23,6 @@ import { prisma } from "@langfuse/shared/src/db";
 
 import { env, v4WritesToEventsTable } from "../env";
 import { IngestionService } from "../services/IngestionService";
-import { ClickhouseWriter } from "../services/ClickhouseWriter";
 import { GreptimeWriter } from "../services/GreptimeWriter";
 
 /**
@@ -102,8 +100,6 @@ export const ingestionQueueProcessorBuilder = (
           job.data.payload.data.fileKey ?? "",
         );
       }
-
-      const clickhouseWriter = ClickhouseWriter.getInstance();
 
       // Batch-level seen-cache: if this batch for this entity was processed within the last
       // minutes, skip the redundant rebuild. Keyed on batchId (falls back to fileKey for in-flight
@@ -239,12 +235,7 @@ export const ingestionQueueProcessorBuilder = (
       await new IngestionService(
         redis,
         prisma,
-        clickhouseWriter,
-        clickhouseClient(),
         GreptimeWriter.getInstance(),
-        // rebuildFromHistory: skip the ClickHouse baseline read so the merge replays the full
-        // raw_events history from an empty snapshot. created_at = min(ingested_at).
-        true,
       ).mergeAndWrite(
         clickhouseEntityType,
         projectId,

@@ -4,9 +4,9 @@ import type {
   InternalTraceEventInput,
   InternalTraceExperimentContext,
 } from "@langfuse/shared/src/server";
-import { clickhouseClient, redis } from "@langfuse/shared/src/server";
+import { redis } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
-import { ClickhouseWriter } from "../../services/ClickhouseWriter";
+import { GreptimeWriter } from "../../services/GreptimeWriter";
 import { IngestionService } from "../../services/IngestionService";
 
 let internalTraceIngestionService: IngestionService | undefined;
@@ -16,8 +16,7 @@ function getInternalTraceIngestionService(): IngestionService {
     internalTraceIngestionService = new IngestionService(
       redis as any,
       prisma,
-      ClickhouseWriter.getInstance(),
-      clickhouseClient(),
+      GreptimeWriter.getInstance(),
     );
   }
 

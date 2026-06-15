@@ -1,7 +1,7 @@
 import { ClickHouseClientManager, logger } from "@langfuse/shared/src/server";
 import { redis } from "@langfuse/shared/src/server";
 
-import { ClickhouseWriter } from "../services/ClickhouseWriter";
+import { GreptimeWriter } from "../services/GreptimeWriter";
 import { setSigtermReceived } from "../features/health";
 import { server } from "../index";
 import { freeAllTokenizers } from "../features/tokenisation/usage";
@@ -54,9 +54,10 @@ export const onShutdown: NodeJS.SignalsListener = async (signal) => {
   // Shutdown background migrations
   await BackgroundMigrationManager.close();
 
-  // Flush all pending writes to Clickhouse AFTER closing ingestion queue worker that is writing to it
-  await ClickhouseWriter.getInstance().shutdown();
-  logger.info("Clickhouse writer has been shut down.");
+  // Flush all pending GreptimeDB writes AFTER closing the ingestion queue worker that feeds them.
+  // GreptimeDB is the sole projection backend, so buffered writes must not be dropped on shutdown.
+  await GreptimeWriter.getInstance().shutdown();
+  logger.info("GreptimeDB writer has been shut down.");
 
   redis?.disconnect();
   logger.info("Redis connection has been closed.");

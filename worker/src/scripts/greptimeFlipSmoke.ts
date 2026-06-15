@@ -8,7 +8,7 @@
  *   - deterministic sort (invariant 8) reorders events so the merge result is order-independent,
  *   - the merged projection is written to GreptimeDB (dual-write also hits ClickHouse).
  */
-import { redis, clickhouseClient } from "@langfuse/shared/src/server";
+import { redis } from "@langfuse/shared/src/server";
 import {
   greptimeQuery,
   closeGreptimeConnections,
@@ -18,7 +18,6 @@ import {
   deleteEntityFromGreptime,
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
-import { ClickhouseWriter } from "../services/ClickhouseWriter";
 import { GreptimeWriter } from "../services/GreptimeWriter";
 import { IngestionService } from "../services/IngestionService";
 
@@ -68,14 +67,7 @@ async function main() {
     },
   ];
 
-  const svc = new IngestionService(
-    redis,
-    prisma,
-    ClickhouseWriter.getInstance(),
-    clickhouseClient(),
-    GreptimeWriter.getInstance(),
-    /* rebuildFromHistory */ true,
-  );
+  const svc = new IngestionService(redis, prisma, GreptimeWriter.getInstance());
 
   // createdAtTimestamp = min(ingested_at); here a fixed past instant.
   await svc.mergeAndWrite(
