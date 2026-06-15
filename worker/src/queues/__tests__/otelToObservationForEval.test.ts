@@ -19,34 +19,6 @@ import {
 } from "@langfuse/shared";
 import { prisma } from "@langfuse/shared/src/db";
 import { IngestionService } from "../../services/IngestionService";
-import * as clickhouseWriterExports from "../../services/ClickhouseWriter";
-
-// Mock ClickhouseWriter to avoid actual database writes.
-// vi.hoisted ensures this is declared before vi.mock's hoisted factory runs.
-// Without it, the variable would be undefined when the factory executes.
-const { mockAddToClickhouseWriter } = vi.hoisted(() => ({
-  mockAddToClickhouseWriter: vi.fn(),
-}));
-vi.mock("../../services/ClickhouseWriter", async (importOriginal) => {
-  const original = (await importOriginal()) as object;
-  return {
-    ...original,
-    ClickhouseWriter: {
-      getInstance: () => ({
-        addToQueue: mockAddToClickhouseWriter,
-      }),
-    },
-  };
-});
-
-// Mock ClickhouseClient to return empty results (no existing records)
-const mockClickhouseClient = {
-  query: async () => ({
-    json: async () => [],
-    query_id: "test-query-id",
-    response_headers: { "x-clickhouse-summary": "[]" },
-  }),
-};
 
 // Create IngestionService instance with mocked dependencies
 // Note: redis is null as we don't need it for createNormalizedEventRecord

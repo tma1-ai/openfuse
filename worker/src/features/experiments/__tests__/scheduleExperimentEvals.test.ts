@@ -11,32 +11,17 @@ import {
 import { prisma } from "@langfuse/shared/src/db";
 import type { ObservationForEval } from "../../evaluation/observationEval";
 import { IngestionService } from "../../../services/IngestionService";
-import * as clickhouseWriterExports from "../../../services/ClickhouseWriter";
 import { scheduleExperimentObservationEvals } from "../scheduleExperimentEvals";
 
 const {
-  mockAddToClickhouseWriter,
   mockFetchObservationEvalConfigs,
   mockCreateObservationEvalSchedulerDeps,
   mockScheduleObservationEvals,
 } = vi.hoisted(() => ({
-  mockAddToClickhouseWriter: vi.fn(),
   mockFetchObservationEvalConfigs: vi.fn(),
   mockCreateObservationEvalSchedulerDeps: vi.fn(),
   mockScheduleObservationEvals: vi.fn(),
 }));
-
-vi.mock("../../../services/ClickhouseWriter", async (importOriginal) => {
-  const original = (await importOriginal()) as object;
-  return {
-    ...original,
-    ClickhouseWriter: {
-      getInstance: () => ({
-        addToQueue: mockAddToClickhouseWriter,
-      }),
-    },
-  };
-});
 
 vi.mock("../../evaluation/observationEval", async (importOriginal) => {
   const original = (await importOriginal()) as object;
@@ -47,14 +32,6 @@ vi.mock("../../evaluation/observationEval", async (importOriginal) => {
     scheduleObservationEvals: mockScheduleObservationEvals,
   };
 });
-
-const mockClickhouseClient = {
-  query: async () => ({
-    json: async () => [],
-    query_id: "test-query-id",
-    response_headers: { "x-clickhouse-summary": "[]" },
-  }),
-};
 
 const ingestionService = new IngestionService(
   null as any,

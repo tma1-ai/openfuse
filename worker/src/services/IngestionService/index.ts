@@ -44,7 +44,6 @@ import {
 
 import { tokenCountAsync } from "../../features/tokenisation/async-usage";
 import { tokenCount } from "../../features/tokenisation/usage";
-import { TableName } from "../ClickhouseWriter";
 import { GreptimeWriter, GreptimeTable } from "../GreptimeWriter";
 import {
   convertJsonSchemaToRecord,
@@ -73,19 +72,19 @@ type InsertRecord =
 export type EventInput = InternalTraceEventInput;
 
 const immutableEntityKeys: {
-  [TableName.Traces]: (keyof TraceRecordInsertType)[];
-  [TableName.Scores]: (keyof ScoreRecordInsertType)[];
-  [TableName.Observations]: (keyof ObservationRecordInsertType)[];
-  [TableName.DatasetRunItems]: (keyof DatasetRunItemRecordInsertType)[];
+  [GreptimeTable.Traces]: (keyof TraceRecordInsertType)[];
+  [GreptimeTable.Scores]: (keyof ScoreRecordInsertType)[];
+  [GreptimeTable.Observations]: (keyof ObservationRecordInsertType)[];
+  [GreptimeTable.DatasetRunItems]: (keyof DatasetRunItemRecordInsertType)[];
 } = {
-  [TableName.Traces]: [
+  [GreptimeTable.Traces]: [
     "id",
     "project_id",
     "timestamp",
     "created_at",
     "environment",
   ],
-  [TableName.Scores]: [
+  [GreptimeTable.Scores]: [
     "id",
     "project_id",
     "timestamp",
@@ -93,7 +92,7 @@ const immutableEntityKeys: {
     "created_at",
     "environment",
   ],
-  [TableName.Observations]: [
+  [GreptimeTable.Observations]: [
     "id",
     "project_id",
     "trace_id",
@@ -102,7 +101,7 @@ const immutableEntityKeys: {
     "environment",
   ],
   // We do not accept updates, hence this list is currently not used.
-  [TableName.DatasetRunItems]: [
+  [GreptimeTable.DatasetRunItems]: [
     "id",
     "project_id",
     "dataset_run_id",
@@ -762,7 +761,7 @@ export class IngestionService {
 
     const mergedRecord = this.mergeRecords(
       recordsToMerge,
-      immutableEntityKeys[TableName.Scores],
+      immutableEntityKeys[GreptimeTable.Scores],
     );
 
     // If metadata exists, it is an object due to previous parsing
@@ -786,7 +785,7 @@ export class IngestionService {
 
     const mergedRecord = this.mergeRecords(
       recordsToMerge,
-      immutableEntityKeys[TableName.Traces],
+      immutableEntityKeys[GreptimeTable.Traces],
     );
 
     // If metadata exists, it is an object due to previous parsing
@@ -812,7 +811,7 @@ export class IngestionService {
 
     const mergedRecord = this.mergeRecords(
       recordsToMerge,
-      immutableEntityKeys[TableName.Observations],
+      immutableEntityKeys[GreptimeTable.Observations],
     );
 
     // If metadata exists, it is an object due to previous parsing
