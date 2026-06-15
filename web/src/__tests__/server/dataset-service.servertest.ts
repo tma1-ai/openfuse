@@ -614,7 +614,11 @@ describe("Fetch datasets for UI presentation", () => {
         end_time: new Date().getTime(),
       });
 
-      await createObservationsGreptime([observation1, observation2, observation3]);
+      await createObservationsGreptime([
+        observation1,
+        observation2,
+        observation3,
+      ]);
 
       // Create scores with different values for the same score name
       const highAccuracyScore = createTraceScore({

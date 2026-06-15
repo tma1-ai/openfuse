@@ -102,7 +102,10 @@ describe("/api/public/metrics API Endpoint", () => {
         }),
       );
     }
-    await createObservationsGreptime([...trace1Observations, ...trace2Observations]);
+    await createObservationsGreptime([
+      ...trace1Observations,
+      ...trace2Observations,
+    ]);
   });
 
   it.each([

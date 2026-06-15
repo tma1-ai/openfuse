@@ -38,7 +38,9 @@ describe("trace deletion", () => {
 
     const traceId = randomUUID();
     await createTracesGreptime([createTrace({ id: traceId })]);
-    await createObservationsGreptime([createObservation({ trace_id: traceId })]);
+    await createObservationsGreptime([
+      createObservation({ trace_id: traceId }),
+    ]);
     await createScoresGreptime([createTraceScore({ trace_id: traceId })]);
 
     // When
@@ -69,7 +71,9 @@ describe("trace deletion", () => {
     const traceId = randomUUID();
     const observationId = randomUUID();
 
-    await createTracesGreptime([createTrace({ id: traceId, project_id: projectId })]);
+    await createTracesGreptime([
+      createTrace({ id: traceId, project_id: projectId }),
+    ]);
     await createObservationsGreptime([
       createObservation({
         id: observationId,

@@ -87,7 +87,11 @@ describe("traces trpc", () => {
         trace_id: trace2.id,
       });
 
-      await createObservationsGreptime([observation, observation2, observation3]);
+      await createObservationsGreptime([
+        observation,
+        observation2,
+        observation3,
+      ]);
 
       const sessionRes = await caller.sessions.byIdWithScores({
         projectId,

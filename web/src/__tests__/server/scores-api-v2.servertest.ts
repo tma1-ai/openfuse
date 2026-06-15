@@ -90,7 +90,10 @@ describe("/api/public/v2/scores API Endpoint", () => {
         comment: null,
         observation_id: null,
       });
-      await Promise.all([createTracesGreptime([trace]), createScoresGreptime([score])]);
+      await Promise.all([
+        createTracesGreptime([trace]),
+        createScoresGreptime([score]),
+      ]);
 
       const fetchedScore = await makeZodVerifiedAPICall(
         GetScoreResponseV2,
@@ -1376,7 +1379,9 @@ describe("/api/public/v2/scores API Endpoint", () => {
         const sId2 = v4();
         const sId3 = v4();
 
-        await createTracesGreptime([createTrace({ id: tId, project_id: projectId })]);
+        await createTracesGreptime([
+          createTrace({ id: tId, project_id: projectId }),
+        ]);
         await createObservationsGreptime([
           createObservation({
             id: obsId1,
