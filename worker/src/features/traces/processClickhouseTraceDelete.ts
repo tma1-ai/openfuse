@@ -108,7 +108,7 @@ const deleteMediaItemsForTraces = async (
     `;
 
     if (orphanedMedia.length > 0) {
-      // Delete from S3
+      // Delete from the configured media storage backend (S3 or local)
       await getS3MediaStorageClient(
         env.LANGFUSE_S3_MEDIA_UPLOAD_BUCKET ?? "local",
       ).deleteFiles(orphanedMedia.map((f) => f.bucketPath));

@@ -374,6 +374,9 @@ class LocalFileStorageService implements StorageService {
     const root = this.pathFor(prefix || ".");
     const base = path.resolve(this.basePath);
     const files: { file: string; createdAt: Date }[] = [];
+    // Cap results like the object-storage backends do, so a broad prefix
+    // (e.g. an empty prefix) cannot trigger an unbounded walk / OOM.
+    const maxKeys = env.LANGFUSE_S3_LIST_MAX_KEYS;
 
     try {
       const rootStat = await stat(root);
@@ -391,6 +394,8 @@ class LocalFileStorageService implements StorageService {
     }
 
     const walk = async (dir: string) => {
+      if (files.length >= maxKeys) return;
+
       const entries = await readdir(dir, { withFileTypes: true }).catch(
         (error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT") return [];
@@ -398,9 +403,9 @@ class LocalFileStorageService implements StorageService {
         },
       );
 
-      if (entries.length === 0) return;
-
       for (const entry of entries) {
+        if (files.length >= maxKeys) return;
+
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
           await walk(fullPath);
