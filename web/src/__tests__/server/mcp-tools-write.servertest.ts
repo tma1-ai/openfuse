@@ -4,12 +4,6 @@ vi.mock("@langfuse/shared/src/server", async () => {
   return {
     ...actual,
     // Mock queue getInstance to return a no-op queue
-    EventPropagationQueue: {
-      getInstance: () => ({
-        add: vi.fn().mockResolvedValue(undefined),
-        disconnect: vi.fn(),
-      }),
-    },
     EntityChangeQueue: {
       getInstance: () => ({
         add: vi.fn().mockResolvedValue(undefined),

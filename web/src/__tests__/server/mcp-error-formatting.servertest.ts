@@ -1,18 +1,3 @@
-// Mock queue operations to avoid Redis dependency in tests
-vi.mock("@langfuse/shared/src/server", async () => {
-  const actual = await vi.importActual("@langfuse/shared/src/server");
-  return {
-    ...actual,
-    // Mock queue getInstance to return a no-op queue
-    EventPropagationQueue: {
-      getInstance: () => ({
-        add: vi.fn().mockResolvedValue(undefined),
-        disconnect: vi.fn(),
-      }),
-    },
-  };
-});
-
 import { McpError, ErrorCode } from "@modelcontextprotocol/sdk/types.js";
 import { ZodError } from "zod";
 import { z } from "zod";

@@ -12,9 +12,6 @@ vi.mock("@langfuse/shared/src/server", async () => {
 
   return {
     ...actual,
-    EventPropagationQueue: {
-      getInstance: () => queue,
-    },
     EntityChangeQueue: {
       getInstance: () => queue,
     },
