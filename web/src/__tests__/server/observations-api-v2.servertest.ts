@@ -1,8 +1,7 @@
 import {
   createEvent,
-  createEventsCh,
+  createEventsAsGreptime,
   createOrgProjectAndApiKey,
-  queryClickhouse,
 } from "@langfuse/shared/src/server";
 import {
   makeAPICall,
@@ -11,7 +10,13 @@ import {
 import { GetObservationsV2Response } from "@/src/features/public-api/types/observations";
 import { randomUUID } from "crypto";
 import { env } from "@/src/env.mjs";
-import waitForExpect from "wait-for-expect";
+
+// events_full is gone: seed the GreptimeDB observations projection plus a
+// synthesized denormalised trace. Events here carry trace-level
+// userId/sessionId/tags and no trace is seeded separately.
+const seedObservationEvents = (
+  events: Parameters<typeof createEventsAsGreptime>[0],
+) => createEventsAsGreptime(events, { synthesizeTraces: true });
 
 let projectId: string;
 let auth: string;
@@ -104,7 +109,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         provided_model_name: "gpt-4",
       });
 
-      await createEventsCh([observation]);
+      await seedObservationEvents([observation]);
 
       // Request only basic field group (core is always included)
       const response = await getObservations(
@@ -165,7 +170,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         output: jsonOutput,
       });
 
-      await createEventsCh([observation]);
+      await seedObservationEvents([observation]);
 
       // Request with parseIoAsJson=false (default)
       const response = await getObservations(
@@ -209,7 +214,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         });
       });
 
-      await createEventsCh(observations);
+      await seedObservationEvents(observations);
 
       // Test default limit
       const response1 = await getObservations("/api/public/v2/observations");
@@ -244,7 +249,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         start_time: timeValue,
       });
 
-      await createEventsCh([observation]);
+      await seedObservationEvents([observation]);
 
       // Test filtering by name
       const response = await getObservations(
@@ -288,26 +293,11 @@ describe("/api/public/v2/observations API Endpoint", () => {
           end_time: timeValue + offsetMicros + 1000 * 1000,
         });
 
-      await createEventsCh([
+      await seedObservationEvents([
         buildObservation(observationIdA, envA, 0),
         buildObservation(observationIdB, envB, 1000 * 1000),
         buildObservation(observationIdC, envC, 2000 * 1000),
       ]);
-
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM events_core WHERE project_id = {projectId: String} AND span_id IN ({ids: Array(String)})`,
-            params: {
-              projectId,
-              ids: [observationIdA, observationIdB, observationIdC],
-            },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(3);
-        },
-        5000,
-        10,
-      );
 
       const response = await getObservations(
         `/api/public/v2/observations?fields=basic&traceId=${traceId}&environment=${encodeURIComponent(envA)}&environment=${encodeURIComponent(envB)}`,
@@ -390,20 +380,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         session_id: "session-xyz",
       });
 
-      await createEventsCh([observation1, observation2]);
-
-      // Wait for ClickHouse to process
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM events_core WHERE project_id = {projectId: String} AND span_id IN ({ids: Array(String)})`,
-            params: { projectId, ids: [observationId1, observationId2] },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(2);
-        },
-        5000,
-        10,
-      );
+      await seedObservationEvents([observation1, observation2]);
 
       // Focus on testing filter columns that may have complex handling
       // (trace-level fields now read directly from events table: userId, traceName, sessionId, traceTags, traceEnvironment)
@@ -570,20 +547,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         metadata_values: ["ui-client", "us-west"],
       });
 
-      await createEventsCh([observation1, observation2]);
-
-      // Wait for ClickHouse to process
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM events_core WHERE project_id = {projectId: String} AND span_id IN ({ids: Array(String)})`,
-            params: { projectId, ids: [observationId1, observationId2] },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(2);
-        },
-        5000,
-        10,
-      );
+      await seedObservationEvents([observation1, observation2]);
 
       // Filter using dot-notation key for nested metadata: scope.name contains "api"
       const filterParam = JSON.stringify([
@@ -629,7 +593,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
       const metadataSplitAcrossValuesId = randomUUID();
       const metadataMultiTokenWrongKeyId = randomUUID();
 
-      await createEventsCh([
+      await seedObservationEvents([
         createEvent({
           id: tokenMatchId,
           span_id: tokenMatchId,
@@ -801,18 +765,6 @@ describe("/api/public/v2/observations API Endpoint", () => {
           metadata_values: ["unrelated", "alpha beta"],
         }),
       ]);
-
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM events_core WHERE project_id = {projectId: String} AND trace_id = {traceId: String}`,
-            params: { projectId, traceId },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(14);
-        },
-        5000,
-        10,
-      );
 
       const ioFilterParam = JSON.stringify([
         {
@@ -1128,7 +1080,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         release: "1.2.3",
       });
 
-      await createEventsCh([obs]);
+      await seedObservationEvents([obs]);
     });
 
     // Known fixture values — used to assert exact values, not just presence.
@@ -1262,20 +1214,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         metadata_values: [longValue1, longValue2, "shortValue"],
       });
 
-      await createEventsCh([observation]);
-
-      // Wait for ClickHouse to process
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM events_core WHERE project_id = {projectId: String} AND span_id = {id: String}`,
-            params: { projectId, id: observationId },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(1);
-        },
-        5000,
-        10,
-      );
+      await seedObservationEvents([observation]);
 
       // Request metadata with expansion - this switches to events_full table
       const response = await getObservations(
@@ -1318,20 +1257,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         metadata_values: ["value"],
       });
 
-      await createEventsCh([observation]);
-
-      // Wait for ClickHouse to process
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM events_core WHERE project_id = {projectId: String} AND span_id = {id: String}`,
-            params: { projectId, id: observationId },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(1);
-        },
-        5000,
-        10,
-      );
+      await seedObservationEvents([observation]);
 
       // Request expansion for a key that doesn't exist
       const response = await getObservations(
@@ -1374,20 +1300,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         metadata_values: [longValue],
       });
 
-      await createEventsCh([observation]);
-
-      // Wait for ClickHouse to process
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM events_core WHERE project_id = {projectId: String} AND span_id = {id: String}`,
-            params: { projectId, id: observationId },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(1);
-        },
-        5000,
-        10,
-      );
+      await seedObservationEvents([observation]);
 
       // Request metadata with empty expandMetadata - should use events_core (truncated)
       const response = await getObservations(
@@ -1433,20 +1346,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         );
       }
 
-      await createEventsCh(observations);
-
-      // Wait for ClickHouse to process
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM events_core WHERE project_id = {projectId: String} AND trace_id = {traceId: String}`,
-            params: { projectId, traceId },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(10);
-        },
-        5000,
-        10,
-      );
+      await seedObservationEvents(observations);
 
       // Request with limit=5 - should return exactly 5, not all 10
       const response = await getObservations(
@@ -1484,7 +1384,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         );
       }
 
-      await createEventsCh(observations);
+      await seedObservationEvents(observations);
 
       // Fetch with limit=2 (should have cursor since we have 3 observations)
       const response = await getObservations(
@@ -1520,7 +1420,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         );
       }
 
-      await createEventsCh(observations);
+      await seedObservationEvents(observations);
 
       // Fetch with limit=5 (should not have cursor since we only have 2)
       const response = await getObservations(
@@ -1555,7 +1455,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         );
       }
 
-      await createEventsCh(observations);
+      await seedObservationEvents(observations);
 
       // Fetch first page with limit=2
       const page1 = await getObservations(
@@ -1640,7 +1540,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         start_time: timeValue, // Same time
       });
 
-      await createEventsCh([obs1, obs2, obs3]);
+      await seedObservationEvents([obs1, obs2, obs3]);
 
       // Fetch first page
       const page1 = await getObservations(
@@ -1695,7 +1595,7 @@ describe("/api/public/v2/observations API Endpoint", () => {
         );
       }
 
-      await createEventsCh(observations);
+      await seedObservationEvents(observations);
 
       // Fetch first page with type filter
       const page1 = await getObservations(
