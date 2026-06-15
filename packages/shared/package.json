@@ -65,7 +65,7 @@
     }
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node scripts/copy-greptime-migrations.mjs",
     "build:check": "tsc",
     "typecheck": "dotenv -e ../../.env -- tsc --noEmit --incremental --tsBuildInfoFile .tsbuildinfo",
     "dev": "tsc --watch",
