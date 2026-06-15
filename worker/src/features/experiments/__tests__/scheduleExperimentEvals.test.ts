@@ -486,7 +486,7 @@ describe("prompt experiment direct-write materialization", () => {
       modelName: "gpt-4.1-2025-04-14",
     });
 
-    const rootEventRecord = await ingestionService.createEventRecord(
+    const rootEventRecord = await ingestionService.createNormalizedEventRecord(
       rootEventInput!,
       "",
     );
@@ -548,7 +548,7 @@ describe("scheduleExperimentObservationEvals", () => {
     const rootEventInput = eventInputs.find(
       (eventInput) => eventInput.spanId === traceId,
     );
-    const rootEventRecord = await ingestionService.createEventRecord(
+    const rootEventRecord = await ingestionService.createNormalizedEventRecord(
       rootEventInput!,
       "",
     );

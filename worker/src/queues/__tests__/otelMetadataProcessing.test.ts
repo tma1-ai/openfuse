@@ -1,6 +1,6 @@
 /**
  * Tests for OTel metadata processing
- * Flow: ResourceSpan -> processToEvent() -> createEventRecord() -> metadata_names/metadata_raw_values
+ * Flow: ResourceSpan -> processToEvent() -> createNormalizedEventRecord() -> metadata_names/metadata_raw_values
  *
  * NOTE: The dual-write path (otel-dual-write) uses mapKeys() in SQL which doesn't flatten.
  */
@@ -122,7 +122,7 @@ async function processAndCreateEvent(
   const eventInputs = processor.processToEvent([otelSpan]);
   expect(eventInputs.length).toBeGreaterThan(0);
 
-  const eventRecord = await ingestionService.createEventRecord(
+  const eventRecord = await ingestionService.createNormalizedEventRecord(
     eventInputs[0],
     "test/otel/test.json",
   );

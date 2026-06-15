@@ -1313,15 +1313,9 @@ describe("Token Cost Calculation", () => {
         },
       ];
 
-      const eventRecord = await (mockIngestionService as any).createEventRecord(
-        events[0],
-        "testfile.txt",
-      );
-      (mockIngestionService as any).writeEventRecord(eventRecord);
-
-      expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-      const args = mockAddToClickhouseWriter.mock.calls[0];
-      const generation = args[1];
+      const generation = await (
+        mockIngestionService as any
+      ).createNormalizedEventRecord(events[0], "testfile.txt");
 
       // Values should be numbers, not strings
       expect(typeof generation.usage_details.input).toBe("number");
@@ -1350,18 +1344,11 @@ describe("Token Cost Calculation", () => {
         },
       ];
 
-      const eventRecord = await (mockIngestionService as any).createEventRecord(
-        events[0],
-        "testfile.txt",
-      );
-      (mockIngestionService as any).writeEventRecord(eventRecord);
+      const generation = await (
+        mockIngestionService as any
+      ).createNormalizedEventRecord(events[0], "testfile.txt");
 
-      // Invalid values should be ignored
-      expect(mockAddToClickhouseWriter).toHaveBeenCalled();
-      const args = mockAddToClickhouseWriter.mock.calls[0];
-      const generation = args[1];
-
-      // Values should be numbers, not strings
+      // Invalid values should be ignored; values should be numbers, not strings
       expect(typeof generation.usage_details.input).toBe("number");
       expect(typeof generation.usage_details.total).toBe("number");
 

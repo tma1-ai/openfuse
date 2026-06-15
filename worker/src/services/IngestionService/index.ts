@@ -221,9 +221,9 @@ export class IngestionService {
    *
    * @param eventData - The event data from processToEvent()
    * @param fileKey - The file key where the raw event data is stored
-   * @returns The enriched event record ready for writing or eval scheduling
+   * @returns The enriched, normalized event record consumed by eval scheduling
    */
-  public async createEventRecord(
+  public async createNormalizedEventRecord(
     eventData: EventInput,
     fileKey: string,
   ): Promise<EventRecordInsertType> {
@@ -394,17 +394,6 @@ export class IngestionService {
     };
 
     return eventRecord;
-  }
-
-  /**
-   * Writes an event record directly to the events_full table.
-   * A materialized view auto-populates events_core from events_full.
-   * Use createEventRecord() first to get the record, then call this to write.
-   *
-   * @param eventRecord - The event record to write
-   */
-  public writeEventRecord(eventRecord: EventRecordInsertType): void {
-    this.clickHouseWriter.addToQueue(TableName.EventsFull, eventRecord);
   }
 
   private async processDatasetRunItemEventList(params: {

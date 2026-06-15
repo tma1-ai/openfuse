@@ -478,22 +478,14 @@ export const otelIngestionQueueProcessorBuilder = (
         ]);
       }
 
-      // Process events for observation evals and direct event writes
-      // This phase handles two independent concerns:
-      // 1. Scheduling observation-level evals (if eval configs exist)
-      // 2. Writing directly to events table (if SDK version requirements are met)
-      //
-      // Both require enriched event records with trace-level attributes
-      // (userId, sessionId, tags, release) that processToEvent provides.
+      // Schedule observation-level evals for the parsed spans. This requires
+      // enriched event records with trace-level attributes (userId, sessionId,
+      // tags, release) that processToEvent provides.
       const eventInputs = processor.processToEvent(parsedSpans);
 
       if (eventInputs.length === 0) {
         return;
       }
-
-      // Determine what processing is needed
-      const shouldWriteToEventsTable =
-        v4WritesToEventsTable(env) && useDirectEventWrite;
 
       const evalConfigs = await fetchObservationEvalConfigs(projectId).catch(
         (error) => {
@@ -506,25 +498,21 @@ export const otelIngestionQueueProcessorBuilder = (
           return [];
         },
       );
-      const hasEvalConfigs = evalConfigs.length > 0;
 
-      // Early exit if no processing needed
-      if (!hasEvalConfigs && !shouldWriteToEventsTable) {
+      // Nothing to schedule without eval configs.
+      if (evalConfigs.length === 0) {
         return;
       }
 
-      // Create scheduler deps only if we have eval configs
-      const evalSchedulerDeps = hasEvalConfigs
-        ? createObservationEvalSchedulerDeps()
-        : null;
+      const evalSchedulerDeps = createObservationEvalSchedulerDeps();
 
       await Promise.all(
         // Process each event independently
         eventInputs.map(async (eventInput) => {
-          // Step 1: Create enriched event record (required for both evals and writes)
+          // Build the enriched, normalized event record for eval scheduling.
           let eventRecord;
           try {
-            eventRecord = await ingestionService.createEventRecord(
+            eventRecord = await ingestionService.createNormalizedEventRecord(
               eventInput,
               fileKey,
             );
@@ -538,38 +526,22 @@ export const otelIngestionQueueProcessorBuilder = (
             return;
           }
 
-          // Step 2: Schedule observation evals (independent of event writes)
-          if (hasEvalConfigs && evalSchedulerDeps) {
-            try {
-              const observation =
-                convertEventRecordToObservationForEval(eventRecord);
+          try {
+            const observation =
+              convertEventRecordToObservationForEval(eventRecord);
 
-              await scheduleObservationEvals({
-                observation,
-                configs: evalConfigs,
-                schedulerDeps: evalSchedulerDeps,
-              });
-            } catch (error) {
-              traceException(error);
+            await scheduleObservationEvals({
+              observation,
+              configs: evalConfigs,
+              schedulerDeps: evalSchedulerDeps,
+            });
+          } catch (error) {
+            traceException(error);
 
-              logger.error(
-                `Failed to schedule observation evals for project ${eventInput.projectId} and observation ${eventInput.spanId}`,
-                { error, fileKey },
-              );
-            }
-          }
-
-          // Step 3: Write to events table (independent of eval scheduling)
-          if (shouldWriteToEventsTable) {
-            try {
-              ingestionService.writeEventRecord(eventRecord);
-            } catch (error) {
-              traceException(error);
-              logger.error(
-                `Failed to write event record for ${eventInput.spanId}`,
-                { error, fileKey },
-              );
-            }
+            logger.error(
+              `Failed to schedule observation evals for project ${eventInput.projectId} and observation ${eventInput.spanId}`,
+              { error, fileKey },
+            );
           }
         }),
       );

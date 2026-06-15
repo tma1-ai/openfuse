@@ -8,7 +8,7 @@
  * 3. We need to ensure all typical fields are correctly mapped
  *
  * Flow tested:
- * ResourceSpan -> processToEvent() -> createEventRecord() -> convertEventRecordToObservationForEval()
+ * ResourceSpan -> processToEvent() -> createNormalizedEventRecord() -> convertEventRecordToObservationForEval()
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { OtelIngestionProcessor } from "@langfuse/shared/src/server";
@@ -49,7 +49,7 @@ const mockClickhouseClient = {
 };
 
 // Create IngestionService instance with mocked dependencies
-// Note: redis is null as we don't need it for createEventRecord
+// Note: redis is null as we don't need it for createNormalizedEventRecord
 // prisma is used for prompt/model lookups (will return null if not found)
 const ingestionService = new IngestionService(
   null as any,
@@ -95,7 +95,7 @@ async function processOtelSpanToObservationForEval(
   // Then convert to ObservationForEval
   const results: ObservationForEval[] = [];
   for (const eventInput of eventInputs) {
-    const eventRecord = await ingestionService.createEventRecord(
+    const eventRecord = await ingestionService.createNormalizedEventRecord(
       eventInput,
       "test/otel/test.json",
     );
@@ -275,12 +275,12 @@ describe("OTEL to ObservationForEval Schema Validation", () => {
 
       // Validate model properties
       expect(obs.provided_model_name).toBe("gpt-4");
-      // model_parameters comes as object from createEventRecord (schema accepts both string and object)
+      // model_parameters comes as object from createNormalizedEventRecord (schema accepts both string and object)
       expect(obs.model_parameters).toEqual({ temperature: 0.7 });
 
       // Validate prompt properties
       expect(obs.prompt_name).toBe("my-prompt");
-      // prompt_version comes as number from createEventRecord (schema accepts both string and number)
+      // prompt_version comes as number from createNormalizedEventRecord (schema accepts both string and number)
       expect(obs.prompt_version).toBe(1);
 
       // Validate usage/cost
@@ -838,7 +838,7 @@ describe("OTEL to ObservationForEval Schema Validation", () => {
       expect(eventInputs[0].toolDefinitions).toHaveProperty("calculator");
       expect(eventInputs[0].toolCallNames).toEqual(["calculator"]);
 
-      const eventRecord = await ingestionService.createEventRecord(
+      const eventRecord = await ingestionService.createNormalizedEventRecord(
         eventInputs[0],
         "test/otel/tools.json",
       );
