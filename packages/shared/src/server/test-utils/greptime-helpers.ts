@@ -9,7 +9,9 @@ import {
   ObservationRecordInsertType,
   ScoreRecordInsertType,
   DatasetRunItemRecordInsertType,
+  EventRecordInsertType,
 } from "../repositories/definitions";
+import { metadataArraysToRecord } from "../utils/metadata_conversion";
 
 /**
  * GreptimeDB test seed helpers — the projection-write counterparts of the legacy
@@ -94,3 +96,139 @@ export const createScoresGreptime = async (scores: ScoreRecordInsertType[]) =>
 export const createDatasetRunItemsGreptime = async (
   datasetRunItems: DatasetRunItemRecordInsertType[],
 ) => writeRecordsToGreptime({ datasetRunItems });
+
+/* ------------------------------------------------------------------------- *
+ * Event-collapse seeding
+ *
+ * The legacy `events_full` table is gone. Tests that seeded `events_full` via
+ * `createEventsCh` and read it back through the `*FromEventsTable` repository
+ * functions now hit the merged GreptimeDB observations projection (with the
+ * trace-level userId/sessionId/traceName/tags LEFT-joined from the traces
+ * table at read time). `createEventsAsGreptime` is the drop-in seed replacement:
+ * it decomposes each `EventRecordInsertType` into an observation row and,
+ * optionally, a synthesized trace row carrying the denormalised trace-level
+ * fields so the read-time join populates them.
+ * ------------------------------------------------------------------------- */
+
+// events_full stores microsecond epochs; the projection record types are millis.
+const microsToMillis = (micros: number): number => Math.floor(micros / 1000);
+
+/**
+ * 1:1 event -> observation projection record. Drops events-only columns
+ * (experiment_*, telemetry_*, span aliases) the observations projection does
+ * not carry; folds `metadata_names`/`metadata_values` arrays into a map and
+ * `model_id` into `internal_model_id`.
+ */
+export const eventRecordToObservationInsert = (
+  event: EventRecordInsertType,
+): ObservationRecordInsertType => ({
+  id: event.id,
+  trace_id: event.trace_id,
+  project_id: event.project_id,
+  type: event.type,
+  parent_observation_id: event.parent_span_id,
+  environment: event.environment,
+  name: event.name,
+  metadata:
+    metadataArraysToRecord(event.metadata_names, event.metadata_values) ?? {},
+  level: event.level,
+  status_message: event.status_message,
+  version: event.version,
+  input: event.input,
+  output: event.output,
+  provided_model_name: event.provided_model_name,
+  internal_model_id: event.model_id,
+  model_parameters: event.model_parameters,
+  total_cost: event.cost_details?.total ?? undefined,
+  usage_pricing_tier_id: event.usage_pricing_tier_id,
+  usage_pricing_tier_name: event.usage_pricing_tier_name,
+  prompt_id: event.prompt_id,
+  prompt_name: event.prompt_name,
+  prompt_version: event.prompt_version,
+  tool_definitions: event.tool_definitions,
+  tool_calls: event.tool_calls,
+  tool_call_names: event.tool_call_names,
+  provided_usage_details: event.provided_usage_details,
+  usage_details: event.usage_details,
+  provided_cost_details: event.provided_cost_details,
+  cost_details: event.cost_details,
+  is_deleted: event.is_deleted,
+  start_time: microsToMillis(event.start_time),
+  end_time: event.end_time != null ? microsToMillis(event.end_time) : undefined,
+  completion_start_time:
+    event.completion_start_time != null
+      ? microsToMillis(event.completion_start_time)
+      : undefined,
+  created_at: microsToMillis(event.created_at),
+  updated_at: microsToMillis(event.updated_at),
+  event_ts: microsToMillis(event.event_ts),
+});
+
+/**
+ * Synthesize one trace per distinct `trace_id`, hoisting the trace-level
+ * denormalised fields (userId/sessionId/tags/release/traceName) the read-time
+ * join expects. Prefers the `is_app_root` event for root-level fields, falling
+ * back to the first event of the group.
+ */
+export const eventRecordsToTraceInserts = (
+  events: EventRecordInsertType[],
+): TraceRecordInsertType[] => {
+  const byTrace = new Map<string, EventRecordInsertType[]>();
+  for (const event of events) {
+    const group = byTrace.get(event.trace_id);
+    if (group) group.push(event);
+    else byTrace.set(event.trace_id, [event]);
+  }
+
+  const traces: TraceRecordInsertType[] = [];
+  for (const [traceId, group] of byTrace) {
+    const root = group.find((e) => e.is_app_root) ?? group[0];
+    const firstDefined = <K extends keyof EventRecordInsertType>(
+      key: K,
+    ): EventRecordInsertType[K] | undefined =>
+      group.find((e) => e[key] != null)?.[key];
+    const minStart = Math.min(...group.map((e) => e.start_time));
+
+    traces.push({
+      id: traceId,
+      project_id: root.project_id,
+      name: root.trace_name ?? root.name,
+      user_id: firstDefined("user_id"),
+      session_id: firstDefined("session_id"),
+      metadata:
+        metadataArraysToRecord(root.metadata_names, root.metadata_values) ?? {},
+      release: firstDefined("release"),
+      version: root.version,
+      environment: root.environment,
+      public: root.public ?? false,
+      bookmarked: root.bookmarked ?? false,
+      tags: group.find((e) => e.tags.length > 0)?.tags ?? [],
+      input: root.input,
+      output: root.output,
+      timestamp: microsToMillis(minStart),
+      created_at: microsToMillis(root.created_at),
+      updated_at: microsToMillis(root.updated_at),
+      event_ts: microsToMillis(root.event_ts),
+      is_deleted: 0,
+    });
+  }
+  return traces;
+};
+
+/**
+ * Drop-in replacement for the old `createEventsCh` seed. Writes the observation
+ * projection rows for every event; with `synthesizeTraces` it also writes a
+ * synthesized trace per `trace_id` so trace-level denormalised reads resolve.
+ * Pass `synthesizeTraces: false` (default) when the test already seeds matching
+ * traces itself.
+ */
+export const createEventsAsGreptime = async (
+  events: EventRecordInsertType[],
+  opts?: { synthesizeTraces?: boolean },
+): Promise<void> => {
+  const observations = events.map(eventRecordToObservationInsert);
+  const traces = opts?.synthesizeTraces
+    ? eventRecordsToTraceInserts(events)
+    : [];
+  await writeRecordsToGreptime({ traces, observations });
+};
