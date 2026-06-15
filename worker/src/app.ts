@@ -24,7 +24,6 @@ import { monitorQueueProcessor } from "./queues/monitorQueue";
 import { WorkerManager } from "./queues/workerManager";
 import {
   CoreDataS3ExportQueue,
-  DataRetentionQueue,
   MeteringDataPostgresExportQueue,
   PostHogIntegrationQueue,
   MixpanelIntegrationQueue,
@@ -68,10 +67,6 @@ import {
 } from "./queues/blobStorageIntegrationQueue";
 import { coreDataS3ExportProcessor } from "./queues/coreDataS3ExportQueue";
 import { meteringDataPostgresExportProcessor } from "./ee/meteringDataPostgresExport/handleMeteringDataPostgresExportJob";
-import {
-  dataRetentionProcessingProcessor,
-  dataRetentionProcessor,
-} from "./queues/dataRetentionQueue";
 import { batchActionQueueProcessor } from "./queues/batchActionQueue";
 import { scoreDeleteProcessor } from "./queues/scoreDelete";
 import { DlqRetryService } from "./services/dlq/dlqRetryService";
@@ -81,21 +76,12 @@ import { datasetDeleteProcessor } from "./queues/datasetDelete";
 import { otelIngestionQueueProcessorBuilder } from "./queues/otelIngestionQueue";
 import { eventPropagationProcessor } from "./queues/eventPropagationQueue";
 import { notificationQueueProcessor } from "./queues/notificationQueue";
-import {
-  BatchProjectCleaner,
-  BATCH_DELETION_TABLES,
-} from "./features/batch-project-cleaner";
-import {
-  BatchDataRetentionCleaner,
-  BATCH_DATA_RETENTION_TABLES,
-} from "./features/batch-data-retention-cleaner";
+import { BatchProjectCleaner } from "./features/batch-project-cleaner";
 import { MediaRetentionCleaner } from "./features/media-retention-cleaner";
 import { BatchTraceDeletionCleaner } from "./features/batch-trace-deletion-cleaner";
 import { BatchProjectMediaCleaner } from "./features/batch-project-media-cleaner";
-import { BatchProjectBlobCleaner } from "./features/batch-project-blob-cleaner";
 import { QueueMetricsRunner } from "./features/queue-metrics-runner";
 import { MonitorRunner } from "./features/monitor-runner";
-import { DeletedMaskCleaner } from "./features/deleted-mask-cleaner";
 
 const app = express();
 
@@ -567,29 +553,6 @@ if (env.QUEUE_CONSUMER_BLOB_STORAGE_INTEGRATION_QUEUE_IS_ENABLED === "true") {
   );
 }
 
-if (env.QUEUE_CONSUMER_DATA_RETENTION_QUEUE_IS_ENABLED === "true") {
-  // Instantiate the queue to trigger scheduled jobs
-  DataRetentionQueue.getInstance();
-
-  WorkerManager.register(QueueName.DataRetentionQueue, dataRetentionProcessor, {
-    concurrency: 1,
-  });
-
-  WorkerManager.register(
-    QueueName.DataRetentionProcessingQueue,
-    dataRetentionProcessingProcessor,
-    {
-      concurrency: 1,
-      limiter: {
-        // Process at most `max` delete jobs per LANGFUSE_CLICKHOUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS (default 10 min)
-        max: env.LANGFUSE_PROJECT_DELETE_CONCURRENCY,
-        duration:
-          env.LANGFUSE_CLICKHOUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS,
-      },
-    },
-  );
-}
-
 if (env.QUEUE_CONSUMER_DEAD_LETTER_RETRY_QUEUE_IS_ENABLED === "true") {
   // Instantiate the queue to trigger scheduled jobs
   DeadLetterRetryQueue.getInstance();
@@ -651,40 +614,15 @@ if (env.QUEUE_CONSUMER_NOTIFICATION_QUEUE_IS_ENABLED === "true") {
 export const batchProjectCleaners: BatchProjectCleaner[] = [];
 
 if (env.LANGFUSE_BATCH_PROJECT_CLEANER_ENABLED === "true") {
-  for (const table of BATCH_DELETION_TABLES) {
-    // Only start the events table cleaners when V4 write mode targets events_full.
-    if (
-      (table !== "events_full" && table !== "events_core") ||
-      v4WritesToEventsTable(env)
-    ) {
-      const cleaner = new BatchProjectCleaner(table);
-      batchProjectCleaners.push(cleaner);
-      cleaner.start();
-    }
-  }
+  const cleaner = new BatchProjectCleaner();
+  batchProjectCleaners.push(cleaner);
+  cleaner.start();
 }
 
-// Batch data retention cleaners for bulk deletion of expired ClickHouse data
-export const batchDataRetentionCleaners: BatchDataRetentionCleaner[] = [];
-
-if (env.LANGFUSE_BATCH_DATA_RETENTION_CLEANER_ENABLED === "true") {
-  for (const table of BATCH_DATA_RETENTION_TABLES) {
-    // Only start the events table cleaners when V4 write mode targets events_full.
-    if (
-      (table !== "events_full" && table !== "events_core") ||
-      v4WritesToEventsTable(env)
-    ) {
-      const cleaner = new BatchDataRetentionCleaner(table);
-      batchDataRetentionCleaners.push(cleaner);
-      cleaner.start();
-    }
-  }
-}
-
-// Media retention cleaner for media files and blob storage
+// Media retention cleaner for media files (S3/PostgreSQL)
 export let mediaRetentionCleaner: MediaRetentionCleaner | null = null;
 
-if (env.LANGFUSE_BATCH_DATA_RETENTION_CLEANER_ENABLED === "true") {
+if (env.LANGFUSE_MEDIA_RETENTION_CLEANER_ENABLED === "true") {
   mediaRetentionCleaner = new MediaRetentionCleaner();
   mediaRetentionCleaner.start();
 }
@@ -700,31 +638,12 @@ if (
   batchProjectMediaCleaner.start();
 }
 
-// Batch project blob cleaner for ingestion event S3/ClickHouse cleanup of soft-deleted projects
-export let batchProjectBlobCleaner: BatchProjectBlobCleaner | null = null;
-
-if (
-  env.LANGFUSE_BATCH_PROJECT_CLEANER_ENABLED === "true" &&
-  env.LANGFUSE_ENABLE_BLOB_STORAGE_FILE_LOG === "true"
-) {
-  batchProjectBlobCleaner = new BatchProjectBlobCleaner();
-  batchProjectBlobCleaner.start();
-}
-
 // Batch trace deletion cleaner for supplementary trace deletion
 export let batchTraceDeletionCleaner: BatchTraceDeletionCleaner | null = null;
 
 if (env.LANGFUSE_BATCH_TRACE_DELETION_CLEANER_ENABLED === "true") {
   batchTraceDeletionCleaner = new BatchTraceDeletionCleaner();
   batchTraceDeletionCleaner.start();
-}
-
-// ClickHouse deleted-mask cleaner for physically applying lightweight delete masks
-export let deletedMaskCleaner: DeletedMaskCleaner | null = null;
-
-if (env.LANGFUSE_CLICKHOUSE_DELETED_MASK_CLEANER_ENABLED === "true") {
-  deletedMaskCleaner = new DeletedMaskCleaner();
-  deletedMaskCleaner.start();
 }
 
 // Queue metrics background reporter

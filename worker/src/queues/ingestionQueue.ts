@@ -24,9 +24,8 @@ import { prisma } from "@langfuse/shared/src/db";
 
 import { env, v4WritesToEventsTable } from "../env";
 import { IngestionService } from "../services/IngestionService";
-import { ClickhouseWriter, TableName } from "../services/ClickhouseWriter";
+import { ClickhouseWriter } from "../services/ClickhouseWriter";
 import { GreptimeWriter } from "../services/GreptimeWriter";
-import { randomUUID } from "crypto";
 
 /**
  * Backward-compat S3 read for jobs produced before the GreptimeDB raw_events flip. Mirrors the
@@ -104,29 +103,7 @@ export const ingestionQueueProcessorBuilder = (
         );
       }
 
-      // We write the new file into the ClickHouse event log to keep track for retention and deletions
       const clickhouseWriter = ClickhouseWriter.getInstance();
-
-      if (
-        env.LANGFUSE_ENABLE_BLOB_STORAGE_FILE_LOG === "true" &&
-        job.data.payload.data.fileKey &&
-        job.data.payload.data.fileKey
-      ) {
-        const fileName = `${job.data.payload.data.fileKey}.json`;
-        clickhouseWriter.addToQueue(TableName.BlobStorageFileLog, {
-          id: randomUUID(),
-          project_id: job.data.payload.authCheck.scope.projectId,
-          entity_type: getClickhouseEntityType(job.data.payload.data.type),
-          entity_id: job.data.payload.data.eventBodyId,
-          event_id: job.data.payload.data.fileKey,
-          bucket_name: env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET,
-          bucket_path: `${env.LANGFUSE_S3_EVENT_UPLOAD_PREFIX}${job.data.payload.authCheck.scope.projectId}/${getClickhouseEntityType(job.data.payload.data.type)}/${job.data.payload.data.eventBodyId}/${fileName}`,
-          created_at: new Date().getTime(),
-          updated_at: new Date().getTime(),
-          event_ts: new Date().getTime(),
-          is_deleted: 0,
-        });
-      }
 
       // Batch-level seen-cache: if this batch for this entity was processed within the last
       // minutes, skip the redundant rebuild. Keyed on batchId (falls back to fileKey for in-flight

@@ -11,12 +11,9 @@ import { prisma } from "@langfuse/shared/src/db";
 import { BackgroundMigrationManager } from "../backgroundMigrations/backgroundMigrationManager";
 import {
   batchProjectCleaners,
-  batchDataRetentionCleaners,
   mediaRetentionCleaner,
   batchProjectMediaCleaner,
-  batchProjectBlobCleaner,
   batchTraceDeletionCleaner,
-  deletedMaskCleaner,
   queueMetricsRunner,
   monitorRunners,
 } from "../app";
@@ -34,25 +31,14 @@ export const onShutdown: NodeJS.SignalsListener = async (signal) => {
     cleaner.stop();
   }
 
-  // Stop batch data retention cleaners
-  for (const cleaner of batchDataRetentionCleaners) {
-    cleaner.stop();
-  }
-
   // Stop media retention cleaner
   mediaRetentionCleaner?.stop();
 
   // Stop batch project media cleaner
   batchProjectMediaCleaner?.stop();
 
-  // Stop batch project blob cleaner
-  batchProjectBlobCleaner?.stop();
-
   // Stop batch trace deletion cleaner
   batchTraceDeletionCleaner?.stop();
-
-  // Stop deleted-mask cleaner
-  deletedMaskCleaner?.stop();
 
   // Stop queue metrics runner
   queueMetricsRunner?.stop();

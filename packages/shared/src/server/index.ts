@@ -106,8 +106,6 @@ export * from "./redis/mixpanelIntegrationQueue";
 export * from "./redis/mixpanelIntegrationProcessingQueue";
 export * from "./redis/blobStorageIntegrationQueue";
 export * from "./redis/blobStorageIntegrationProcessingQueue";
-export * from "./redis/dataRetentionQueue";
-export * from "./redis/dataRetentionProcessingQueue";
 export * from "./redis/coreDataS3ExportQueue";
 export * from "./redis/meteringDataPostgresExportQueue";
 export * from "./redis/notificationQueue";
@@ -154,7 +152,6 @@ export * from "./tableMappings";
 export * from "./otel";
 export * from "./datasets/executeWithDatasetServiceStrategy";
 
-export * from "./data-deletion/ingestionFileDeletion";
 export * from "./media-deletion";
 export * from "./s3";
 

@@ -183,10 +183,6 @@ const EnvSchema = z.object({
     .enum(["true", "false"])
     .default("false"),
 
-  LANGFUSE_ENABLE_BLOB_STORAGE_FILE_LOG: z
-    .enum(["true", "false"])
-    .default("true"),
-
   LANGFUSE_BLOB_STORAGE_FAILURE_NOTIFICATION_COOLDOWN_HOURS: z.coerce
     .number()
     .positive()
@@ -272,9 +268,6 @@ const EnvSchema = z.object({
     .enum(["true", "false"])
     .default("true"),
   QUEUE_CONSUMER_INGESTION_SECONDARY_QUEUE_IS_ENABLED: z
-    .enum(["true", "false"])
-    .default("true"),
-  QUEUE_CONSUMER_DATA_RETENTION_QUEUE_IS_ENABLED: z
     .enum(["true", "false"])
     .default("true"),
   QUEUE_CONSUMER_DEAD_LETTER_RETRY_QUEUE_IS_ENABLED: z
@@ -399,48 +392,14 @@ const EnvSchema = z.object({
     .positive()
     .default(5000), // Media items per chunk
 
-  // Batch Data Retention Cleaner configuration (ClickHouse)
-  LANGFUSE_BATCH_DATA_RETENTION_CLEANER_ENABLED: z
+  // Media Retention Cleaner configuration (S3/PostgreSQL)
+  LANGFUSE_MEDIA_RETENTION_CLEANER_ENABLED: z
     .enum(["true", "false"])
     .default("false"),
-  LANGFUSE_BATCH_DATA_RETENTION_CLEANER_INTERVAL_MS: z.coerce
-    .number()
-    .positive()
-    .default(3_600_000), // 1 hour between runs
   LANGFUSE_MEDIA_RETENTION_CLEANER_INTERVAL_MS: z.coerce
     .number()
     .positive()
     .default(600_000), // 10 minutes between runs
-  LANGFUSE_BATCH_DATA_RETENTION_CLEANER_PROJECT_LIMIT: z.coerce
-    .number()
-    .positive()
-    .default(100), // Max projects per batch DELETE
-  LANGFUSE_BATCH_DATA_RETENTION_CLEANER_CHUNK_SIZE: z.coerce
-    .number()
-    .positive()
-    .default(100), // Chunk size for counting projects in ClickHouse
-  LANGFUSE_BATCH_DATA_RETENTION_CLEANER_DELETE_TIMEOUT_MS: z.coerce
-    .number()
-    .positive()
-    .default(3_600_000), // 1 hour for DELETE operations
-
-  // ClickHouse deleted-mask cleaner configuration
-  LANGFUSE_CLICKHOUSE_DELETED_MASK_CLEANER_ENABLED: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_CLICKHOUSE_DELETED_MASK_CLEANER_INTERVAL_MS: z.coerce
-    .number()
-    .positive()
-    .default(3_600_000), // 1 hour between runs
-  LANGFUSE_CLICKHOUSE_DELETED_MASK_CLEANER_SUBMIT_TIMEOUT_MS: z.coerce
-    .number()
-    .positive()
-    .default(60_000), // Wait up to 1 minute for ALTER submission; mutation can run for hours
-  LANGFUSE_CLICKHOUSE_DELETED_MASK_CLEANER_CLUSTER_MODE_ENABLED: z
-    .enum(["true", "false"])
-    .default("false"), // Use ON CLUSTER and clusterAllReplicas for cleaner operations
-
-  // Media Retention Cleaner configuration (S3/PostgreSQL)
   LANGFUSE_MEDIA_RETENTION_CLEANER_ITEM_LIMIT: z.coerce
     .number()
     .positive()
