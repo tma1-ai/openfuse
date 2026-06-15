@@ -410,36 +410,27 @@ export const otelIngestionQueueProcessorBuilder = (
         path: writePath,
       });
 
-      // V4 events_only mode: skip the legacy traces/observations write paths.
-      // The direct events_full write below is the sole destination — env
-      // validation already guarantees useDirectEventWrite is true here, so
-      // observations and traces don't need the mergeAndWrite / IngestionQueue
-      // detour that would otherwise populate the legacy tables.
+      // V4 events_only mode: skip the legacy traces/observations projection writes. The direct
+      // events_full write path is gone, so in this mode only raw_events (the worker replay source
+      // of truth) is written, letting a later mode flip rebuild the projections.
       const skipLegacyWrites = !v4WritesToLegacyTables(env);
 
-      // GreptimeDB SoT completeness (02-write-path.md): write raw_events for otel traces AND
-      // observations regardless of legacy/direct mode, so events-only batches still land in the
-      // source of truth. Observations are merged directly (never via processEventBatch), so always
-      // write theirs; traces go through processEventBatch (which writes raw_events) only in the
-      // dual path, so write trace raw_events here when that path is skipped. Index-offset
-      // ingested_at preserves request order (same tie-break as the public path). Fail-closed.
-      const otelIngestedAt = Date.now();
-      const rawEventSources = skipLegacyWrites
-        ? [...traces, ...observations]
-        : observations;
-      await writeRawEvents(
-        rawEventSources
-          .map((event, index) =>
-            ingestionEventToRawEvent(
-              event,
-              auth.scope.projectId,
-              otelIngestedAt + index,
-            ),
-          )
-          .filter((row): row is NonNullable<typeof row> => row !== null),
-      );
-
       if (skipLegacyWrites) {
+        // GreptimeDB SoT completeness (02-write-path.md): events-only batches still land in
+        // raw_events for both traces and observations. Index-offset ingested_at preserves request
+        // order (same tie-break as the public path: (ingested_at, event_id)). Fail-closed.
+        const otelIngestedAt = Date.now();
+        await writeRawEvents(
+          [...traces, ...observations]
+            .map((event, index) =>
+              ingestionEventToRawEvent(
+                event,
+                auth.scope.projectId,
+                otelIngestedAt + index,
+              ),
+            )
+            .filter((row): row is NonNullable<typeof row> => row !== null),
+        );
         span?.setAttribute(
           "langfuse.ingestion.otel.skipped_legacy_writes",
           true,
@@ -449,33 +440,16 @@ export const otelIngestionQueueProcessorBuilder = (
         const shouldForwardToEventsTable =
           !useDirectEventWrite && v4WritesToEventsTable(env);
 
-        // Running everything concurrently might be detrimental to the event loop, but has probably
-        // the highest possible throughput. Therefore, we start with a Promise.all.
-        // If necessary, we may use a for each instead.
-
-        // Process observations via mergeAndWrite
-        const observationWritePromise = Promise.all(
-          observations.map((observation) =>
-            ingestionService.mergeAndWrite(
-              getClickhouseEntityType(observation.type),
-              auth.scope.projectId,
-              observation.body.id || "", // id is always defined for observations
-              new Date(), // Use the current timestamp as event time
-              [observation],
-              shouldForwardToEventsTable,
-            ),
-          ),
-        );
-
-        // Process traces and observations concurrently
-        await Promise.all([
-          observationWritePromise,
-          processEventBatch(traces, auth, {
-            delay: 0,
-            source: "otel",
-            forwardToEventsTable: shouldForwardToEventsTable,
-          }),
-        ]);
+        // Route traces AND observations through processEventBatch: it writes raw_events
+        // (post-sampling) and enqueues per-entity merge jobs that rebuild each projection from the
+        // full raw_events history (rebuildFromHistory=true => deterministic
+        // created_at=min(ingested_at)). Observations no longer use an inline read-merge-write
+        // against a ClickHouse baseline.
+        await processEventBatch([...traces, ...observations], auth, {
+          delay: 0,
+          source: "otel",
+          forwardToEventsTable: shouldForwardToEventsTable,
+        });
       }
 
       // Schedule observation-level evals for the parsed spans. This requires
