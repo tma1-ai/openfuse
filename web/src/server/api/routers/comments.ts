@@ -12,7 +12,6 @@ import { TRPCError } from "@trpc/server";
 import { validateCommentReferenceObject } from "@/src/features/comments/validateCommentReferenceObject";
 import {
   getTracesIdentifierForSession,
-  getTracesIdentifierForSessionFromEvents,
   logger,
   NotificationQueue,
   QueueJobs,
@@ -313,12 +312,10 @@ export const commentsRouter = createTRPCRouter({
         scope: "comments:read",
       });
 
-      const clickhouseTraces = ctx.session.user?.v4BetaEnabled
-        ? await getTracesIdentifierForSessionFromEvents(
-            input.projectId,
-            input.sessionId,
-          )
-        : await getTracesIdentifierForSession(input.projectId, input.sessionId);
+      const clickhouseTraces = await getTracesIdentifierForSession(
+        input.projectId,
+        input.sessionId,
+      );
 
       const allTraceCommentCounts = await ctx.prisma.$queryRaw<
         Array<{ objectId: string; count: bigint }>
@@ -351,12 +348,10 @@ export const commentsRouter = createTRPCRouter({
         scope: "comments:read",
       });
 
-      const clickhouseTraces = ctx.session.user?.v4BetaEnabled
-        ? await getTracesIdentifierForSessionFromEvents(
-            input.projectId,
-            input.sessionId,
-          )
-        : await getTracesIdentifierForSession(input.projectId, input.sessionId);
+      const clickhouseTraces = await getTracesIdentifierForSession(
+        input.projectId,
+        input.sessionId,
+      );
 
       const traceIds = clickhouseTraces.map((t) => t.id);
 
