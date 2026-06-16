@@ -23,7 +23,16 @@ describe("ProjectDeletionProcessingJob", () => {
   let s3Prefix: string | null = null;
   const orgId = "seed-org-id";
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    // The project rows created below FK onto this org. Seed it here so the test
+    // is self-contained on a fresh database (CI) instead of relying on a
+    // globally seeded "seed-org-id" organization.
+    await prisma.organization.upsert({
+      where: { id: orgId },
+      create: { id: orgId, name: "Project Deletion Test Org" },
+      update: {},
+    });
+
     storageService = StorageServiceFactory.getInstance({
       accessKeyId: env.LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID,
       secretAccessKey: env.LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY,
