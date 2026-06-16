@@ -84,6 +84,8 @@ const EnvSchema = z.object({
   // GreptimeDB write path (02-write-path.md). gRPC endpoint for the ingester (writes);
   // MySQL-wire endpoint for the full-history read + read path. Local dev defaults match a
   // single-node GreptimeDB (gRPC 4001, MySQL 4002, no auth).
+  // Comma-separated for a cluster's multiple frontends (e.g. "fe1:4001,fe2:4001"); the SDK
+  // load-balances and fails over across them. A single value keeps single-endpoint behaviour.
   GREPTIME_GRPC_URL: z.string().default("localhost:4001"),
   GREPTIME_SQL_HOST: z.string().default("localhost"),
   GREPTIME_SQL_PORT: z.coerce.number().int().positive().default(4002),

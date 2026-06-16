@@ -1,6 +1,26 @@
 import { describe, expect, it } from "vitest";
 
-import { keysetCursorPredicate } from "./client";
+import { keysetCursorPredicate, parseGreptimeEndpoints } from "./client";
+
+describe("parseGreptimeEndpoints", () => {
+  it("returns a single endpoint unchanged", () => {
+    expect(parseGreptimeEndpoints("localhost:4001")).toEqual([
+      "localhost:4001",
+    ]);
+  });
+
+  it("splits comma-separated cluster frontends and trims whitespace", () => {
+    expect(parseGreptimeEndpoints("fe1:4001, fe2:4001 ,fe3:4001")).toEqual([
+      "fe1:4001",
+      "fe2:4001",
+      "fe3:4001",
+    ]);
+  });
+
+  it("drops empty entries from stray commas", () => {
+    expect(parseGreptimeEndpoints("fe1:4001,,")).toEqual(["fe1:4001"]);
+  });
+});
 
 describe("keysetCursorPredicate", () => {
   it("builds a plain comparison for a single cursor column", () => {

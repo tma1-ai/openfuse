@@ -1,4 +1,4 @@
-import { Client } from "@greptime/ingester";
+import { Client, ConfigBuilder } from "@greptime/ingester";
 import mysql from "mysql2/promise";
 import type { Connection as CoreConnection } from "mysql2";
 
@@ -23,10 +23,25 @@ let ingestClient: Client | null = null;
 let sqlPool: mysql.Pool | null = null;
 let readOnlySqlPool: mysql.Pool | null = null;
 
+/**
+ * Parse the GreptimeDB gRPC endpoint setting into a list. A GreptimeDB cluster exposes several
+ * frontend addresses; set them comma-separated and the SDK load-balances across them and fails over —
+ * a peer that fails within a write's retry sequence is excluded for the rest of that sequence, so a
+ * downed frontend routes to a healthy one. A single address keeps the previous behaviour.
+ */
+export const parseGreptimeEndpoints = (raw: string): string[] =>
+  raw
+    .split(",")
+    .map((endpoint) => endpoint.trim())
+    .filter((endpoint) => endpoint.length > 0);
+
 /** Singleton gRPC ingester client used for all writes (raw_events + projections + EAV). */
 export const getGreptimeIngestClient = (): Client => {
   if (!ingestClient) {
-    let builder = Client.create(env.GREPTIME_GRPC_URL)
+    const endpoints = parseGreptimeEndpoints(env.GREPTIME_GRPC_URL);
+    // createWithEndpoints handles one or many; the default RandomSelector load-balances and excludes
+    // a just-failed peer mid-retry, so multi-frontend failover needs no extra config.
+    let builder = ConfigBuilder.createWithEndpoints(...endpoints)
       .withDatabase(env.GREPTIME_DB)
       // Conservative: only retry transient transport/server codes. The worker rebuilds full
       // snapshots from history, so a failed write is re-driven by the queue, not by aggressive
@@ -39,7 +54,7 @@ export const getGreptimeIngestClient = (): Client => {
 
     ingestClient = new Client(builder.build());
     logger.info(
-      `Initialized GreptimeDB ingester client at ${env.GREPTIME_GRPC_URL} (db=${env.GREPTIME_DB})`,
+      `Initialized GreptimeDB ingester client at ${endpoints.join(", ")} (db=${env.GREPTIME_DB})`,
     );
   }
   return ingestClient;
