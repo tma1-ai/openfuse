@@ -1,4 +1,4 @@
-import { ClickHouseClientManager, logger } from "@langfuse/shared/src/server";
+import { logger } from "@langfuse/shared/src/server";
 import { redis } from "@langfuse/shared/src/server";
 
 import { GreptimeWriter } from "../services/GreptimeWriter";
@@ -64,9 +64,6 @@ export const onShutdown: NodeJS.SignalsListener = async (signal) => {
 
   await prisma.$disconnect();
   logger.info("Prisma connection has been closed.");
-
-  // Shutdown clickhouse connections
-  await ClickHouseClientManager.getInstance().closeAllConnections();
 
   // Shutdown tokenization worker threads
   try {

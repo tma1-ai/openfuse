@@ -38,11 +38,6 @@ vi.mock("@langfuse/shared/src/server", () => ({
   },
   traceException: mockTraceException,
   contextWithLangfuseProps: vi.fn(() => ({})),
-  ClickHouseClientManager: {
-    getInstance: () => ({
-      closeAllConnections: vi.fn(async () => undefined),
-    }),
-  },
 }));
 
 vi.mock("@/src/features/public-api/server/RateLimitService", () => ({
