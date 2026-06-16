@@ -7,7 +7,7 @@ import {
 import { tracesTableCols } from "../../../tableDefinitions/tracesTable";
 import { tracesTableUiColumnDefinitions } from "../../tableMappings/mapTracesTable";
 import { greptimeQuery } from "../../greptime/client";
-import { measureAndReturn } from "../../clickhouse/measureAndReturn";
+import { measureAndReturn } from "../../storage/measureAndReturn";
 import { recordDistribution, traceException } from "../../instrumentation";
 import { logger } from "../../logger";
 import {

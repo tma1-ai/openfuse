@@ -88,7 +88,7 @@ import {
   getObservationByIdFromObservationsTable,
   ObservationTableQuery,
 } from "./observations";
-import { type SessionEventsMetricsRow } from "../queries/clickhouse-sql/event-query-builder";
+import { type SessionEventsMetricsRow } from "../queries/sql/event-query-builder";
 import { type EventsObservationPublic } from "../queries/createGenerationsQuery";
 import { type NumericEventsTableColumnId } from "../../eventsTable";
 import { tracesTableCols } from "../../tableDefinitions/tracesTable";

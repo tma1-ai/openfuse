@@ -1,6 +1,6 @@
-import { parseDbUtcDateTimeFormat } from "./clickhouse";
+import { parseDbUtcDateTimeFormat } from "./dbUtils";
 import { TraceRecordExtraFieldsType, TraceRecordReadType } from "./definitions";
-import { convertDateToDbDateTime } from "../clickhouse/client";
+import { convertDateToDbDateTime } from "../storage/client";
 import { TraceDomain } from "../../domain";
 import { parseMetadataCHRecordToDomain } from "../utils/metadata_conversion";
 import {

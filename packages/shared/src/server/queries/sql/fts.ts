@@ -4,7 +4,7 @@ import {
   filterOperators,
 } from "../../../interfaces/filters";
 import { InvalidRequestError } from "../../../errors";
-import { EVENTS_TABLE_NAMES } from "../../clickhouse/schema";
+import { EVENTS_TABLE_NAMES } from "../../storage/schema";
 
 export { FTS_MATCH_OPERATOR } from "../../../interfaces/filters";
 

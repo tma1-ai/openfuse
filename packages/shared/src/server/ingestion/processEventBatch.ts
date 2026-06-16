@@ -8,7 +8,7 @@ import {
   UnauthorizedError,
 } from "../../errors";
 import { AuthHeaderValidVerificationResultIngestion } from "../auth/types";
-import { getIngestionEntityType } from "../clickhouse/schemaUtils";
+import { getIngestionEntityType } from "../storage/schemaUtils";
 import {
   getCurrentSpan,
   instrumentAsync,

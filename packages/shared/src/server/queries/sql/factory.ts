@@ -1,7 +1,7 @@
 import { FTS_MATCH_OPERATOR } from "../../../interfaces/filters";
 import { type EventsTableFilterState } from "../../../types";
 import { InvalidRequestError } from "../../../errors";
-import { isValidTableName } from "../../clickhouse/schemaUtils";
+import { isValidTableName } from "../../storage/schemaUtils";
 import { logger } from "../../logger";
 import {
   findUiColumnMapping,

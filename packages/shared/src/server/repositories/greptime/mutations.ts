@@ -12,7 +12,7 @@ import {
   PHYSICAL_TABLES,
 } from "../../greptime/ingest/tableSchemas";
 import { recordIncrement } from "../../instrumentation";
-import { parseDbUtcDateTimeFormat } from "../clickhouse";
+import { parseDbUtcDateTimeFormat } from "../dbUtils";
 import {
   type ScoreRecordInsertType,
   type ScoreRecordReadType,

@@ -5,7 +5,7 @@ import {
   type ColumnDefinition,
 } from "../../../tableDefinitions";
 import { logger } from "../../logger";
-import { COMPATIBLE_FILTER_TYPES } from "../../queries/clickhouse-sql/filterTypeCompatibility";
+import { COMPATIBLE_FILTER_TYPES } from "../../queries/sql/filterTypeCompatibility";
 import {
   StringFilter,
   DateTimeFilter,
@@ -26,7 +26,7 @@ import { type GreptimeColumnMappings } from "./columnMappings";
 
 /**
  * GreptimeDB filter factory (04-read-path.md, P1) — port of
- * `queries/clickhouse-sql/factory.ts:createFilterFromFilterState`. Same UI filter-state contract,
+ * `queries/sql/factory.ts:createFilterFromFilterState`. Same UI filter-state contract,
  * same column-type validation, but it resolves columns against a `GreptimeColumnMappings` and emits
  * GreptimeDB filter objects (`greptime-filter.ts`). The mapping's `greptimeTableName` /
  * `greptimeSelect` / `queryPrefix` feed the filter classes; metadata/tags route to the project-scoped

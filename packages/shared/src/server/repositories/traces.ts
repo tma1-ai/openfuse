@@ -1,6 +1,6 @@
 import { OrderByState } from "../../interfaces/orderBy";
 import { FilterState } from "../../types";
-import { FilterList } from "../queries/clickhouse-sql/clickhouse-filter";
+import { FilterList } from "../queries/sql/clickhouse-filter";
 import { TraceRecordReadType } from "./definitions";
 import { tracesTableUiColumnDefinitions } from "../tableMappings/mapTracesTable";
 import { UiColumnMappings, ColumnDefinition } from "../../tableDefinitions";

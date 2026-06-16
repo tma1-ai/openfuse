@@ -5,7 +5,7 @@ import type {
   ScoreSourceType,
 } from "../../domain/scores";
 import { parseMetadataCHRecordToDomain } from "../utils/metadata_conversion";
-import { parseDbUtcDateTimeFormat } from "./clickhouse";
+import { parseDbUtcDateTimeFormat } from "./dbUtils";
 
 export type ScoreAggregation = {
   id: string;

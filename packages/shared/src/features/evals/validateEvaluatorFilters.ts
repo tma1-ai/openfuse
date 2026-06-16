@@ -10,7 +10,7 @@ import {
   experimentEvalFilterColumns,
   observationEvalFilterColumns,
 } from "./observationForEval";
-import { COMPATIBLE_FILTER_TYPES } from "../../server/queries/clickhouse-sql/filterTypeCompatibility";
+import { COMPATIBLE_FILTER_TYPES } from "../../server/queries/sql/filterTypeCompatibility";
 import {
   EvalTargetObject,
   type EvalTargetObject as EvalTargetObjectType,

@@ -4,7 +4,7 @@ import { quoteIdent } from "../schemaUtils";
 
 /**
  * Content search for the GreptimeDB read path (04-read-path.md, P0b) — mirrors
- * `clickhouse-sql/search.ts`. GreptimeDB has no `ILIKE`; case-insensitive substring search is
+ * `sql/search.ts`. GreptimeDB has no `ILIKE`; case-insensitive substring search is
  * `lower(col) LIKE lower(:p)`. Substring search over input/output is scan-prone (the FULLTEXT index
  * accelerates whole-term `matches_term`, not arbitrary substrings) — acceptable for the UI search
  * box; revisit if it becomes a hotspot.
@@ -14,7 +14,7 @@ import { quoteIdent } from "../schemaUtils";
  * Re-encode like a `ensure_ascii=True` JSON serializer (Python SDK / OTel path): every code point
  * >= U+0080 becomes `\\uXXXX` (astral -> surrogate pair). input/output ingested that way is stored
  * verbatim in escaped form, so a raw non-ASCII substring would never match without this. (Mirrors
- * clickhouse-sql/search.ts `toJsonUnicodeEscaped`; kept local to avoid importing the CH module.)
+ * sql/search.ts `toJsonUnicodeEscaped`; kept local to avoid importing the CH module.)
  */
 const toJsonUnicodeEscaped = (value: string): string => {
   let out = "";

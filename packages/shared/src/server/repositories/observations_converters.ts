@@ -1,4 +1,4 @@
-import { parseDbUtcDateTimeFormat } from "./clickhouse";
+import { parseDbUtcDateTimeFormat } from "./dbUtils";
 import {
   ObservationRecordReadType,
   EventsObservationRecordReadType,

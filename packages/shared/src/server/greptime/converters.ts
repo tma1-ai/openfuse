@@ -1,4 +1,4 @@
-import { getIngestionEntityType } from "../clickhouse/schemaUtils";
+import { getIngestionEntityType } from "../storage/schemaUtils";
 import { IngestionEventType } from "../ingestion/types";
 import { RawEventInput, RawEventRow } from "./rawEvents";
 

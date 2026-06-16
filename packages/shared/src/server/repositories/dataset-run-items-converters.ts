@@ -1,7 +1,7 @@
 import { DatasetRunItemDomain } from "../../domain/dataset-run-items";
-import { convertDateToDbDateTime } from "../clickhouse/client";
+import { convertDateToDbDateTime } from "../storage/client";
 import { parseMetadataCHRecordToDomain } from "../utils/metadata_conversion";
-import { parseDbUtcDateTimeFormat } from "./clickhouse";
+import { parseDbUtcDateTimeFormat } from "./dbUtils";
 import {
   DatasetRunItemRecordReadType,
   DatasetRunItemRecord,

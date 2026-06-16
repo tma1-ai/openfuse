@@ -18,16 +18,16 @@ export {
   StringObjectFilter,
   NullFilter,
   type ClickhouseOperator,
-} from "./clickhouse-sql/clickhouse-filter";
+} from "./sql/clickhouse-filter";
 export {
   orderByToClickhouseSql,
   orderByToEntries,
-} from "./clickhouse-sql/orderby-factory";
-export { createFilterFromFilterState } from "./clickhouse-sql/factory";
+} from "./sql/orderby-factory";
+export { createFilterFromFilterState } from "./sql/factory";
 export {
   clickhouseSearchCondition,
   type ClickhouseSearchConditionOptions,
-} from "./clickhouse-sql/search";
+} from "./sql/search";
 export {
   FTS_EVENTS_TABLES,
   FTS_MATCH_OPERATOR,
@@ -43,7 +43,7 @@ export {
   isFtsMetadataTarget,
   isFtsTextField,
   isFtsTextTarget,
-} from "./clickhouse-sql/fts";
+} from "./sql/fts";
 export { postgresSearchCondition } from "./postgres-sql/search";
 export {
   convertApiProvidedFilterToClickhouseFilter,
@@ -66,7 +66,7 @@ export {
   type ExperimentsAggregationFieldSetName,
   type SessionEventsMetricsRow,
   type SplitQueryBuilder,
-} from "./clickhouse-sql/event-query-builder";
+} from "./sql/event-query-builder";
 export {
   eventsScoresAggregation,
   eventsSessionsAggregation,
@@ -74,4 +74,4 @@ export {
   eventsTraceMetadata,
   eventsTracesAggregation,
   eventsTracesScoresAggregation,
-} from "./clickhouse-sql/query-fragments";
+} from "./sql/query-fragments";
