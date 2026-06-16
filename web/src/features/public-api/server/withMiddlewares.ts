@@ -37,12 +37,12 @@ const defaultHandler = () => {
   throw new MethodNotAllowedError();
 };
 
-const DEFAULT_CLICKHOUSE_RESOURCE_ERROR_MESSAGE = [
+const DEFAULT_RESOURCE_ERROR_MESSAGE = [
   DbResourceError.ERROR_ADVICE_MESSAGE,
   "See https://langfuse.com/docs/api-and-data-platform/features/public-api for more details.",
 ].join("\n");
 
-export const LEGACY_PUBLIC_API_OBSERVATIONS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE =
+export const LEGACY_PUBLIC_API_OBSERVATIONS_RESOURCE_ERROR_MESSAGE =
   [
     DbResourceError.ERROR_ADVICE_MESSAGE,
     "This legacy endpoint can be slow. Please migrate to the high-performance Observations API v2 at /api/public/v2/observations.",
@@ -50,7 +50,7 @@ export const LEGACY_PUBLIC_API_OBSERVATIONS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE =
     "Docs: https://langfuse.com/docs/api-and-data-platform/features/observations-api",
   ].join("\n");
 
-export const LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE = [
+export const LEGACY_PUBLIC_API_METRICS_RESOURCE_ERROR_MESSAGE = [
   DbResourceError.ERROR_ADVICE_MESSAGE,
   "This legacy endpoint can be slow. Please migrate to the high-performance Metrics API v2 at /api/public/v2/metrics.",
   "This applies to Langfuse Cloud only until v4 is released in OSS.",
@@ -59,7 +59,7 @@ export const LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE = [
 
 type MiddlewareOptions = {
   errorContract?: PublicApiErrorContract;
-  clickHouseResourceErrorMessage?: string;
+  resourceErrorMessage?: string;
 };
 
 export function withMiddlewares(
@@ -137,14 +137,14 @@ export function withMiddlewares(
           });
         }
 
-        // Handle ClickHouse resource errors
+        // Handle DB resource errors
         if (error instanceof DbResourceError) {
           const resourceError = error as DbResourceError;
           const errorMessage =
-            options?.clickHouseResourceErrorMessage ??
-            DEFAULT_CLICKHOUSE_RESOURCE_ERROR_MESSAGE;
+            options?.resourceErrorMessage ??
+            DEFAULT_RESOURCE_ERROR_MESSAGE;
 
-          logger.warn("ClickHouse resource limit exceeded", {
+          logger.warn("DB resource limit exceeded", {
             errorType: resourceError.errorType,
             message: resourceError.message,
             suggestion: errorMessage,

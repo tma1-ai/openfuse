@@ -113,7 +113,7 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
           error.cause instanceof DbResourceError
             ? "DbResourceError"
             : null,
-        // do not expose stack traces for CH errors as they may contain sensitive info
+        // do not expose stack traces for DB resource errors as they may contain sensitive info
         stack:
           error.cause instanceof DbResourceError
             ? null
@@ -169,9 +169,9 @@ const withErrorHandling = t.middleware(async ({ ctx, next }) => {
 
   if (!res.ok) {
     if (res.error.cause instanceof DbResourceError) {
-      // Surface ClickHouse errors using an advice message
+      // Surface DB resource errors using an advice message
       // which is supposed to provide a bit of guidance to the user.
-      logger.warn("ClickHouse resource limit exceeded", {
+      logger.warn("DB resource limit exceeded", {
         errorType: res.error.cause.errorType,
         message: res.error.cause.message,
         tags: res.error.cause.tags,

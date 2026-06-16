@@ -85,12 +85,12 @@ describe("IngestionService unit tests", () => {
     expect(sortedEventList).not.toBe(records); // Ensure that the original array is not mutated
   });
 
-  it("correctly convert Date to Clickhouse DateTime", async () => {
+  it("correctly converts Date to DB DateTime", async () => {
     const date = new Date("2024-10-12T12:13:14.123Z");
 
-    const clickhouseDateTime = convertDateToDbDateTime(date);
+    const dbDateTime = convertDateToDbDateTime(date);
 
-    expect(clickhouseDateTime).toEqual("2024-10-12 12:13:14.123");
+    expect(dbDateTime).toEqual("2024-10-12 12:13:14.123");
   });
 
   it("keeps observation metadata values stringified after moving tool definitions to input", async () => {

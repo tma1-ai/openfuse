@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import {
-  LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE,
+  LEGACY_PUBLIC_API_METRICS_RESOURCE_ERROR_MESSAGE,
   withMiddlewares,
 } from "@/src/features/public-api/server/withMiddlewares";
 import {
@@ -262,8 +262,8 @@ describe("withMiddlewares error handling", () => {
           },
         },
         {
-          clickHouseResourceErrorMessage:
-            LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE,
+          resourceErrorMessage:
+            LEGACY_PUBLIC_API_METRICS_RESOURCE_ERROR_MESSAGE,
         },
       );
 
@@ -279,7 +279,7 @@ describe("withMiddlewares error handling", () => {
       expect(res._getStatusCode()).toBe(422);
       const jsonData = JSON.parse(res._getData());
       expect(jsonData["message"]).toBe(
-        LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE,
+        LEGACY_PUBLIC_API_METRICS_RESOURCE_ERROR_MESSAGE,
       );
       expect(jsonData["message"]).toContain(
         "https://langfuse.com/docs/metrics/features/metrics-api",
