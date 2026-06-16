@@ -191,7 +191,7 @@ export const deleteProjectFromGreptime = async (
 /**
  * Per-entity dataset_run_items deletion (04-read-path.md, P4). The projection has no EAV subtables
  * and is not a GreptimeEntityType (no tombstone/replay), so these are direct hard DELETEs — matching
- * the legacy ClickHouse `commandClickhouse` deletes. They drive the dataset-deletion worker
+ * the legacy ClickHouse DELETE statements. They drive the dataset-deletion worker
  * (`processClickhouseDatasetDelete`) and project deletion above.
  */
 export const deleteDatasetRunItemsByProjectIdFromGreptime = async (
