@@ -76,7 +76,6 @@ GreptimeDB runs separately (gRPC `:4001`, MySQL `:4002`).
 pnpm install
 docker compose -f docker-compose.dev.yml up -d   # Postgres/Redis/ClickHouse/MinIO
 pnpm run db:deploy                                # Postgres migrations
-pnpm --filter shared run ch:up                    # ClickHouse migrations (transition period)
 # GreptimeDB schema:
 mysql -h127.0.0.1 -P4002 -uroot openfuse < packages/shared/greptime/migrations/0001_init.sql
 pnpm run dev

@@ -45,5 +45,4 @@ pnpm run db:generate
 # bootstrap without "table does not exist" failures.
 pnpm --filter=shared run db:reset:test
 pnpm --filter=shared run db:reset -f
-SKIP_CONFIRM=1 pnpm --filter=shared run ch:reset
 pnpm --filter=shared run db:seed:examples
