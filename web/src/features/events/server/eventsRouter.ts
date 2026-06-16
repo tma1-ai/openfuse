@@ -25,7 +25,7 @@ import {
 import {
   instrumentAsync,
   getScoresAndCorrectionsForTraces,
-  convertDateToClickhouseDateTime,
+  convertDateToDbDateTime,
   getAgentGraphDataFromEventsTable,
   getObservationsForTraceFromEventsTable,
   MAX_OBSERVATIONS_PER_TRACE,
@@ -306,10 +306,10 @@ export const eventsRouter = createTRPCRouter({
 
             const { traceId, minStartTime, maxStartTime } = input;
 
-            const chMinStartTime = convertDateToClickhouseDateTime(
+            const chMinStartTime = convertDateToDbDateTime(
               new Date(minStartTime),
             );
-            const chMaxStartTime = convertDateToClickhouseDateTime(
+            const chMaxStartTime = convertDateToDbDateTime(
               new Date(maxStartTime),
             );
 

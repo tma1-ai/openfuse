@@ -3,7 +3,7 @@ import {
   FTS_MATCH_OPERATOR,
   type FtsMatchOperator,
 } from "../../../interfaces/filters";
-import { clickhouseCompliantRandomCharacters } from "../../repositories/clickhouse";
+import { sqlSafeRandomCharacters } from "../../repositories/clickhouse";
 import { escapeSqlLikePattern } from "../../utils/sqlLike";
 import { quoteIdent } from "../schemaUtils";
 
@@ -44,7 +44,7 @@ export interface GreptimeFilter {
 // helpers
 // ---------------------------------------------------------------------------
 
-const uid = () => clickhouseCompliantRandomCharacters();
+const uid = () => sqlSafeRandomCharacters();
 
 const isBareIdentifier = (s: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s);
 

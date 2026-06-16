@@ -1,6 +1,6 @@
 import { Job, Processor } from "bullmq";
 import {
-  getClickhouseEntityType,
+  getIngestionEntityType,
   getCurrentSpan,
   getS3EventStorageClient,
   hasS3SlowdownFlag,
@@ -176,7 +176,7 @@ export const ingestionQueueProcessorBuilder = (
       // delivery resolves naturally because every write replays the complete, deterministically
       // sorted history from scratch. `projectId` is already in scope from the redirect check above.
       const entityId = job.data.payload.data.eventBodyId;
-      const clickhouseEntityType = getClickhouseEntityType(
+      const clickhouseEntityType = getIngestionEntityType(
         job.data.payload.data.type,
       );
 

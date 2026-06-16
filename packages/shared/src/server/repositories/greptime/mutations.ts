@@ -12,7 +12,7 @@ import {
   PHYSICAL_TABLES,
 } from "../../greptime/ingest/tableSchemas";
 import { recordIncrement } from "../../instrumentation";
-import { parseClickhouseUTCDateTimeFormat } from "../clickhouse";
+import { parseDbUtcDateTimeFormat } from "../clickhouse";
 import {
   type ScoreRecordInsertType,
   type ScoreRecordReadType,
@@ -41,7 +41,7 @@ import {
 
 /** Parse a ClickHouse-format datetime string (`YYYY-MM-DD HH:mm:ss.SSS`, UTC) to epoch ms. */
 const chToMs = (value: string): number =>
-  parseClickhouseUTCDateTimeFormat(value).getTime();
+  parseDbUtcDateTimeFormat(value).getTime();
 
 const nowAsClickHouseDateTime = (): string =>
   new Date().toISOString().replace("T", " ").replace("Z", "");
@@ -143,7 +143,7 @@ export const upsertTraceToGreptime = async (
   //    (project comes from the envelope, timestamps from ingestion, IO from the real ingestion events).
   const body = {
     id: full.id,
-    timestamp: parseClickhouseUTCDateTimeFormat(full.timestamp).toISOString(),
+    timestamp: parseDbUtcDateTimeFormat(full.timestamp).toISOString(),
     name: full.name ?? undefined,
     userId: full.user_id ?? undefined,
     metadata: full.metadata ?? undefined,
@@ -206,9 +206,9 @@ export const upsertScoreToGreptime = async (
     queueId: full.queue_id,
     authorUserId: full.author_user_id,
     environment: full.environment,
-    timestamp: parseClickhouseUTCDateTimeFormat(full.timestamp).toISOString(),
-    createdAt: parseClickhouseUTCDateTimeFormat(full.created_at).toISOString(),
-    updatedAt: parseClickhouseUTCDateTimeFormat(full.updated_at).toISOString(),
+    timestamp: parseDbUtcDateTimeFormat(full.timestamp).toISOString(),
+    createdAt: parseDbUtcDateTimeFormat(full.created_at).toISOString(),
+    updatedAt: parseDbUtcDateTimeFormat(full.updated_at).toISOString(),
   };
   const event = {
     id: randomUUID(),

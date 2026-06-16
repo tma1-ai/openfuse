@@ -7,7 +7,7 @@
 /**
  * Accepts a JavaScript date and returns the DateTime in format YYYY-MM-DD HH:MM:SS
  */
-export const convertDateToClickhouseDateTime = (date: Date): string => {
+export const convertDateToDbDateTime = (date: Date): string => {
   // 2024-11-06T20:37:00.123Z -> 2024-11-06 21:37:00.123
   return date.toISOString().replace("T", " ").replace("Z", "");
 };

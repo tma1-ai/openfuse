@@ -26,7 +26,7 @@ import {
   requireGreptimeDate,
   requireGreptimeString,
 } from "../../greptime/sql/rowContract";
-import { clickhouseCompliantRandomCharacters } from "..";
+import { sqlSafeRandomCharacters } from "..";
 import { greptimeTsParam } from "./queryHelpers";
 
 /**
@@ -59,7 +59,7 @@ const SESSION_GRAIN: ScoreGrain = {
 };
 
 const q = quoteIdent;
-const uid = () => clickhouseCompliantRandomCharacters();
+const uid = () => sqlSafeRandomCharacters();
 
 export type SessionDataReturnType = {
   session_id: string;

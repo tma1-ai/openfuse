@@ -11,7 +11,7 @@ import {
 } from "@langfuse/shared";
 import type { PrismaClient } from "@langfuse/shared/src/db";
 import {
-  convertDateToClickhouseDateTime,
+  convertDateToDbDateTime,
   upsertScore,
 } from "@langfuse/shared/src/server";
 import { env } from "@/src/env.mjs";
@@ -179,7 +179,7 @@ export const inAppAgentRouter = createTRPCRouter({
       if (projectAvailability.aiTelemetryEnabled && scoreProjectId) {
         await upsertScore({
           id: scoreId,
-          timestamp: convertDateToClickhouseDateTime(now),
+          timestamp: convertDateToDbDateTime(now),
           project_id: scoreProjectId,
           environment: IN_APP_AGENT_FEEDBACK_ENVIRONMENT,
           trace_id: input.conversationId,
@@ -194,8 +194,8 @@ export const inAppAgentRouter = createTRPCRouter({
           data_type: ScoreDataTypeEnum.BOOLEAN,
           string_value: input.value === "thumbs_up" ? "true" : "false",
           queue_id: null,
-          created_at: convertDateToClickhouseDateTime(now),
-          updated_at: convertDateToClickhouseDateTime(now),
+          created_at: convertDateToDbDateTime(now),
+          updated_at: convertDateToDbDateTime(now),
           metadata: {
             project_id: input.projectId,
             conversation_id: input.conversationId,

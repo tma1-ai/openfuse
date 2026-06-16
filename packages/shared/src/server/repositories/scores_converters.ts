@@ -5,7 +5,7 @@ import type {
   ScoreSourceType,
 } from "../../domain/scores";
 import { parseMetadataCHRecordToDomain } from "../utils/metadata_conversion";
-import { parseClickhouseUTCDateTimeFormat } from "./clickhouse";
+import { parseDbUtcDateTimeFormat } from "./clickhouse";
 
 export type ScoreAggregation = {
   id: string;
@@ -18,7 +18,7 @@ export type ScoreAggregation = {
   timestamp: Date;
 };
 
-export const convertClickhouseScoreToDomain = <
+export const convertDbRecordScoreToDomain = <
   ExcludeMetadata extends boolean = false,
   DataType extends ScoreDataTypeType = ScoreDataTypeType,
 >(
@@ -27,7 +27,7 @@ export const convertClickhouseScoreToDomain = <
 ): ScoreByDataType<DataType> => {
   const baseScore = {
     id: record.id,
-    timestamp: parseClickhouseUTCDateTimeFormat(record.timestamp),
+    timestamp: parseDbUtcDateTimeFormat(record.timestamp),
     projectId: record.project_id,
     environment: record.environment,
     traceId: record.trace_id ?? null,
@@ -45,10 +45,10 @@ export const convertClickhouseScoreToDomain = <
     queueId: record.queue_id ?? null,
     executionTraceId: record.execution_trace_id ?? null,
     createdAt: record.created_at
-      ? parseClickhouseUTCDateTimeFormat(record.created_at)
+      ? parseDbUtcDateTimeFormat(record.created_at)
       : new Date(),
     updatedAt: record.updated_at
-      ? parseClickhouseUTCDateTimeFormat(record.updated_at)
+      ? parseDbUtcDateTimeFormat(record.updated_at)
       : new Date(),
     metadata: (includeMetadataPayload
       ? (parseMetadataCHRecordToDomain(record.metadata ?? {}) ?? {})

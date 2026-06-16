@@ -39,12 +39,12 @@ import {
   getTraceById,
   logger,
   upsertTrace,
-  convertTraceDomainToClickhouse,
+  convertTraceDomainToDbRecord,
   hasAnyTrace,
   traceDeletionProcessor,
   getTracesTableMetrics,
   getCategoricalScoresGroupedByName,
-  convertDateToClickhouseDateTime,
+  convertDateToDbDateTime,
   getAgentGraphData,
   tracesTableUiColumnDefinitions,
   getTracesGroupedByUsers,
@@ -518,7 +518,7 @@ export const traceRouter = createTRPCRouter({
         if (clickhouseTrace) {
           trace = clickhouseTrace;
           clickhouseTrace.bookmarked = input.bookmarked;
-          await upsertTrace(convertTraceDomainToClickhouse(clickhouseTrace));
+          await upsertTrace(convertTraceDomainToDbRecord(clickhouseTrace));
         } else {
           logger.error(
             `Trace not found in Clickhouse: ${input.traceId}. Skipping bookmark.`,
@@ -570,7 +570,7 @@ export const traceRouter = createTRPCRouter({
           });
         }
         clickhouseTrace.public = input.public;
-        await upsertTrace(convertTraceDomainToClickhouse(clickhouseTrace));
+        await upsertTrace(convertTraceDomainToDbRecord(clickhouseTrace));
         return clickhouseTrace;
       } catch (error) {
         logger.error("Failed to call traces.publish", error);
@@ -594,10 +594,10 @@ export const traceRouter = createTRPCRouter({
     .query(async ({ input }): Promise<Required<AgentGraphDataResponse>[]> => {
       const { traceId, projectId, minStartTime, maxStartTime } = input;
 
-      const chMinStartTime = convertDateToClickhouseDateTime(
+      const chMinStartTime = convertDateToDbDateTime(
         new Date(minStartTime),
       );
-      const chMaxStartTime = convertDateToClickhouseDateTime(
+      const chMaxStartTime = convertDateToDbDateTime(
         new Date(maxStartTime),
       );
 

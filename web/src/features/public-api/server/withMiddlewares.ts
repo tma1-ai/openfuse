@@ -12,7 +12,7 @@ import {
   logger,
   traceException,
   contextWithLangfuseProps,
-  ClickHouseResourceError,
+  DbResourceError,
 } from "@langfuse/shared/src/server";
 import * as opentelemetry from "@opentelemetry/api";
 import {
@@ -38,20 +38,20 @@ const defaultHandler = () => {
 };
 
 const DEFAULT_CLICKHOUSE_RESOURCE_ERROR_MESSAGE = [
-  ClickHouseResourceError.ERROR_ADVICE_MESSAGE,
+  DbResourceError.ERROR_ADVICE_MESSAGE,
   "See https://langfuse.com/docs/api-and-data-platform/features/public-api for more details.",
 ].join("\n");
 
 export const LEGACY_PUBLIC_API_OBSERVATIONS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE =
   [
-    ClickHouseResourceError.ERROR_ADVICE_MESSAGE,
+    DbResourceError.ERROR_ADVICE_MESSAGE,
     "This legacy endpoint can be slow. Please migrate to the high-performance Observations API v2 at /api/public/v2/observations.",
     "This applies to Langfuse Cloud only until v4 is released in OSS.",
     "Docs: https://langfuse.com/docs/api-and-data-platform/features/observations-api",
   ].join("\n");
 
 export const LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE = [
-  ClickHouseResourceError.ERROR_ADVICE_MESSAGE,
+  DbResourceError.ERROR_ADVICE_MESSAGE,
   "This legacy endpoint can be slow. Please migrate to the high-performance Metrics API v2 at /api/public/v2/metrics.",
   "This applies to Langfuse Cloud only until v4 is released in OSS.",
   "Docs: https://langfuse.com/docs/metrics/features/metrics-api",
@@ -115,7 +115,7 @@ export function withMiddlewares(
 
           if (
             !(error instanceof BaseError) &&
-            !(error instanceof ClickHouseResourceError) &&
+            !(error instanceof DbResourceError) &&
             !isZodError(error)
           ) {
             traceException(error);
@@ -138,8 +138,8 @@ export function withMiddlewares(
         }
 
         // Handle ClickHouse resource errors
-        if (error instanceof ClickHouseResourceError) {
-          const resourceError = error as ClickHouseResourceError;
+        if (error instanceof DbResourceError) {
+          const resourceError = error as DbResourceError;
           const errorMessage =
             options?.clickHouseResourceErrorMessage ??
             DEFAULT_CLICKHOUSE_RESOURCE_ERROR_MESSAGE;

@@ -1,7 +1,7 @@
 import { Job, Processor } from "bullmq";
 import {
   createIngestionEventSchema,
-  getClickhouseEntityType,
+  getIngestionEntityType,
   getCurrentSpan,
   getS3EventStorageClient,
   type IngestionEventType,
@@ -141,12 +141,12 @@ export const otelIngestionQueueProcessorBuilder = (
       // Here, we split the events into observations and non-observations.
       // Observations go into the IngestionService directly whereas the non-observations make another run through the processEventBatch method.
       const traces = events.filter(
-        (e) => getClickhouseEntityType(e.type) !== "observation",
+        (e) => getIngestionEntityType(e.type) !== "observation",
       );
       // We need to parse each incoming observation through our ingestion schema to make use of its included transformations.
       const ingestionSchema = createIngestionEventSchema();
       const observations = events
-        .filter((e) => getClickhouseEntityType(e.type) === "observation")
+        .filter((e) => getIngestionEntityType(e.type) === "observation")
         .map((o) => ingestionSchema.safeParse(o))
         .flatMap((o) => {
           if (!o.success) {

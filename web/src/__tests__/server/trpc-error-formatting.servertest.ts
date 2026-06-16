@@ -1,7 +1,7 @@
 import type { Session } from "next-auth";
 import { TRPCError } from "@trpc/server";
 import * as z from "zod";
-import { ClickHouseResourceError } from "@langfuse/shared/src/server";
+import { DbResourceError } from "@langfuse/shared/src/server";
 import {
   createInnerTRPCContext,
   createTRPCRouter,
@@ -9,7 +9,7 @@ import {
 } from "@/src/server/api/trpc";
 
 describe("tRPC error formatting", () => {
-  it("ClickHouseResourceError", async () => {
+  it("DbResourceError", async () => {
     const session = {
       user: {
         id: "user-1",
@@ -20,7 +20,7 @@ describe("tRPC error formatting", () => {
       clickhouse: protectedProcedureWithoutTracing
         .input(z.object({}))
         .query(() => {
-          throw new ClickHouseResourceError(
+          throw new DbResourceError(
             "MEMORY_LIMIT",
             new Error("Memory limit exceeded"),
           );
@@ -59,7 +59,7 @@ describe("tRPC error formatting", () => {
       error: error!,
     });
 
-    expect(formatted.data["errorName"]).toBe("ClickHouseResourceError");
+    expect(formatted.data["errorName"]).toBe("DbResourceError");
     expect(formatted.data["stack"]).toBeNull();
     expect(formatted.data["zodError"]).toBeNull();
   });

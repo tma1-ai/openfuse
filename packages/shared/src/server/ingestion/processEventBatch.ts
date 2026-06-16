@@ -8,7 +8,7 @@ import {
   UnauthorizedError,
 } from "../../errors";
 import { AuthHeaderValidVerificationResultIngestion } from "../auth/types";
-import { getClickhouseEntityType } from "../clickhouse/schemaUtils";
+import { getIngestionEntityType } from "../clickhouse/schemaUtils";
 import {
   getCurrentSpan,
   instrumentAsync,
@@ -199,7 +199,7 @@ export const processEventBatch = async (
       if (!event.body?.id) {
         return acc;
       }
-      const key = `${getClickhouseEntityType(event.type)}-${event.body.id}`;
+      const key = `${getIngestionEntityType(event.type)}-${event.body.id}`;
       if (!acc[key]) {
         acc[key] = {
           data: [],
@@ -228,7 +228,7 @@ export const processEventBatch = async (
         // That way we batch updates from the same invocation into a single file and reduce
         // write operations on S3.
         const { data, key, type, eventBodyId } = sortedBatchByEventBodyId[id];
-        const bucketPath = `${env.LANGFUSE_S3_EVENT_UPLOAD_PREFIX}${authCheck.scope.projectId}/${getClickhouseEntityType(type)}/${eventBodyId}/${key}.json`;
+        const bucketPath = `${env.LANGFUSE_S3_EVENT_UPLOAD_PREFIX}${authCheck.scope.projectId}/${getIngestionEntityType(type)}/${eventBodyId}/${key}.json`;
         return getS3StorageServiceClient(
           env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET,
         ).uploadJson(bucketPath, data);
@@ -282,9 +282,9 @@ export const processEventBatch = async (
       const queue = IngestionQueue.getInstance({ shardingKey });
 
       const isDatasetRunItemEvent =
-        getClickhouseEntityType(eventData.type) === "dataset_run_item";
+        getIngestionEntityType(eventData.type) === "dataset_run_item";
       const isObservationEvent =
-        getClickhouseEntityType(eventData.type) === "observation";
+        getIngestionEntityType(eventData.type) === "observation";
 
       const isOtelOrSkipS3Project =
         authCheck.scope.projectId !== null &&
@@ -345,7 +345,7 @@ export const processEventBatch = async (
                 data: {
                   type: eventData.type,
                   eventBodyId: eventData.eventBodyId,
-                  entityType: getClickhouseEntityType(eventData.type),
+                  entityType: getIngestionEntityType(eventData.type),
                   batchId,
                   fileKey: eventData.key,
                   skipS3List: shouldSkipS3List,

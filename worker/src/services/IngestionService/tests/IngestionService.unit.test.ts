@@ -1,7 +1,7 @@
 import { expect, describe, it, vi } from "vitest";
 import { IngestionService } from "../../IngestionService";
 import {
-  convertDateToClickhouseDateTime,
+  convertDateToDbDateTime,
   eventTypes,
   type ObservationEvent,
 } from "@langfuse/shared/src/server";
@@ -88,7 +88,7 @@ describe("IngestionService unit tests", () => {
   it("correctly convert Date to Clickhouse DateTime", async () => {
     const date = new Date("2024-10-12T12:13:14.123Z");
 
-    const clickhouseDateTime = convertDateToClickhouseDateTime(date);
+    const clickhouseDateTime = convertDateToDbDateTime(date);
 
     expect(clickhouseDateTime).toEqual("2024-10-12 12:13:14.123");
   });
