@@ -114,9 +114,11 @@ export class GreptimeWriter {
     this.intervalId = setInterval(() => {
       if (this.isFlushInProgress) return;
       this.isFlushInProgress = true;
-      this.flushAll().finally(() => {
-        this.isFlushInProgress = false;
-      });
+      this.flushAll()
+        .catch((err) => logger.error("GreptimeWriter interval flushAll", err))
+        .finally(() => {
+          this.isFlushInProgress = false;
+        });
     }, this.writeInterval);
   }
 
