@@ -8,7 +8,6 @@ import {
   BatchActionQueue,
   logger,
   QueueJobs,
-  getObservationsCountFromEventsTable,
   getObservationsTableCount,
 } from "@langfuse/shared/src/server";
 import { TRPCError } from "@trpc/server";
@@ -18,7 +17,6 @@ import {
   BatchActionStatus,
   ActionId,
 } from "@langfuse/shared";
-import { env } from "@/src/env.mjs";
 import { CreateObservationAddToDatasetActionSchema } from "../validation";
 import { assertLegacyTracingIoSearchCanCreateBatchJob } from "@/src/features/traces/server/legacyIoSearch";
 
@@ -38,11 +36,7 @@ export const addToDatasetRouter = createTRPCRouter({
 
         const { projectId, query, config } = input;
 
-        const useEventsTable =
-          env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true";
-        const tableName = useEventsTable
-          ? BatchTableNames.Events
-          : BatchTableNames.Observations;
+        const tableName = BatchTableNames.Observations;
 
         assertLegacyTracingIoSearchCanCreateBatchJob({
           searchQuery: query.searchQuery,
@@ -59,9 +53,7 @@ export const addToDatasetRouter = createTRPCRouter({
           limit: 1,
           offset: 0,
         };
-        const observationCount = useEventsTable
-          ? await getObservationsCountFromEventsTable(queryOpts)
-          : await getObservationsTableCount(queryOpts);
+        const observationCount = await getObservationsTableCount(queryOpts);
 
         if (observationCount > MAX_BATCH_ADD_TO_DATASET_ITEMS) {
           throw new TRPCError({

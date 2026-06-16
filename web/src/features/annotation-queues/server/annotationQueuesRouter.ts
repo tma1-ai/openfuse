@@ -1,4 +1,3 @@
-import { env } from "@/src/env.mjs";
 import { auditLog } from "@/src/features/audit-logs/auditLog";
 import { throwIfNoProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import {
@@ -14,11 +13,7 @@ import {
   optionalPaginationZod,
   Prisma,
 } from "@langfuse/shared";
-import {
-  getObservationById,
-  getObservationByIdFromEventsTable,
-  logger,
-} from "@langfuse/shared/src/server";
+import { getObservationById, logger } from "@langfuse/shared/src/server";
 import { TRPCError } from "@trpc/server";
 import { z } from "zod";
 
@@ -521,16 +516,10 @@ export const queueRouter = createTRPCRouter({
       };
 
       if (item.objectType === AnnotationQueueObjectType.OBSERVATION) {
-        const clickhouseObservation =
-          env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true"
-            ? await getObservationByIdFromEventsTable({
-                id: item.objectId,
-                projectId: input.projectId,
-              })
-            : await getObservationById({
-                id: item.objectId,
-                projectId: input.projectId,
-              });
+        const clickhouseObservation = await getObservationById({
+          id: item.objectId,
+          projectId: input.projectId,
+        });
         return {
           ...inflatedUpdatedItem,
           parentTraceId: clickhouseObservation?.traceId,

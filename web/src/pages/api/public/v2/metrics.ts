@@ -1,12 +1,11 @@
 import { withMiddlewares } from "@/src/features/public-api/server/withMiddlewares";
 import { createAuthedProjectAPIRoute } from "@/src/features/public-api/server/createAuthedProjectAPIRoute";
-import { env } from "@/src/env.mjs";
 import { logger } from "@langfuse/shared/src/server";
 import {
   GetMetricsV2Query,
   GetMetricsV2Response,
 } from "@/src/features/public-api/types/metrics";
-import { InvalidRequestError, LangfuseNotFoundError } from "@langfuse/shared";
+import { InvalidRequestError } from "@langfuse/shared";
 import { executeQuery } from "@langfuse/shared/query/server";
 import { validateQuery } from "@langfuse/shared/query";
 const DEFAULT_ROW_LIMIT = 100;
@@ -18,12 +17,6 @@ export default withMiddlewares({
     querySchema: GetMetricsV2Query,
     responseSchema: GetMetricsV2Response,
     fn: async ({ query, auth }) => {
-      if (env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN !== "true") {
-        throw new LangfuseNotFoundError(
-          "The metrics v2 API is only available in a Langfuse v4 write mode. Learn more at: https://langfuse.com/docs/v4",
-        );
-      }
-
       try {
         // Validate query (high cardinality checks) BEFORE applying defaults
         // This ensures users must explicitly opt-in with row_limit for high cardinality queries
