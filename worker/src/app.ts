@@ -68,6 +68,7 @@ import { coreDataS3ExportProcessor } from "./queues/coreDataS3ExportQueue";
 import { meteringDataPostgresExportProcessor } from "./ee/meteringDataPostgresExport/handleMeteringDataPostgresExportJob";
 import { batchActionQueueProcessor } from "./queues/batchActionQueue";
 import { scoreDeleteProcessor } from "./queues/scoreDelete";
+import { greptimeReconciliationProcessor } from "./queues/greptimeReconciliation";
 import { DlqRetryService } from "./services/dlq/dlqRetryService";
 import { entityChangeQueueProcessor } from "./queues/entityChangeQueue";
 import { webhookProcessor } from "./queues/webhooks";
@@ -190,6 +191,16 @@ if (env.QUEUE_CONSUMER_SCORE_DELETE_QUEUE_IS_ENABLED === "true") {
       duration: env.LANGFUSE_CLICKHOUSE_TRACE_DELETION_CONCURRENCY_DURATION_MS,
     },
   });
+}
+
+if (env.QUEUE_CONSUMER_GREPTIME_RECONCILIATION_QUEUE_IS_ENABLED === "true") {
+  WorkerManager.register(
+    QueueName.GreptimeReconciliation,
+    greptimeReconciliationProcessor,
+    {
+      concurrency: env.LANGFUSE_GREPTIME_RECONCILIATION_CONCURRENCY,
+    },
+  );
 }
 
 if (env.QUEUE_CONSUMER_DATASET_DELETE_QUEUE_IS_ENABLED === "true") {

@@ -19,6 +19,7 @@ import { MeteringDataPostgresExportQueue } from "./meteringDataPostgresExportQue
 import { BatchActionQueue } from "./batchActionQueue";
 import { CreateEvalQueue } from "./createEvalQueue";
 import { ScoreDeleteQueue } from "./scoreDelete";
+import { GreptimeReconciliationQueue } from "./greptimeReconciliation";
 import { DeadLetterRetryQueue } from "./dlqRetryQueue";
 import { WebhookQueue } from "./webhookQueue";
 import { EntityChangeQueue } from "./entityChangeQueue";
@@ -83,6 +84,8 @@ export function getQueue(
       return CreateEvalQueue.getInstance();
     case QueueName.ScoreDelete:
       return ScoreDeleteQueue.getInstance();
+    case QueueName.GreptimeReconciliation:
+      return GreptimeReconciliationQueue.getInstance();
     case QueueName.DeadLetterRetryQueue:
       return DeadLetterRetryQueue.getInstance();
     case QueueName.WebhookQueue:

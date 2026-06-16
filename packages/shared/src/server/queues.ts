@@ -78,6 +78,20 @@ export const ScoresQueueEventSchema = z.object({
   projectId: z.string(),
   scoreIds: z.array(z.string()),
 });
+export const GreptimeReconciliationEventSchema = z.object({
+  projectId: z.string(),
+  // Keyset cursor into raw_events ordered by (entity_type, entity_id). Omitted on the first job;
+  // the processor re-enqueues itself with the last ref of each page until the project is exhausted.
+  cursor: z
+    .object({
+      entityType: z.string(),
+      entityId: z.string(),
+    })
+    .optional(),
+  // Entities enumerated + rebuilt per job before self-requeue. Optional so the producer can rely on
+  // the worker-side default.
+  batchSize: z.number().int().positive().optional(),
+});
 export const DatasetQueueEventSchema = z.discriminatedUnion("deletionType", [
   // Delete all run items for a specific dataset
   z.object({
@@ -292,6 +306,9 @@ export type CloudSpendAlertJobType = z.infer<typeof CloudSpendAlertJobSchema>;
 export type TraceQueueEventType = z.infer<typeof TraceQueueEventSchema>;
 export type TracesQueueEventType = z.infer<typeof TracesQueueEventSchema>;
 export type ScoresQueueEventType = z.infer<typeof ScoresQueueEventSchema>;
+export type GreptimeReconciliationEventType = z.infer<
+  typeof GreptimeReconciliationEventSchema
+>;
 export type DatasetQueueEventType = z.infer<typeof DatasetQueueEventSchema>;
 export type ProjectQueueEventType = z.infer<typeof ProjectQueueEventSchema>;
 export type DatasetRunItemUpsertEventType = z.infer<
@@ -359,6 +376,7 @@ export enum QueueName {
   BatchActionQueue = "batch-action-queue",
   CreateEvalQueue = "create-eval-queue",
   ScoreDelete = "score-delete",
+  GreptimeReconciliation = "greptime-reconciliation",
   DatasetDelete = "dataset-delete-queue",
   DeadLetterRetryQueue = "dead-letter-retry-queue",
   WebhookQueue = "webhook-queue",
@@ -393,6 +411,7 @@ export enum QueueJobs {
   BatchActionProcessingJob = "batch-action-processing-job",
   CreateEvalJob = "create-eval-job",
   ScoreDelete = "score-delete",
+  GreptimeReconciliationJob = "greptime-reconciliation-job",
   DatasetDelete = "dataset-delete-job",
   DeadLetterRetryJob = "dead-letter-retry-job",
   WebhookJob = "webhook-job",
@@ -419,6 +438,12 @@ export type TQueueJobTypes = {
     id: string;
     payload: ScoresQueueEventType;
     name: QueueJobs.ScoreDelete;
+  };
+  [QueueName.GreptimeReconciliation]: {
+    timestamp: Date;
+    id: string;
+    payload: GreptimeReconciliationEventType;
+    name: QueueJobs.GreptimeReconciliationJob;
   };
   [QueueName.DatasetDelete]: {
     timestamp: Date;
