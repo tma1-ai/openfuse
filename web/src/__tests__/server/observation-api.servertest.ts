@@ -2,12 +2,17 @@ import {
   createEvent,
   createObservation,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
+  createEventsAsGreptime,
+  createObservationsGreptime,
 } from "@langfuse/shared/src/server";
-import {
-  createEventsCh,
-  createObservationsCh,
-} from "@langfuse/shared/src/server";
+
+// events_full is gone: the `useEventsTable` arm now seeds the GreptimeDB
+// observations projection plus a synthesized denormalised trace so the public
+// API's events read path (?useEventsTable=true) resolves on GreptimeDB.
+const seedObservationEvents = (
+  events: Parameters<typeof createEventsAsGreptime>[0],
+) => createEventsAsGreptime(events, { synthesizeTraces: true });
 import { makeZodVerifiedAPICall } from "@/src/__tests__/test-utils";
 import { GetObservationV1Response } from "@/src/features/public-api/types/observations";
 import { v4 as uuidv4 } from "uuid";
@@ -71,9 +76,9 @@ const insertObservations = async (
   observations: any[],
 ) => {
   if (useEventsTable) {
-    await createEventsCh(observations);
+    await seedObservationEvents(observations);
   } else {
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
   }
 };
 
@@ -303,7 +308,7 @@ describe("/api/public/observations API Endpoint", () => {
                 project_id: "7a88fb47-b4e2-43b8-a06c-a5ce950dc53a",
               });
 
-              await createTracesCh([createdTrace]);
+              await createTracesGreptime([createdTrace]);
             }
 
             const observation = createObservationData(useEventsTable, {

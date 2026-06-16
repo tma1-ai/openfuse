@@ -6,13 +6,18 @@ import {
 import { GetMetricsV1Response } from "@/src/features/public-api/types/metrics";
 import {
   createEvent,
-  createEventsCh,
-  createScoresCh,
+  createEventsAsGreptime,
+  createScoresGreptime,
   createTraceScore,
-  queryClickhouse,
 } from "@langfuse/shared/src/server";
 import { env } from "@/src/env.mjs";
-import waitForExpect from "wait-for-expect";
+
+// events_full is gone: seed the GreptimeDB observations projection plus a
+// synthesized denormalised trace. Events here carry trace-level
+// userId/sessionId/tags and no trace is seeded separately.
+const seedObservationEvents = (
+  events: Parameters<typeof createEventsAsGreptime>[0],
+) => createEventsAsGreptime(events, { synthesizeTraces: true });
 
 const hasV2Apis = env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true";
 const maybe = hasV2Apis ? describe : describe.skip;
@@ -72,22 +77,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
       );
     }
 
-    await createEventsCh(observations);
-
-    // Wait for ClickHouse to process
-    await waitForExpect(
-      async () => {
-        const result = await queryClickhouse<{ count: string }>({
-          query: `SELECT count() as count FROM events_core WHERE project_id = {projectId: String} AND span_id IN ({ids: Array(String)})`,
-          params: { projectId, ids: observationIds },
-        });
-        expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(
-          observationIds.length,
-        );
-      },
-      5000,
-      10,
-    );
+    await seedObservationEvents(observations);
   });
 
   it("should kill redis connection", () => {
@@ -111,7 +101,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
         }),
       );
 
-      await createEventsCh(rowLimitObservations);
+      await seedObservationEvents(rowLimitObservations);
 
       // Query without specifying row_limit - should default to 100
       const query = {
@@ -157,7 +147,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
         }),
       );
 
-      await createEventsCh(customLimitObservations);
+      await seedObservationEvents(customLimitObservations);
 
       // Query with custom row_limit of 5
       const query = {
@@ -285,7 +275,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
         );
       });
 
-      await createEventsCh(
+      await seedObservationEvents(
         histogramObservations as ReturnType<typeof createEvent>[],
       );
 
@@ -709,7 +699,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
       const taggedObsId = randomUUID();
       const taggedTraceId = randomUUID();
 
-      await createEventsCh([
+      await seedObservationEvents([
         createEvent({
           id: taggedObsId,
           span_id: taggedObsId,
@@ -773,7 +763,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
       if (!hasV2Apis) return;
 
       // Create observation in events table for scores to reference
-      await createEventsCh([
+      await seedObservationEvents([
         createEvent({
           id: scoreObservationId,
           span_id: scoreObservationId,
@@ -805,22 +795,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
         });
       }
 
-      await createScoresCh(scores);
-
-      // Wait for ClickHouse to process
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM scores WHERE project_id = {projectId: String} AND id IN ({ids: Array(String)})`,
-            params: { projectId, ids: scoreIds },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(
-            scoreIds.length,
-          );
-        },
-        5000,
-        10,
-      );
+      await createScoresGreptime(scores);
     });
 
     it("should support filtering by sessionId from scores table", async () => {
@@ -934,7 +909,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
       eventsScoreId = randomUUID();
 
       // Create observation in events table (v2 source)
-      await createEventsCh([
+      await seedObservationEvents([
         createEvent({
           id: eventsObservationId,
           span_id: eventsObservationId,
@@ -952,7 +927,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
         }),
       ]);
 
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: eventsScoreId,
           project_id: projectId,
@@ -965,19 +940,6 @@ describe("/api/public/v2/metrics API Endpoint", () => {
           timestamp: Date.now(),
         }),
       ]);
-
-      // Wait for ClickHouse to process
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM scores WHERE project_id = {projectId: String} AND id IN ({ids: Array(String)})`,
-            params: { projectId, ids: [eventsScoreId] },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(1);
-        },
-        5000,
-        10,
-      );
     });
 
     it.each([
@@ -1047,7 +1009,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
       obsEventsObservationId = randomUUID();
       obsEventsScoreId = randomUUID();
 
-      await createEventsCh([
+      await seedObservationEvents([
         createEvent({
           id: obsEventsObservationId,
           span_id: obsEventsObservationId,
@@ -1059,7 +1021,7 @@ describe("/api/public/v2/metrics API Endpoint", () => {
         }),
       ]);
 
-      await createScoresCh([
+      await createScoresGreptime([
         createTraceScore({
           id: obsEventsScoreId,
           project_id: projectId,
@@ -1072,19 +1034,6 @@ describe("/api/public/v2/metrics API Endpoint", () => {
           timestamp: Date.now(),
         }),
       ]);
-
-      // Wait for ClickHouse to process
-      await waitForExpect(
-        async () => {
-          const result = await queryClickhouse<{ count: string }>({
-            query: `SELECT count() as count FROM scores WHERE project_id = {projectId: String} AND id IN ({ids: Array(String)})`,
-            params: { projectId, ids: [obsEventsScoreId] },
-          });
-          expect(Number(result[0]?.count)).toBeGreaterThanOrEqual(1);
-        },
-        5000,
-        10,
-      );
     });
 
     it.each([

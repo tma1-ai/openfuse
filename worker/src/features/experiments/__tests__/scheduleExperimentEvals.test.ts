@@ -11,32 +11,17 @@ import {
 import { prisma } from "@langfuse/shared/src/db";
 import type { ObservationForEval } from "../../evaluation/observationEval";
 import { IngestionService } from "../../../services/IngestionService";
-import * as clickhouseWriterExports from "../../../services/ClickhouseWriter";
 import { scheduleExperimentObservationEvals } from "../scheduleExperimentEvals";
 
 const {
-  mockAddToClickhouseWriter,
   mockFetchObservationEvalConfigs,
   mockCreateObservationEvalSchedulerDeps,
   mockScheduleObservationEvals,
 } = vi.hoisted(() => ({
-  mockAddToClickhouseWriter: vi.fn(),
   mockFetchObservationEvalConfigs: vi.fn(),
   mockCreateObservationEvalSchedulerDeps: vi.fn(),
   mockScheduleObservationEvals: vi.fn(),
 }));
-
-vi.mock("../../../services/ClickhouseWriter", async (importOriginal) => {
-  const original = (await importOriginal()) as object;
-  return {
-    ...original,
-    ClickhouseWriter: {
-      getInstance: () => ({
-        addToQueue: mockAddToClickhouseWriter,
-      }),
-    },
-  };
-});
 
 vi.mock("../../evaluation/observationEval", async (importOriginal) => {
   const original = (await importOriginal()) as object;
@@ -48,19 +33,11 @@ vi.mock("../../evaluation/observationEval", async (importOriginal) => {
   };
 });
 
-const mockClickhouseClient = {
-  query: async () => ({
-    json: async () => [],
-    query_id: "test-query-id",
-    response_headers: { "x-clickhouse-summary": "[]" },
-  }),
-};
-
 const ingestionService = new IngestionService(
   null as any,
   prisma,
-  clickhouseWriterExports.ClickhouseWriter.getInstance() as any,
-  mockClickhouseClient as any,
+  // greptimeWriter is unused here; these tests only exercise createNormalizedEventRecord
+  { addToQueue: () => {} } as any,
 );
 
 const traceId = "4a56b6d74bbdffd08b9a2485f3315eeb";
@@ -486,7 +463,7 @@ describe("prompt experiment direct-write materialization", () => {
       modelName: "gpt-4.1-2025-04-14",
     });
 
-    const rootEventRecord = await ingestionService.createEventRecord(
+    const rootEventRecord = await ingestionService.createNormalizedEventRecord(
       rootEventInput!,
       "",
     );
@@ -548,7 +525,7 @@ describe("scheduleExperimentObservationEvals", () => {
     const rootEventInput = eventInputs.find(
       (eventInput) => eventInput.spanId === traceId,
     );
-    const rootEventRecord = await ingestionService.createEventRecord(
+    const rootEventRecord = await ingestionService.createNormalizedEventRecord(
       rootEventInput!,
       "",
     );

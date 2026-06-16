@@ -5,7 +5,7 @@ import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
   createOrgProjectAndApiKey,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
 } from "@langfuse/shared/src/server";
 import { randomUUID } from "crypto";
 
@@ -87,7 +87,7 @@ describe("Sessions Comment Filtering", () => {
         id: randomUUID(),
         session_id: sessionId2,
       });
-      await createTracesCh([trace1, trace2]);
+      await createTracesGreptime([trace1, trace2]);
 
       // Add 2 comments to session1
       await prisma.comment.createMany({
@@ -169,7 +169,7 @@ describe("Sessions Comment Filtering", () => {
         id: randomUUID(),
         session_id: sessionId2,
       });
-      await createTracesCh([trace1, trace2]);
+      await createTracesGreptime([trace1, trace2]);
 
       // Add comments with different content
       await prisma.comment.create({
@@ -233,7 +233,7 @@ describe("Sessions Comment Filtering", () => {
         id: randomUUID(),
         session_id: sessionId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Add 2 comments with "bug" in content
       await prisma.comment.createMany({
@@ -301,7 +301,7 @@ describe("Sessions Comment Filtering", () => {
         id: randomUUID(),
         session_id: sessionId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Add comment
       await prisma.comment.create({
@@ -352,7 +352,7 @@ describe("Sessions Comment Filtering", () => {
         id: randomUUID(),
         session_id: sessionId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Add comment
       await prisma.comment.create({
@@ -409,7 +409,7 @@ describe("Sessions Comment Filtering", () => {
         id: randomUUID(),
         session_id: sessionId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Add comment
       await prisma.comment.create({
@@ -453,7 +453,7 @@ describe("Sessions Comment Filtering", () => {
         id: randomUUID(),
         session_id: sessionId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Add comment with special characters
       await prisma.comment.create({

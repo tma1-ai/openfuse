@@ -14,17 +14,6 @@ vi.mock("@langfuse/shared/src/server", async (importOriginal) => {
   };
 });
 
-vi.mock("../../../env", async (importOriginal) => {
-  const original = (await importOriginal()) as { env: Record<string, unknown> };
-  return {
-    ...original,
-    env: {
-      ...original.env,
-      LANGFUSE_MIGRATION_V4_WRITE_MODE: "dual",
-    },
-  };
-});
-
 describe("createProductionEvalExecutionDeps", () => {
   beforeEach(() => {
     vi.clearAllMocks();

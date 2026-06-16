@@ -12,16 +12,9 @@ import { InvalidRequestError, InternalServerError } from "../../errors";
 import type { APIScoreV3 } from "../../features/scores/interfaces/api/v3/schemas";
 import type { ScoreFieldGroupV3 } from "../../features/scores/interfaces/api/v3/endpoints";
 import { filterAndValidateV3GetScoreList } from "../../features/scores/interfaces/api/v3/validation";
-import { commandClickhouse, queryClickhouse } from "./clickhouse";
-import { FilterList, orderByToClickhouseSql } from "../queries";
+import { FilterList } from "../queries";
 import { FilterCondition, FilterState, TimeFilter } from "../../types";
-import {
-  createFilterFromFilterState,
-  getProjectIdDefaultFilter,
-} from "../queries/clickhouse-sql/factory";
 import { OrderByState } from "../../interfaces/orderBy";
-import { scoresTableUiColumnDefinitionsFromEvents } from "../tableMappings";
-import { convertClickhouseScoreToDomain } from "./scores_converters";
 import { PreferredClickhouseService } from "../clickhouse/client";
 import { ScoreRecordReadType } from "./definitions";
 import { env } from "../../env";
@@ -29,13 +22,6 @@ import { _handleGetScoreById, _handleGetScoresByIds } from "./scores-utils";
 import type { AnalyticsScoreEvent } from "../analytics-integrations/types";
 import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import { logger } from "../logger";
-import { measureAndReturn } from "../clickhouse/measureAndReturn";
-import { eventsTraceMetadata } from "../queries/clickhouse-sql/query-fragments";
-import { scoresTableCols } from "../../tableDefinitions/scoresTable";
-import {
-  findUiColumnMapping,
-  matchesUiColumnMapping,
-} from "../../tableDefinitions";
 import * as greptimeScoreReads from "./greptime/scores";
 import { upsertScoreToGreptime } from "./greptime/mutations";
 import {
@@ -302,234 +288,13 @@ export function getScoresUiTable<
   >;
 }
 
-/**
- * Trace column mapping for building WHERE filters inside the flat events CTE.
- * References actual events_core columns (trace_name, user_id, tags) with the
- * "e" prefix used by EventsQueryBuilder.
- */
-const scoresTraceFilterEventsMapping = [
-  {
-    uiTableName: "Trace Name",
-    uiTableId: "traceName",
-    clickhouseTableName: "traces",
-    clickhouseSelect: "trace_name",
-    queryPrefix: "e",
-  },
-  {
-    uiTableName: "User ID",
-    uiTableId: "userId",
-    clickhouseTableName: "traces",
-    clickhouseSelect: "user_id",
-    queryPrefix: "e",
-  },
-  {
-    uiTableName: "Trace Tags",
-    uiTableId: "trace_tags",
-    clickhouseTableName: "traces",
-    clickhouseSelect: "tags",
-    queryPrefix: "e",
-  },
-];
-
-/**
- * v4 variant: scores query using a flat events CTE instead of the physical
- * traces table. Trace-level filters and sort use a "traces" CTE built by
- * EventsQueryBuilder, joined as alias "e".
- * Does NOT select trace metadata (that comes via metricsFromEvents).
- */
-const getScoresUiGenericFromEvents = async <T>(props: {
-  select: "count" | "rows";
+export const getScoresUiCountFromEvents = (props: {
   projectId: string;
   filter: FilterState;
   orderBy: OrderByState;
   limit?: number;
   offset?: number;
-  tags?: Record<string, string>;
-  clickhouseConfigs?: ClickHouseClientConfigOptions;
-  excludeMetadata?: boolean;
-  includeHasMetadataFlag?: boolean;
-}): Promise<T[]> => {
-  const {
-    projectId,
-    filter,
-    orderBy,
-    limit,
-    offset,
-    clickhouseConfigs,
-    excludeMetadata = false,
-    includeHasMetadataFlag = false,
-  } = props;
-
-  // tracesPrefix value is unused here — only scoresFilter is destructured,
-  // and trace-level filtering is handled via the CTE below.
-  const { scoresFilter } = getProjectIdDefaultFilter(projectId, {
-    tracesPrefix: "t",
-  });
-  scoresFilter.push(
-    ...createFilterFromFilterState(
-      filter,
-      scoresTableUiColumnDefinitionsFromEvents,
-      scoresTableCols,
-    ),
-  );
-
-  const scoreOnlyFilters = scoresFilter.filter(
-    (f) => f.clickhouseTable !== "traces",
-  );
-  const scoreOnlyFilterRes = scoreOnlyFilters.apply();
-
-  // Trace-level filter entries from the frontend filter state
-  const traceFilterState = filter.filter((filterEntry) =>
-    scoresTraceFilterEventsMapping.some((col) =>
-      matchesUiColumnMapping(col, filterEntry.column),
-    ),
-  );
-
-  const matchedOrderByColumn = orderBy
-    ? findUiColumnMapping(
-        scoresTableUiColumnDefinitionsFromEvents,
-        orderBy.column,
-      )
-    : null;
-  const orderByColumn =
-    matchedOrderByColumn?.clickhouseTableName === "traces"
-      ? matchedOrderByColumn
-      : null;
-
-  const needsTracesCTE = traceFilterState.length > 0 || !!orderByColumn;
-
-  // Build traces CTE using flat EventsQueryBuilder when needed
-  let tracesCTEClause = "";
-  const tracesCTEParams: Record<string, unknown> = {};
-
-  if (needsTracesCTE) {
-    const tracesEventsBuilder = eventsTraceMetadata(projectId);
-
-    if (traceFilterState.length > 0) {
-      const cteTraceFilters = new FilterList(
-        createFilterFromFilterState(
-          traceFilterState,
-          scoresTraceFilterEventsMapping,
-          scoresTableCols,
-        ),
-      );
-      const cteTraceFilterRes = cteTraceFilters.apply();
-      if (cteTraceFilterRes.query) {
-        tracesEventsBuilder.where(cteTraceFilterRes);
-      }
-    }
-
-    const { query: cteQuery, params: cteParams } =
-      tracesEventsBuilder.buildWithParams();
-    tracesCTEClause = `WITH traces AS (${cteQuery})`;
-    Object.assign(tracesCTEParams, cteParams);
-  }
-
-  // Inner join when trace filters are active (exclude scores without matching traces)
-  // Left join when only sorting (keep all scores)
-  const eventsJoin = needsTracesCTE
-    ? traceFilterState.length > 0
-      ? `ANY JOIN traces e ON s.trace_id = e.id`
-      : `LEFT ANY JOIN traces e ON s.trace_id = e.id`
-    : "";
-
-  const select =
-    props.select === "count"
-      ? "count(*) as count"
-      : `
-        s.id,
-        s.project_id,
-        s.environment,
-        s.name,
-        s.value,
-        s.string_value,
-        s.timestamp,
-        s.source,
-        s.data_type,
-        s.comment,
-        ${excludeMetadata ? "" : "s.metadata,"}
-        s.trace_id,
-        s.session_id,
-        s.observation_id,
-        s.author_user_id,
-        s.created_at,
-        s.updated_at,
-        s.config_id,
-        s.queue_id,
-        s.execution_trace_id,
-        s.is_deleted,
-        s.event_ts
-        ${includeHasMetadataFlag ? ",length(mapKeys(s.metadata)) > 0 AS has_metadata" : ""}
-      `;
-
-  const query = `
-      ${tracesCTEClause}
-      SELECT
-          ${select}
-      FROM scores s final
-      ${eventsJoin}
-      WHERE s.project_id = {projectId: String}
-      AND s.data_type IN ({dataTypes: Array(String)})
-      ${scoreOnlyFilterRes?.query ? `AND ${scoreOnlyFilterRes.query}` : ""}
-      ${orderByToClickhouseSql(orderBy ?? null, scoresTableUiColumnDefinitionsFromEvents)}
-      ${limit !== undefined && offset !== undefined ? `limit {limit: Int32} offset {offset: Int32}` : ""}
-    `;
-
-  return measureAndReturn({
-    operationName: "getScoresUiGenericFromEvents",
-    projectId,
-    input: {
-      params: {
-        projectId,
-        dataTypes: LISTABLE_SCORE_TYPES,
-        ...(scoreOnlyFilterRes ? scoreOnlyFilterRes.params : {}),
-        ...tracesCTEParams,
-        limit,
-        offset,
-      },
-      tags: {
-        ...(props.tags ?? {}),
-        feature: "tracing",
-        type: "score",
-        projectId,
-        select: props.select,
-        operation_name: "getScoresUiGenericFromEvents",
-      },
-    },
-    fn: async (input) => {
-      return queryClickhouse<T>({
-        query,
-        params: input.params,
-        tags: input.tags,
-        clickhouseConfigs,
-        preferredClickhouseService: needsTracesCTE
-          ? "EventsReadOnly"
-          : "ReadOnly",
-      });
-    },
-  });
-};
-
-export const getScoresUiCountFromEvents = async (props: {
-  projectId: string;
-  filter: FilterState;
-  orderBy: OrderByState;
-  limit?: number;
-  offset?: number;
-}) => {
-  const rows = await getScoresUiGenericFromEvents<{ count: string }>({
-    select: "count",
-    excludeMetadata: true,
-    tags: { kind: "count" },
-    ...props,
-  });
-
-  return Number(rows[0].count);
-};
-
-export type ScoreUiTableRowFromEvents = Omit<ScoreDomain, "metadata"> & {
-  hasMetadata: boolean;
-};
+}) => greptimeScoreReads.getScoresUiCount(props);
 
 export async function getScoresUiTableFromEvents(props: {
   projectId: string;
@@ -537,56 +302,14 @@ export async function getScoresUiTableFromEvents(props: {
   orderBy: OrderByState;
   limit?: number;
   offset?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions;
 }) {
-  const { clickhouseConfigs, ...rest } = props;
-
-  const rows = await getScoresUiGenericFromEvents<{
-    id: string;
-    project_id: string;
-    environment: string;
-    name: string;
-    value: number;
-    string_value: string | null;
-    timestamp: string;
-    source: string;
-    data_type: string;
-    comment: string | null;
-    trace_id: string | null;
-    session_id: string | null;
-    dataset_run_id: string | null;
-    observation_id: string | null;
-    author_user_id: string | null;
-    config_id: string | null;
-    queue_id: string | null;
-    execution_trace_id: string | null;
-    is_deleted: number;
-    event_ts: string;
-    created_at: string;
-    updated_at: string;
-    has_metadata: 0 | 1;
-  }>({
-    select: "rows",
-    tags: { kind: "analytic" },
+  // The events read path collapses onto the merged GreptimeDB scores projection
+  // (there is no separate events_core table). Delegate to the public
+  // getScoresUiTable overload so the metadata-omitted return shape is preserved.
+  return getScoresUiTable({
+    ...props,
     excludeMetadata: true,
     includeHasMetadataFlag: true,
-    clickhouseConfigs,
-    ...rest,
-  });
-
-  return rows.map((row) => {
-    const score = convertClickhouseScoreToDomain(
-      {
-        ...row,
-        metadata: {},
-        long_string_value: "",
-      },
-      false,
-    );
-    return {
-      ...score,
-      hasMetadata: !!row.has_metadata,
-    };
   });
 }
 
@@ -599,88 +322,6 @@ export const getScoreStringValues = (
   projectId: string,
   timestampFilter: FilterState,
 ) => greptimeScoreReads.getScoreStringValues(projectId, timestampFilter);
-
-export const deleteScores = async (projectId: string, scoreIds: string[]) => {
-  const query = `
-    DELETE FROM scores
-    WHERE project_id = {projectId: String}
-    AND id in ({scoreIds: Array(String)});
-  `;
-  await commandClickhouse({
-    query: query,
-    params: {
-      projectId,
-      scoreIds,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-    },
-    tags: {
-      feature: "tracing",
-      type: "score",
-      kind: "delete",
-      projectId,
-    },
-  });
-};
-
-export const deleteScoresByTraceIds = async (
-  projectId: string,
-  traceIds: string[],
-) => {
-  const query = `
-    DELETE FROM scores
-    WHERE project_id = {projectId: String}
-    AND trace_id IN ({traceIds: Array(String)});
-  `;
-  await commandClickhouse({
-    query: query,
-    params: {
-      projectId,
-      traceIds,
-    },
-    clickhouseConfigs: {
-      request_timeout: 120_000, // 2 minutes
-    },
-    tags: {
-      feature: "tracing",
-      type: "score",
-      kind: "delete",
-      projectId,
-    },
-  });
-};
-
-export const deleteScoresByProjectId = async (
-  projectId: string,
-): Promise<boolean> => {
-  const hasData = await hasAnyScore(projectId);
-  if (!hasData) {
-    return false;
-  }
-
-  const query = `
-    DELETE FROM scores
-    WHERE project_id = {projectId: String};
-  `;
-  const tags = {
-    feature: "tracing",
-    type: "score",
-    kind: "delete",
-    projectId,
-  };
-
-  await commandClickhouse({
-    query,
-    params: { projectId },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-    },
-    tags,
-  });
-
-  return true;
-};
 
 export const hasAnyScoreOlderThan = (projectId: string, beforeDate: Date) =>
   greptimeScoreReads.hasAnyScoreOlderThan(projectId, beforeDate);

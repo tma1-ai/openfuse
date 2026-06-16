@@ -7,9 +7,9 @@ import {
   getScoreById,
 } from "@langfuse/shared/src/server";
 import {
-  createObservationsCh,
-  createScoresCh,
-  createTracesCh,
+  createObservationsGreptime,
+  createScoresGreptime,
+  createTracesGreptime,
   createOrgProjectAndApiKey,
 } from "@langfuse/shared/src/server";
 import {
@@ -52,7 +52,7 @@ describe("/api/public/scores API Endpoint", () => {
         is_deleted: 0,
       });
 
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const getScore = await makeZodVerifiedAPICall(
         GetScoreResponseV1,
@@ -98,7 +98,7 @@ describe("/api/public/scores API Endpoint", () => {
         is_deleted: 0,
       });
 
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const getScore = await makeZodVerifiedAPICall(
         GetScoreResponseV1,
@@ -130,7 +130,7 @@ describe("/api/public/scores API Endpoint", () => {
         id: minimalTraceId,
         project_id: projectId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const minimalScoreId = v4();
 
@@ -144,7 +144,7 @@ describe("/api/public/scores API Endpoint", () => {
         comment: null,
         observation_id: null,
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const fetchedScore = await makeZodVerifiedAPICall(
         GetScoreResponseV1,
@@ -169,7 +169,7 @@ describe("/api/public/scores API Endpoint", () => {
         id: scoreId,
         project_id: projectId,
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       // When
       const deleteResponse = await makeZodVerifiedAPICall(
@@ -200,7 +200,7 @@ describe("/api/public/scores API Endpoint", () => {
         id: traceId,
         project_id: projectId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const scoreId = v4();
 
@@ -216,7 +216,7 @@ describe("/api/public/scores API Endpoint", () => {
         observation_id: null,
         environment: "production",
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const fetchedScore = await makeZodVerifiedAPICall(
         GetScoreResponseV1,
@@ -247,7 +247,7 @@ describe("/api/public/scores API Endpoint", () => {
         id: traceId,
         project_id: projectId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const scoreId = v4();
 
@@ -263,7 +263,7 @@ describe("/api/public/scores API Endpoint", () => {
         observation_id: null,
         environment: "production",
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const updatedScore = {
         ...score,
@@ -272,7 +272,7 @@ describe("/api/public/scores API Endpoint", () => {
         updated_at: score.updated_at + 1,
         event_ts: score.event_ts + 1,
       };
-      await createScoresCh([updatedScore]);
+      await createScoresGreptime([updatedScore]);
 
       const fetchedScore = await makeZodVerifiedAPICall(
         GetScoreResponseV1,
@@ -318,7 +318,7 @@ describe("/api/public/scores API Endpoint", () => {
         id: traceId,
         project_id: projectId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const score = createTraceScore({
         id: scoreId,
@@ -334,7 +334,7 @@ describe("/api/public/scores API Endpoint", () => {
         config_id: config.id,
         queue_id: queueId,
       });
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const fetchedScore = await makeZodVerifiedAPICall(
         GetScoreResponseV1,
@@ -371,7 +371,7 @@ describe("/api/public/scores API Endpoint", () => {
         id: traceId,
         project_id: projectId,
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Create observation to associate with scores
       const observationId = v4();
@@ -380,7 +380,7 @@ describe("/api/public/scores API Endpoint", () => {
         project_id: projectId,
         type: "GENERATION",
       });
-      await createObservationsCh([observation]);
+      await createObservationsGreptime([observation]);
 
       // Create about 200 scores
       const totalScores = 220;
@@ -400,7 +400,7 @@ describe("/api/public/scores API Endpoint", () => {
         );
       }
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       // Define page size smaller than total to ensure pagination
       const pageSize = 50;
@@ -517,8 +517,8 @@ describe("/api/public/scores API Endpoint", () => {
               projectId: newProjectId,
             },
           }),
-          createTracesCh([trace, trace_2, trace_3]),
-          createObservationsCh([generation]),
+          createTracesGreptime([trace, trace_2, trace_3]),
+          createObservationsGreptime([generation]),
         ]);
 
         configId = config.id;
@@ -618,7 +618,7 @@ describe("/api/public/scores API Endpoint", () => {
           data_type: "NUMERIC",
         });
 
-        await createScoresCh([
+        await createScoresGreptime([
           score1,
           score2,
           score3,
@@ -822,10 +822,10 @@ describe("/api/public/scores API Endpoint", () => {
             queueGenerationId = v4();
 
             await Promise.all([
-              createTracesCh([
+              createTracesGreptime([
                 createTrace({ id: queueTraceId, project_id: projectId }),
               ]),
-              createObservationsCh([
+              createObservationsGreptime([
                 createObservation({
                   id: queueGenerationId,
                   project_id: projectId,
@@ -857,7 +857,7 @@ describe("/api/public/scores API Endpoint", () => {
               queue_id: queueId,
             });
 
-            await createScoresCh([score, score2]);
+            await createScoresGreptime([score, score2]);
           });
 
           it("get all scores for queueId", async () => {
@@ -1225,7 +1225,7 @@ describe("/api/public/scores API Endpoint", () => {
           id: traceId,
           project_id: projectId,
         });
-        await createTracesCh([trace]);
+        await createTracesGreptime([trace]);
 
         // Create a NUMERIC score (should be returned)
         const numericScoreId = v4();
@@ -1253,7 +1253,7 @@ describe("/api/public/scores API Endpoint", () => {
           long_string_value: "This is a correction",
         });
 
-        await createScoresCh([numericScore, correctionScore]);
+        await createScoresGreptime([numericScore, correctionScore]);
 
         // Wait for scores to be available
         // Note: getScoresByIds only returns aggregatable scores, so we only check for the NUMERIC score
@@ -1292,7 +1292,7 @@ describe("/api/public/scores API Endpoint", () => {
           id: traceId,
           project_id: projectId,
         });
-        await createTracesCh([trace]);
+        await createTracesGreptime([trace]);
 
         // Create a CORRECTION score
         const correctionScoreId = v4();
@@ -1307,7 +1307,7 @@ describe("/api/public/scores API Endpoint", () => {
           string_value: null,
           long_string_value: "This is a correction",
         });
-        await createScoresCh([correctionScore]);
+        await createScoresGreptime([correctionScore]);
 
         // Wait for score to be available
         await waitForExpect(async () => {
@@ -1334,7 +1334,7 @@ describe("/api/public/scores API Endpoint", () => {
       const { projectId, publicKey } = await createOrgProjectAndApiKey();
       const traceId = v4();
       const trace = createTrace({ id: traceId, project_id: projectId });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const scoreId = v4();
       const response = await makeAPICall(
@@ -1450,7 +1450,7 @@ describe("/api/public/scores API Endpoint", () => {
     it("defaults source to API when omitted", async () => {
       const { projectId, auth } = await createOrgProjectAndApiKey();
       const traceId = v4();
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: traceId, project_id: projectId }),
       ]);
 
@@ -1474,7 +1474,7 @@ describe("/api/public/scores API Endpoint", () => {
     it("rejects source=EVAL (reserved for internal evaluator outputs)", async () => {
       const { projectId, auth } = await createOrgProjectAndApiKey();
       const traceId = v4();
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: traceId, project_id: projectId }),
       ]);
 
@@ -1508,7 +1508,7 @@ describe("/api/public/scores API Endpoint", () => {
       });
 
       const traceId = v4();
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: traceId, project_id: projectId }),
       ]);
 
@@ -1542,7 +1542,7 @@ describe("/api/public/scores API Endpoint", () => {
     it("rejects source=ANNOTATION without a configId", async () => {
       const { projectId, auth } = await createOrgProjectAndApiKey();
       const traceId = v4();
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: traceId, project_id: projectId }),
       ]);
 
@@ -1566,7 +1566,7 @@ describe("/api/public/scores API Endpoint", () => {
     it("accepts source=ANNOTATION for CORRECTION scores without a configId", async () => {
       const { projectId, auth } = await createOrgProjectAndApiKey();
       const traceId = v4();
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: traceId, project_id: projectId }),
       ]);
 

@@ -1,5 +1,5 @@
 import { prisma } from "@langfuse/shared/src/db";
-import { hasAnyTrace, createTracesCh } from "@langfuse/shared/src/server";
+import { hasAnyTrace, createTracesGreptime } from "@langfuse/shared/src/server";
 import { createTrace } from "@langfuse/shared/src/server";
 import { v4 } from "uuid";
 
@@ -43,7 +43,7 @@ describe("hasAnyTrace", () => {
       event_ts: Date.now(),
       is_deleted: 0,
     });
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     // hasAnyTrace should find the trace via ClickHouse and persist to PG
     const result = await hasAnyTrace(projectId);

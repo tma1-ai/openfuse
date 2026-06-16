@@ -10,8 +10,8 @@ import { type QueryType } from "@langfuse/shared/query";
 import {
   createTrace,
   createObservation,
-  createTracesCh,
-  createObservationsCh,
+  createTracesGreptime,
+  createObservationsGreptime,
 } from "@langfuse/shared/src/server";
 
 describe("/api/public/metrics API Endpoint", () => {
@@ -61,7 +61,7 @@ describe("/api/public/metrics API Endpoint", () => {
     );
 
     // Insert traces into database
-    await createTracesCh(
+    await createTracesGreptime(
       testTraces.map((trace) =>
         createTrace({
           id: trace.id,
@@ -102,7 +102,10 @@ describe("/api/public/metrics API Endpoint", () => {
         }),
       );
     }
-    await createObservationsCh([...trace1Observations, ...trace2Observations]);
+    await createObservationsGreptime([
+      ...trace1Observations,
+      ...trace2Observations,
+    ]);
   });
 
   it.each([
@@ -405,7 +408,7 @@ describe("/api/public/metrics API Endpoint", () => {
     const histogramTraceId = randomUUID();
 
     // Create a trace for histogram testing
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({
         id: histogramTraceId,
         name: "histogram-test-trace",
@@ -440,7 +443,7 @@ describe("/api/public/metrics API Endpoint", () => {
       );
     });
 
-    await createObservationsCh(histogramObservations);
+    await createObservationsGreptime(histogramObservations);
 
     // Test histogram query with custom bin count
     const histogramQuery = {
@@ -573,7 +576,7 @@ describe("/api/public/metrics API Endpoint", () => {
     it("should work correctly with proper array field filter configuration", async () => {
       // Setup test data with tags
       const taggedTraceId = randomUUID();
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({
           id: taggedTraceId,
           name: "tagged-trace",

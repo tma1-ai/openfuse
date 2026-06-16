@@ -23,7 +23,6 @@ export default withMiddlewares(
       allowInAppAgentKey: true,
       querySchema: GetObservationV1Query,
       responseSchema: GetObservationV1Response,
-      rejectInEventsOnlyMode: true,
       fn: async ({ query, auth }) => {
         const clickhouseObservation = query.useEventsTable
           ? await getObservationByIdFromEventsTable({
@@ -31,8 +30,7 @@ export default withMiddlewares(
               projectId: auth.scope.projectId,
               fetchWithInputOutput: true,
             })
-          : // eslint-disable-next-line @typescript-eslint/no-deprecated
-            await getObservationById({
+          : await getObservationById({
               id: query.observationId,
               projectId: auth.scope.projectId,
               fetchWithInputOutput: true,

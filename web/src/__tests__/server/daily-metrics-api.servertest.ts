@@ -1,7 +1,7 @@
 import { createObservation, createTrace } from "@langfuse/shared/src/server";
 import {
-  createObservationsCh,
-  createTracesCh,
+  createObservationsGreptime,
+  createTracesGreptime,
 } from "@langfuse/shared/src/server";
 import { makeZodVerifiedAPICall } from "@/src/__tests__/test-utils";
 import { randomUUID } from "crypto";
@@ -54,8 +54,8 @@ describe("/api/public/metrics/daily API Endpoint", () => {
       }),
     ];
 
-    await createTracesCh([createdTrace]);
-    await createObservationsCh(observations);
+    await createTracesGreptime([createdTrace]);
+    await createObservationsGreptime(observations);
 
     const metrics = await makeZodVerifiedAPICall(
       GetMetricsDailyV1Response,
@@ -142,8 +142,8 @@ describe("/api/public/metrics/daily API Endpoint", () => {
       }),
     ];
 
-    await createTracesCh(traces);
-    await createObservationsCh(observations);
+    await createTracesGreptime(traces);
+    await createObservationsGreptime(observations);
 
     const metrics = await makeZodVerifiedAPICall(
       GetMetricsDailyV1Response,

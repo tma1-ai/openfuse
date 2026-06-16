@@ -4,11 +4,11 @@ import { appRouter } from "@/src/server/api/root";
 import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createTraceScore,
-  createScoresCh,
+  createScoresGreptime,
 } from "@langfuse/shared/src/server";
 import { randomUUID } from "crypto";
 
@@ -69,7 +69,7 @@ describe("traces trpc", () => {
         user_id: "test-user-123",
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Create generation with searchable input/output content
       const generation = createObservation({
@@ -82,7 +82,7 @@ describe("traces trpc", () => {
         output: "This is a test response output",
       });
 
-      await createObservationsCh([generation]);
+      await createObservationsGreptime([generation]);
 
       // Create score for the trace
       const score = createTraceScore({
@@ -93,7 +93,7 @@ describe("traces trpc", () => {
         value: 0.85,
       });
 
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       // Test with full-text search, trace filter, and score filter
       const generations = await caller.generations.all({
@@ -133,7 +133,7 @@ describe("traces trpc", () => {
         name: "input-search-trace",
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Create generation with distinct input and output
       const generation = createObservation({
@@ -146,7 +146,7 @@ describe("traces trpc", () => {
         output: "different output without the keyword",
       });
 
-      await createObservationsCh([generation]);
+      await createObservationsGreptime([generation]);
 
       // Search for keyword that only exists in input
       const inputSearchResults = await caller.generations.all({
@@ -172,7 +172,7 @@ describe("traces trpc", () => {
         name: "output-search-trace",
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       // Create generation with distinct input and output
       const generation = createObservation({
@@ -185,7 +185,7 @@ describe("traces trpc", () => {
         output: "unique_output_keyword for search testing",
       });
 
-      await createObservationsCh([generation]);
+      await createObservationsGreptime([generation]);
 
       // Search for keyword that only exists in output
       const outputSearchResults = await caller.generations.all({
@@ -208,7 +208,7 @@ describe("traces trpc", () => {
       const generationId = randomUUID();
       const searchKeyword = `generation-count-search-${randomUUID()}`;
 
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({
           id: traceId,
           project_id: projectId,
@@ -216,7 +216,7 @@ describe("traces trpc", () => {
         }),
       ]);
 
-      await createObservationsCh([
+      await createObservationsGreptime([
         createObservation({
           id: generationId,
           project_id: projectId,

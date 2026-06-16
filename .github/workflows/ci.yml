@@ -28,7 +28,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       # Dummy env just to satisfy import-time env validation; no service is contacted here.
@@ -49,3 +49,115 @@ jobs:
 
       - name: Unit tests (GreptimeDB converters)
         run: pnpm --filter @langfuse/shared run test src/server/greptime/converters.test.ts
+
+      # P7 cutover guard: the ClickHouse client/query/writer call-sites were
+      # physically removed. Fail the build if any reappear so a refactor can't
+      # silently reintroduce the retired backend. The compatibility leftovers
+      # (ClickHouseResourceError error contract, convertDateToClickhouseDateTime,
+      # PreferredClickhouseService) intentionally do NOT match these tokens.
+      - name: Guard — ClickHouse client/query/writer stay removed
+        run: |
+          if grep -rEn '\b(clickhouseClient|queryClickhouse|commandClickhouse|ClickhouseWriter)\b' \
+               --include='*.ts' \
+               --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.next \
+               packages web worker ee; then
+            echo "::error::ClickHouse client/query/writer call-sites reintroduced — P7 removed these; use the GreptimeDB readers/writers instead."
+            exit 1
+          fi
+          echo "OK: no clickhouseClient/queryClickhouse/commandClickhouse/ClickhouseWriter call-sites."
+
+  servertests:
+    name: GreptimeDB servertests (headless subset)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7.2.4
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # GreptimeDB needs a custom start command, which GitHub `services:` cannot
+      # express — run it as a detached container and wait for its HTTP health.
+      - name: Start GreptimeDB
+        run: |
+          docker run -d --name greptimedb \
+            -p 4000:4000 -p 4001:4001 -p 4002:4002 \
+            greptime/greptimedb:latest standalone start \
+            --http-addr 0.0.0.0:4000 \
+            --rpc-bind-addr 0.0.0.0:4001 \
+            --mysql-addr 0.0.0.0:4002
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4000/health; then echo "greptimedb up"; break; fi
+            echo "waiting for greptimedb ($i)"; sleep 2
+          done
+
+      # MinIO also needs a custom command (create the path-style bucket dir, then
+      # start the server), which GitHub `services:` cannot express. Mirrors the
+      # docker-compose.dev.yml setup with the official image.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9090:9000 \
+            -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=miniosecret \
+            --entrypoint sh minio/minio \
+            -c 'mkdir -p /data/langfuse && minio server /data'
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9090/minio/health/live; then echo "minio up"; break; fi
+            echo "waiting for minio ($i)"; sleep 2
+          done
+
+      - run: cp .env.dev.example .env
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm run db:generate
+      - run: pnpm --filter @langfuse/shared run build
+
+      # Apply the Postgres schema the servertests read/write through Prisma.
+      # db:deploy is the non-interactive `prisma migrate deploy`; it reads
+      # DATABASE_URL from the .env copied above (postgres service on localhost).
+      - name: Prisma migrate
+        run: pnpm --filter @langfuse/shared run db:deploy
+
+      # The web/worker test setup applies the GreptimeDB migrations on first run.
+      - name: Web repository + tRPC servertests (GreptimeDB-backed)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          GREPTIME_DB: openfuse
+          LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN: "true"
+        run: |
+          pnpm --filter web run test \
+            src/__tests__/server/repositories/experiment-repository.servertest.ts \
+            src/__tests__/server/repositories/experiment-items-repository.servertest.ts \
+            src/__tests__/server/code-eval-test-run-trpc.servertest.ts \
+            src/__tests__/server/queryBuilder.servertest.ts \
+            src/__tests__/server/dashboard-v1-v2-consistency.servertest.ts
+
+      - name: Worker deletion + eval servertests (GreptimeDB-backed)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          GREPTIME_DB: openfuse
+        run: |
+          pnpm --filter worker run test \
+            src/__tests__/scoreDeletion.test.ts \
+            src/__tests__/traceDeletion.test.ts \
+            src/__tests__/projectDeletionProcessing.test.ts \
+            src/queues/__tests__/otelToObservationForEval.test.ts \
+            src/features/experiments/__tests__/scheduleExperimentEvals.test.ts

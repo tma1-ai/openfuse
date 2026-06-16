@@ -4,11 +4,10 @@ import type {
   InternalTraceEventInput,
   InternalTraceExperimentContext,
 } from "@langfuse/shared/src/server";
-import { clickhouseClient, redis } from "@langfuse/shared/src/server";
+import { redis } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
-import { ClickhouseWriter } from "../../services/ClickhouseWriter";
+import { GreptimeWriter } from "../../services/GreptimeWriter";
 import { IngestionService } from "../../services/IngestionService";
-import { env, v4WritesToEventsTable } from "../../env";
 
 let internalTraceIngestionService: IngestionService | undefined;
 
@@ -17,8 +16,7 @@ function getInternalTraceIngestionService(): IngestionService {
     internalTraceIngestionService = new IngestionService(
       redis as any,
       prisma,
-      ClickhouseWriter.getInstance(),
-      clickhouseClient(),
+      GreptimeWriter.getInstance(),
     );
   }
 
@@ -33,15 +31,9 @@ async function writeInternalEventInputs(params: {
 
   const eventRecords = await Promise.all(
     params.eventInputs.map((eventInput) =>
-      service.createEventRecord(eventInput, ""),
+      service.createNormalizedEventRecord(eventInput, ""),
     ),
   );
-
-  if (v4WritesToEventsTable(env)) {
-    for (const eventRecord of eventRecords) {
-      service.writeEventRecord(eventRecord);
-    }
-  }
 
   return {
     rootEventRecord: eventRecords.find(
@@ -51,11 +43,10 @@ async function writeInternalEventInputs(params: {
 }
 
 /**
- * Always materialize internal trace event records, even when direct events-table
- * writes are disabled. Self-hosted setups may not have `events_full`
- * configured, but experiment eval scheduling still depends on the normalized
- * root event record. The env flag therefore gates only the actual enqueue into
- * ClickHouse, not creation of the writer or invocation of the ready callback.
+ * Materialize internal trace event records so experiment eval scheduling can
+ * consume the normalized root event record via the ready callback. The records
+ * are not persisted on their own; they exist purely as the normalization
+ * boundary feeding eval scheduling.
  */
 export function createInternalEventsWriter(params?: {
   experimentContext?: InternalTraceExperimentContext;

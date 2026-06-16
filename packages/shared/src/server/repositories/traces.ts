@@ -1,4 +1,3 @@
-import { commandClickhouse, queryClickhouse } from "./clickhouse";
 import { OrderByState } from "../../interfaces/orderBy";
 import { FilterState } from "../../types";
 import { FilterList } from "../queries/clickhouse-sql/clickhouse-filter";
@@ -9,9 +8,7 @@ import { PreferredClickhouseService } from "../clickhouse/client";
 import { env } from "../../env";
 import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import type { AnalyticsTraceEvent } from "../analytics-integrations/types";
-import { measureAndReturn } from "../clickhouse/measureAndReturn";
 import { DEFAULT_RENDERING_PROPS, RenderingProps } from "../utils/rendering";
-import { logger } from "../logger";
 import * as greptimeTraceReads from "./greptime/traces";
 import { upsertTraceToGreptime } from "./greptime/mutations";
 import {
@@ -205,118 +202,8 @@ export const getTracesIdentifierForSessionFromTracesTable = (
     sessionId,
   );
 
-export const deleteTraces = async (projectId: string, traceIds: string[]) => {
-  await measureAndReturn({
-    operationName: "deleteTraces",
-    projectId,
-    input: {
-      params: {
-        projectId,
-        traceIds,
-      },
-      tags: {
-        feature: "tracing",
-        type: "trace",
-        kind: "delete",
-        projectId,
-      },
-    },
-    fn: async (input) => {
-      // Pre-flight query with time bounds computed
-      const preflight = await queryClickhouse<{
-        min_ts: string;
-        max_ts: string;
-        cnt: string;
-      }>({
-        query: `
-          SELECT
-            min(timestamp) - INTERVAL 1 HOUR as min_ts,
-            max(timestamp) + INTERVAL 1 HOUR as max_ts,
-            count(*) as cnt
-          FROM traces
-          WHERE project_id = {projectId: String} AND id IN ({traceIds: Array(String)})
-        `,
-        params: input.params,
-        clickhouseConfigs: {
-          request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-        },
-        tags: { ...input.tags, kind: "delete-preflight" },
-      });
-
-      const count = Number(preflight[0]?.cnt ?? 0);
-      if (count === 0) {
-        logger.info(
-          `deleteTraces: no rows found for project ${projectId}, skipping DELETE`,
-        );
-        return;
-      }
-
-      await commandClickhouse({
-        query: `
-          DELETE FROM traces
-          WHERE project_id = {projectId: String}
-          AND id IN ({traceIds: Array(String)})
-          AND timestamp >= {minTs: String}::DateTime64(3)
-          AND timestamp <= {maxTs: String}::DateTime64(3)
-        `,
-        params: {
-          ...input.params,
-          minTs: preflight[0].min_ts,
-          maxTs: preflight[0].max_ts,
-        },
-        clickhouseConfigs: {
-          request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-        },
-        tags: input.tags,
-      });
-    },
-  });
-};
-
 export const hasAnyTraceOlderThan = (projectId: string, beforeDate: Date) =>
   greptimeTraceReads.hasAnyTraceOlderThan(projectId, beforeDate);
-
-export const deleteTracesByProjectId = async (
-  projectId: string,
-): Promise<boolean> => {
-  const hasData = await hasAnyTrace(projectId);
-  if (!hasData) {
-    return false;
-  }
-
-  await measureAndReturn({
-    operationName: "deleteTracesByProjectId",
-    projectId,
-    input: {
-      params: {
-        projectId,
-      },
-      tags: {
-        feature: "tracing",
-        type: "trace",
-        kind: "delete",
-        projectId,
-      },
-    },
-    fn: async (input) => {
-      const query = `
-        DELETE FROM traces
-        WHERE project_id = {projectId: String};
-      `;
-
-      await commandClickhouse({
-        query,
-        params: input.params,
-        clickhouseConfigs: {
-          request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-        },
-        tags: input.tags,
-      });
-    },
-  });
-
-  return true;
-};
 
 export const hasAnyUser = (projectId: string) =>
   greptimeTraceReads.hasAnyUser(projectId);

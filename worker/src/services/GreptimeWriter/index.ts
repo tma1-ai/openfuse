@@ -20,7 +20,7 @@ import {
 import { env } from "../../env";
 
 /**
- * GreptimeWriter (02-write-path.md, step 5) — ports ClickhouseWriter to the GreptimeDB gRPC
+ * GreptimeWriter (02-write-path.md, step 5) — ports the legacy ClickHouse writer to the GreptimeDB gRPC
  * ingester. A singleton with one in-memory batch queue per physical table, an interval flush, and
  * size-triggered flushes. On failure the whole flush is requeued with an attempt counter and
  * dropped after maxAttempts.

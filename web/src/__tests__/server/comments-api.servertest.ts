@@ -7,8 +7,8 @@ import {
 import { prisma } from "@langfuse/shared/src/db";
 import { z } from "zod";
 import {
-  createObservationsCh,
-  createTracesCh,
+  createObservationsGreptime,
+  createTracesGreptime,
 } from "@langfuse/shared/src/server";
 import { createObservation, createTrace } from "@langfuse/shared/src/server";
 
@@ -22,7 +22,7 @@ describe("Create and get comments", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
   });
 
   it("should create and get comment", async () => {
@@ -142,7 +142,7 @@ describe("GET /api/public/comments API Endpoint", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const observation = createObservation({
       name: "generation-1",
@@ -152,7 +152,7 @@ describe("GET /api/public/comments API Endpoint", () => {
       trace_id: "1234",
     });
 
-    await createObservationsCh([observation]);
+    await createObservationsGreptime([observation]);
 
     await prisma.comment.deleteMany({
       where: { projectId: "7a88fb47-b4e2-43b8-a06c-a5ce950dc53a" },
@@ -352,7 +352,7 @@ describe("Public API does NOT process mentions", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
   });
 
   it("should preserve mention markdown as-is without processing", async () => {

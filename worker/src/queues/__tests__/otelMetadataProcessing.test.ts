@@ -1,6 +1,6 @@
 /**
  * Tests for OTel metadata processing
- * Flow: ResourceSpan -> processToEvent() -> createEventRecord() -> metadata_names/metadata_raw_values
+ * Flow: ResourceSpan -> processToEvent() -> createNormalizedEventRecord() -> metadata_names/metadata_raw_values
  *
  * NOTE: The dual-write path (otel-dual-write) uses mapKeys() in SQL which doesn't flatten.
  */
@@ -11,38 +11,12 @@ import {
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
 import { IngestionService } from "../../services/IngestionService";
-import * as clickhouseWriterExports from "../../services/ClickhouseWriter";
-
-// vi.hoisted ensures this is declared before vi.mock's hoisted factory runs.
-// Without it, the variable would be undefined when the factory executes.
-const { mockAddToClickhouseWriter } = vi.hoisted(() => ({
-  mockAddToClickhouseWriter: vi.fn(),
-}));
-vi.mock("../../services/ClickhouseWriter", async (importOriginal) => {
-  const original = (await importOriginal()) as object;
-  return {
-    ...original,
-    ClickhouseWriter: {
-      getInstance: () => ({
-        addToQueue: mockAddToClickhouseWriter,
-      }),
-    },
-  };
-});
-
-const mockClickhouseClient = {
-  query: async () => ({
-    json: async () => [],
-    query_id: "test-query-id",
-    response_headers: { "x-clickhouse-summary": "[]" },
-  }),
-};
 
 const ingestionService = new IngestionService(
   null as any,
   prisma,
-  clickhouseWriterExports.ClickhouseWriter.getInstance() as any,
-  mockClickhouseClient as any,
+  // greptimeWriter is unused here; these tests only exercise createNormalizedEventRecord
+  { addToQueue: () => {} } as any,
 );
 
 function createNanoTimestamp(nanoTime: bigint): {
@@ -122,7 +96,7 @@ async function processAndCreateEvent(
   const eventInputs = processor.processToEvent([otelSpan]);
   expect(eventInputs.length).toBeGreaterThan(0);
 
-  const eventRecord = await ingestionService.createEventRecord(
+  const eventRecord = await ingestionService.createNormalizedEventRecord(
     eventInputs[0],
     "test/otel/test.json",
   );

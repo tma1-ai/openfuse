@@ -1,7 +1,7 @@
 import {
   createEvent,
-  createEventsCh,
-  createScoresCh,
+  createExperimentEventsAsGreptime,
+  createScoresGreptime,
   getExperimentItemsFromEvents,
   getExperimentItemsCountFromEvents,
   getExperimentItemsBatchIO,
@@ -122,8 +122,8 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         data_type: "NUMERIC",
       });
 
-      await createEventsCh([event]);
-      await createScoresCh([score]);
+      await createExperimentEventsAsGreptime([event]);
+      await createScoresGreptime([score]);
 
       // WHEN: Filter for trace scores > 0.5
       const result = await getExperimentItemsFromEvents({
@@ -182,8 +182,8 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         value: 0.9,
       });
 
-      await createEventsCh([event]);
-      await createScoresCh([score]);
+      await createExperimentEventsAsGreptime([event]);
+      await createScoresGreptime([score]);
 
       // WHEN: Filter for observation scores >= 0.8
       const result = await getExperimentItemsFromEvents({
@@ -254,8 +254,8 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         data_type: "NUMERIC",
       });
 
-      await createEventsCh([rootEvent, childEvent]);
-      await createScoresCh([childScore]);
+      await createExperimentEventsAsGreptime([rootEvent, childEvent]);
+      await createScoresGreptime([childScore]);
 
       // WHEN: Filter for observation scores >= 0.8
       const result = await getExperimentItemsFromEvents({
@@ -349,8 +349,8 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         data_type: "NUMERIC",
       });
 
-      await createEventsCh([event1, event2]);
-      await createScoresCh([traceScore1, obsScore1, traceScore2]);
+      await createExperimentEventsAsGreptime([event1, event2]);
+      await createScoresGreptime([traceScore1, obsScore1, traceScore2]);
 
       // WHEN: Filter for BOTH trace scores > 0.7 AND observation scores > 0.8
       const result = await getExperimentItemsFromEvents({
@@ -441,7 +441,7 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         start_time: now + 2000000, // Latest
       });
 
-      await createEventsCh([event1, event2, event3]);
+      await createExperimentEventsAsGreptime([event1, event2, event3]);
 
       // WHEN: Query multiple times
       const result1 = await getExperimentItemsFromEvents({
@@ -519,7 +519,7 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         }),
       );
 
-      await createEventsCh(events);
+      await createExperimentEventsAsGreptime(events);
 
       // WHEN: Get count and results
       const count = await getExperimentItemsCountFromEvents({
@@ -597,8 +597,8 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         experiment_item_metadata_values: ["test"],
       });
 
-      await createEventsCh([event1, event2]);
-      await createScoresCh([score1]);
+      await createExperimentEventsAsGreptime([event1, event2]);
+      await createScoresGreptime([score1]);
 
       // WHEN: Filter for metadata AND score
       const result = await getExperimentItemsFromEvents({
@@ -719,8 +719,8 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         data_type: "NUMERIC",
       });
 
-      await createEventsCh([event1, event2, event3]);
-      await createScoresCh([score1, score2, score3]);
+      await createExperimentEventsAsGreptime([event1, event2, event3]);
+      await createScoresGreptime([score1, score2, score3]);
 
       // WHEN: Query with requireBaselinePresence=true and score filter
       const result = await getExperimentItemsFromEvents({
@@ -783,7 +783,7 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         });
       }
 
-      await createEventsCh(items.map((i) => i.event));
+      await createExperimentEventsAsGreptime(items.map((i) => i.event));
 
       // WHEN: Fetch page 0 (limit 3), page 1 (limit 3), page 2 (limit 3)
       const page0 = await getExperimentItemsFromEvents({
@@ -867,8 +867,8 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         );
       }
 
-      await createEventsCh(events);
-      await createScoresCh(scores);
+      await createExperimentEventsAsGreptime(events);
+      await createScoresGreptime(scores);
 
       // WHEN: Filter for scores > 0.8
       const result = await getExperimentItemsFromEvents({
@@ -958,8 +958,8 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         );
       }
 
-      await createEventsCh(events);
-      await createScoresCh(scores);
+      await createExperimentEventsAsGreptime(events);
+      await createScoresGreptime(scores);
 
       const filter = [
         {
@@ -1059,7 +1059,11 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         start_time: now + 2000,
       });
 
-      await createEventsCh([event1Baseline, event1Comp, event2Comp]);
+      await createExperimentEventsAsGreptime([
+        event1Baseline,
+        event1Comp,
+        event2Comp,
+      ]);
 
       // WHEN: Query with requireBaselinePresence = true
       const resultWithBaseline = await getExperimentItemsFromEvents({
@@ -1161,7 +1165,7 @@ describe("Clickhouse Experiment Items Repository Test", () => {
         start_time: Date.now() * 1000,
       });
 
-      await createEventsCh([event1, event2]);
+      await createExperimentEventsAsGreptime([event1, event2]);
 
       // WHEN: Fetch batch IO
       const result = await getExperimentItemsBatchIO({

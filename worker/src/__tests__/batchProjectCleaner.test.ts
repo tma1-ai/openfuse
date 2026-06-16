@@ -7,23 +7,26 @@ import {
 } from "../features/batch-project-cleaner";
 import {
   createOrgProjectAndApiKey,
-  createTracesCh,
+  createTracesGreptime,
   createTrace,
-  createDatasetRunItemsCh,
+  createDatasetRunItemsGreptime,
   createDatasetRunItem,
-  queryClickhouse,
+  greptimeQuery,
   redis,
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
 import { env } from "../env";
 
-async function getClickhouseCount(
+async function getGreptimeCount(
   table: string,
   projectId: string,
 ): Promise<number> {
-  const result = await queryClickhouse<{ count: number }>({
-    query: `SELECT count() as count FROM ${table} FINAL WHERE project_id = {projectId: String}`,
+  // Count live (non-tombstoned) projection rows; BatchProjectCleaner removes
+  // them via deleteProjectFromGreptime, so a cleaned project reads back as 0.
+  const result = await greptimeQuery<{ count: number | string }>({
+    query: `SELECT count(*) AS count FROM ${table} WHERE project_id = :projectId AND is_deleted = false`,
     params: { projectId },
+    readOnly: true,
   });
   return Number(result[0]?.count ?? 0);
 }
@@ -91,13 +94,13 @@ describe("BatchProjectCleaner", () => {
       });
 
       // Insert test traces into ClickHouse
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: randomUUID(), project_id: projectId }),
         createTrace({ id: randomUUID(), project_id: projectId }),
       ]);
 
       // Verify traces exist before deletion
-      const countBefore = await getClickhouseCount(TEST_TABLE, projectId);
+      const countBefore = await getGreptimeCount(TEST_TABLE, projectId);
       expect(countBefore).toBe(2);
 
       // Run processBatch
@@ -105,7 +108,7 @@ describe("BatchProjectCleaner", () => {
       const nextDelayMs = await cleaner.processBatch();
 
       // Verify traces were deleted
-      const countAfter = await getClickhouseCount(TEST_TABLE, projectId);
+      const countAfter = await getGreptimeCount(TEST_TABLE, projectId);
       expect(countAfter).toBe(0);
 
       // Verify returned check interval (work was done)
@@ -126,7 +129,7 @@ describe("BatchProjectCleaner", () => {
       });
 
       // Insert traces for both projects
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: randomUUID(), project_id: deletedProjectId }),
         createTrace({ id: randomUUID(), project_id: deletedProjectId }),
         createTrace({ id: randomUUID(), project_id: activeProjectId }),
@@ -135,16 +138,16 @@ describe("BatchProjectCleaner", () => {
       ]);
 
       // Verify traces exist before deletion
-      expect(await getClickhouseCount(TEST_TABLE, deletedProjectId)).toBe(2);
-      expect(await getClickhouseCount(TEST_TABLE, activeProjectId)).toBe(3);
+      expect(await getGreptimeCount(TEST_TABLE, deletedProjectId)).toBe(2);
+      expect(await getGreptimeCount(TEST_TABLE, activeProjectId)).toBe(3);
 
       // Run processBatch
       const cleaner = new BatchProjectCleaner(TEST_TABLE);
       await cleaner.processBatch();
 
       // Verify only deleted project's traces were removed
-      expect(await getClickhouseCount(TEST_TABLE, deletedProjectId)).toBe(0);
-      expect(await getClickhouseCount(TEST_TABLE, activeProjectId)).toBe(3);
+      expect(await getGreptimeCount(TEST_TABLE, deletedProjectId)).toBe(0);
+      expect(await getGreptimeCount(TEST_TABLE, activeProjectId)).toBe(3);
     });
 
     it("should delete traces from multiple soft-deleted projects", async () => {
@@ -162,7 +165,7 @@ describe("BatchProjectCleaner", () => {
       });
 
       // Insert traces for both projects
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: randomUUID(), project_id: projectId1 }),
         createTrace({ id: randomUUID(), project_id: projectId2 }),
         createTrace({ id: randomUUID(), project_id: projectId2 }),
@@ -173,8 +176,8 @@ describe("BatchProjectCleaner", () => {
       const nextDelayMs = await cleaner.processBatch();
 
       // Verify both projects' traces were deleted
-      expect(await getClickhouseCount(TEST_TABLE, projectId1)).toBe(0);
-      expect(await getClickhouseCount(TEST_TABLE, projectId2)).toBe(0);
+      expect(await getGreptimeCount(TEST_TABLE, projectId1)).toBe(0);
+      expect(await getGreptimeCount(TEST_TABLE, projectId2)).toBe(0);
       expect(nextDelayMs).toBe(
         env.LANGFUSE_BATCH_PROJECT_CLEANER_CHECK_INTERVAL_MS,
       );
@@ -189,7 +192,7 @@ describe("BatchProjectCleaner", () => {
       });
 
       // Insert traces
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: randomUUID(), project_id: projectId }),
       ]);
 
@@ -201,7 +204,7 @@ describe("BatchProjectCleaner", () => {
       const nextDelayMs = await cleaner.processBatch();
 
       // Verify traces were NOT deleted (lock blocked processing)
-      expect(await getClickhouseCount(TEST_TABLE, projectId)).toBe(1);
+      expect(await getGreptimeCount(TEST_TABLE, projectId)).toBe(1);
       expect(nextDelayMs).toBe(
         env.LANGFUSE_BATCH_PROJECT_CLEANER_SLEEP_ON_EMPTY_MS,
       );
@@ -216,7 +219,7 @@ describe("BatchProjectCleaner", () => {
       });
 
       // Insert traces
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({ id: randomUUID(), project_id: projectId }),
       ]);
 
@@ -225,7 +228,7 @@ describe("BatchProjectCleaner", () => {
       await cleaner.processBatch();
 
       // Verify that traces were deleted, therefore processing occurred
-      expect(await getClickhouseCount(TEST_TABLE, projectId)).toBe(0);
+      expect(await getGreptimeCount(TEST_TABLE, projectId)).toBe(0);
 
       // Verify lock was released
       const lockValue = await redis?.get(TEST_LOCK_KEY);
@@ -233,7 +236,7 @@ describe("BatchProjectCleaner", () => {
     });
 
     it("should delete dataset_run_items for soft-deleted project", async () => {
-      const TABLE = "dataset_run_items_rmt" as const;
+      const TABLE = "dataset_run_items" as const;
 
       // Create two projects
       const { projectId: deletedProjectId } = await createOrgProjectAndApiKey();
@@ -246,7 +249,7 @@ describe("BatchProjectCleaner", () => {
       });
 
       // Insert dataset run items for both projects
-      await createDatasetRunItemsCh([
+      await createDatasetRunItemsGreptime([
         createDatasetRunItem({
           id: randomUUID(),
           project_id: deletedProjectId,
@@ -270,16 +273,16 @@ describe("BatchProjectCleaner", () => {
       ]);
 
       // Verify items exist before deletion
-      expect(await getClickhouseCount(TABLE, deletedProjectId)).toBe(2);
-      expect(await getClickhouseCount(TABLE, activeProjectId)).toBe(3);
+      expect(await getGreptimeCount(TABLE, deletedProjectId)).toBe(2);
+      expect(await getGreptimeCount(TABLE, activeProjectId)).toBe(3);
 
       // Run processBatch
       const cleaner = new BatchProjectCleaner(TABLE);
       await cleaner.processBatch();
 
       // Verify only deleted project's items were removed
-      expect(await getClickhouseCount(TABLE, deletedProjectId)).toBe(0);
-      expect(await getClickhouseCount(TABLE, activeProjectId)).toBe(3);
+      expect(await getGreptimeCount(TABLE, deletedProjectId)).toBe(0);
+      expect(await getGreptimeCount(TABLE, activeProjectId)).toBe(3);
     });
   });
 });

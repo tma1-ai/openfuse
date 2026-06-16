@@ -307,7 +307,6 @@ async function getObservationForEvalByIdFromLegacyObservations(params: {
   traceId: string;
   startTime: Date;
 }): Promise<ObservationForEval> {
-  // eslint-disable-next-line @typescript-eslint/no-deprecated
   const observation = await getObservationById({
     projectId: params.projectId,
     id: params.id,

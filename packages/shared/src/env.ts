@@ -81,43 +81,6 @@ const EnvSchema = z.object({
     .default(20_000),
   LANGFUSE_CACHE_PROMPT_ENABLED: z.enum(["true", "false"]).default("true"),
   LANGFUSE_CACHE_PROMPT_TTL_SECONDS: z.coerce.number().default(3600), // 1h
-  CLICKHOUSE_URL: z.url(),
-  CLICKHOUSE_READ_ONLY_URL: z.url().optional(),
-  CLICKHOUSE_EVENTS_READ_ONLY_URL: z.url().optional(),
-  CLICKHOUSE_CLUSTER_ENABLED: z.enum(["true", "false"]).default("true"),
-  CLICKHOUSE_CLUSTER_NAME: z.string().default("default"),
-  CLICKHOUSE_DB: z.string().default("default"),
-  CLICKHOUSE_USER: z.string(),
-  CLICKHOUSE_PASSWORD: z.string(),
-  CLICKHOUSE_KEEP_ALIVE_IDLE_SOCKET_TTL: z.coerce.number().int().default(9000),
-  CLICKHOUSE_MAX_OPEN_CONNECTIONS: z.coerce.number().int().default(25),
-  // Optional to allow for server-setting fallbacks
-  CLICKHOUSE_ASYNC_INSERT_MAX_DATA_SIZE: z.string().optional(),
-  CLICKHOUSE_ASYNC_INSERT_BUSY_TIMEOUT_MS: z.coerce.number().int().optional(),
-  CLICKHOUSE_ASYNC_INSERT_BUSY_TIMEOUT_MIN_MS: z.coerce
-    .number()
-    .int()
-    .min(50)
-    .optional(),
-  CLICKHOUSE_LIGHTWEIGHT_DELETE_MODE: z
-    .enum(["alter_update", "lightweight_update", "lightweight_update_force"])
-    .default("alter_update"),
-  CLICKHOUSE_USE_LIGHTWEIGHT_UPDATE: z.enum(["true", "false"]).default("false"),
-  CLICKHOUSE_UPDATE_PARALLEL_MODE: z
-    .enum(["sync", "async", "auto"])
-    .default("auto"),
-  // Workaround for ClickHouse analyzer/lazy materialization bugs. In "auto",
-  // Langfuse detects the ClickHouse version on startup and applies known
-  // compatibility settings for affected version bands.
-  CLICKHOUSE_DISABLE_LAZY_MATERIALIZATION: z
-    .enum(["auto", "true", "false"])
-    .default("auto"),
-  CLICKHOUSE_MAX_BYTES_BEFORE_EXTERNAL_GROUP_BY: z.coerce
-    .number()
-    .default(32_000_000_000), // ~32GB
-  CLICKHOUSE_USE_QUERY_CONDITION_CACHE: z
-    .enum(["true", "false"])
-    .default("false"),
   // GreptimeDB write path (02-write-path.md). gRPC endpoint for the ingester (writes);
   // MySQL-wire endpoint for the full-history read + read path. Local dev defaults match a
   // single-node GreptimeDB (gRPC 4001, MySQL 4002, no auth).
@@ -277,14 +240,6 @@ const EnvSchema = z.object({
   NODE_EXTRA_CA_CERTS: z.string().optional(),
   STRIPE_SECRET_KEY: z.string().optional(),
 
-  // V4 write mode. Mirrors worker/src/env.ts so the web package can gate
-  // public API routes that rely on the legacy traces/observations tables.
-  // The worker owns the writes; the web only needs to know whether legacy
-  // tables are still being populated to decide whether to serve reads.
-  LANGFUSE_MIGRATION_V4_WRITE_MODE: z
-    .enum(["legacy", "dual", "events_only"])
-    .default("legacy"),
-
   LANGFUSE_S3_LIST_MAX_KEYS: z.coerce.number().positive().default(200),
   LANGFUSE_S3_RATE_ERROR_SLOWDOWN_ENABLED: z
     .enum(["true", "false"])
@@ -308,8 +263,6 @@ const EnvSchema = z.object({
   LANGFUSE_API_TRACE_OBSERVATIONS_SIZE_LIMIT_BYTES: z.coerce
     .number()
     .default(80e6), // 80MB
-  LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS: z.coerce.number().default(600_000), // 10 minutes
-  LANGFUSE_CLICKHOUSE_QUERY_MAX_ATTEMPTS: z.coerce.number().default(3), // Maximum attempts for socket hang up errors
   LANGFUSE_SKIP_S3_LIST_FOR_OBSERVATIONS_PROJECT_IDS: z.string().optional(),
   LANGFUSE_INGESTION_PROCESSING_SAMPLED_PROJECTS: z
     .string()
@@ -429,11 +382,6 @@ const EnvSchema = z.object({
     .int()
     .positive()
     .default(600_000), // 10 minutes
-
-  LANGFUSE_EVENT_PROPAGATION_WORKER_GLOBAL_CONCURRENCY: z.coerce
-    .number()
-    .positive()
-    .default(10),
 
   LANGFUSE_FETCH_LLM_COMPLETION_TIMEOUT_MS: z.coerce
     .number()

@@ -31,9 +31,9 @@ import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
   clickhouseSearchCondition,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   getTraceById,
 } from "@langfuse/shared/src/server";
 import { type TracingSearchType } from "@langfuse/shared";
@@ -131,7 +131,7 @@ describe("multilingual full-text search (issue #11538)", () => {
       output:
         opts.output !== undefined ? pythonJsonDumps(opts.output) : undefined,
     });
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
     return trace;
   }
 
@@ -422,7 +422,7 @@ describe("multilingual full-text search (issue #11538)", () => {
   describe("observations", () => {
     it("finds a generation whose escaped Hangul input matches a raw search — generations.all", async () => {
       const traceId = randomUUID();
-      await createTracesCh([
+      await createTracesGreptime([
         createTrace({
           id: traceId,
           project_id: projectId,
@@ -432,7 +432,7 @@ describe("multilingual full-text search (issue #11538)", () => {
       ]);
       const obsId = randomUUID();
       const sample = "이 생성 결과를 한국어로 검색할 수 있어야 합니다";
-      await createObservationsCh([
+      await createObservationsGreptime([
         createObservation({
           id: obsId,
           project_id: projectId,

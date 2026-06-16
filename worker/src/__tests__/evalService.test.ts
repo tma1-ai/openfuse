@@ -10,12 +10,11 @@ import { prisma } from "@langfuse/shared/src/db";
 import {
   convertDateToClickhouseDateTime,
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createTrace,
-  createTracesCh,
-  upsertObservation,
+  createTracesGreptime,
   upsertTrace,
-  createDatasetRunItemsCh,
+  createDatasetRunItemsGreptime,
   createDatasetRunItem,
   createOrgProjectAndApiKey,
   LLMCompletionError,
@@ -642,15 +641,17 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         updated_at: convertDateToClickhouseDateTime(new Date()),
       });
 
-      await upsertObservation({
-        id: observationId,
-        trace_id: traceId,
-        project_id: projectId,
-        type: "GENERATION",
-        start_time: convertDateToClickhouseDateTime(new Date()),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
+      await createObservationsGreptime([
+        createObservation({
+          id: observationId,
+          trace_id: traceId,
+          project_id: projectId,
+          type: "GENERATION",
+          start_time: Date.now(),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }),
+      ]);
 
       await prisma.dataset.create({
         data: {
@@ -825,7 +826,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
       });
 
       // Create a clickhouse run item
-      await createDatasetRunItemsCh([
+      await createDatasetRunItemsGreptime([
         createDatasetRunItem({
           project_id: projectId,
           dataset_id: datasetId,
@@ -1262,7 +1263,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         id: traceId,
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const jobConfiguration = await prisma.jobConfiguration.create({
         data: {
@@ -1332,7 +1333,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         timestamp: timestamp.getTime(),
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const jobConfiguration = await prisma.jobConfiguration.create({
         data: {
@@ -1399,7 +1400,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         timestamp: new Date(Date.now() + 1000 * 60 * 60 * 24).getTime(),
       });
 
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       await createEvalJobs({
         sourceEventType: "trace-upsert",
@@ -1476,7 +1477,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
       });
 
       // Create a clickhouse run item that references dataset 2 and the new trace.
-      await createDatasetRunItemsCh([
+      await createDatasetRunItemsGreptime([
         createDatasetRunItem({
           project_id: projectId,
           dataset_id: datasetId2,
@@ -1616,7 +1617,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
       });
 
       // Create a clickhouse run item that references a non-existing dataset and the new trace.
-      await createDatasetRunItemsCh([
+      await createDatasetRunItemsGreptime([
         createDatasetRunItem({
           dataset_id: randomUUID(),
           dataset_item_id: datasetItemId,
@@ -2371,19 +2372,21 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         updated_at: convertDateToClickhouseDateTime(new Date()),
       });
 
-      await upsertObservation({
-        id: randomUUID(),
-        trace_id: traceId,
-        project_id: projectId,
-        name: "great-llm-name",
-        type: "GENERATION",
-        environment: "production",
-        input: JSON.stringify({ huhu: "This is a great prompt" }),
-        output: JSON.stringify({ haha: "This is a great response" }),
-        start_time: convertDateToClickhouseDateTime(new Date()),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
+      await createObservationsGreptime([
+        createObservation({
+          id: randomUUID(),
+          trace_id: traceId,
+          project_id: projectId,
+          name: "great-llm-name",
+          type: "GENERATION",
+          environment: "production",
+          input: JSON.stringify({ huhu: "This is a great prompt" }),
+          output: JSON.stringify({ haha: "This is a great response" }),
+          start_time: Date.now(),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }),
+      ]);
 
       const variableMapping = variableMappingList.parse([
         {
@@ -2470,16 +2473,20 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
       });
 
       // fetching input and output for an observation which has NULL values
-      await upsertObservation({
-        id: randomUUID(),
-        trace_id: traceId,
-        project_id: projectId,
-        name: "great-llm-name",
-        type: "GENERATION",
-        start_time: convertDateToClickhouseDateTime(new Date()),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
+      await createObservationsGreptime([
+        createObservation({
+          id: randomUUID(),
+          trace_id: traceId,
+          project_id: projectId,
+          name: "great-llm-name",
+          type: "GENERATION",
+          input: null,
+          output: null,
+          start_time: Date.now(),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }),
+      ]);
 
       const variableMapping = variableMappingList.parse([
         {
@@ -2532,35 +2539,35 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         updated_at: convertDateToClickhouseDateTime(new Date()),
       });
 
-      await upsertObservation({
-        id: randomUUID(),
-        trace_id: traceId,
-        project_id: projectId,
-        name: "great-llm-name",
-        type: "GENERATION",
-        input: JSON.stringify({ huhu: "This is a great prompt" }),
-        output: JSON.stringify({ haha: "This is a great response" }),
-        start_time: convertDateToClickhouseDateTime(
-          new Date("2022-01-01T00:00:00.000Z"),
-        ),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
+      await createObservationsGreptime([
+        createObservation({
+          id: randomUUID(),
+          trace_id: traceId,
+          project_id: projectId,
+          name: "great-llm-name",
+          type: "GENERATION",
+          input: JSON.stringify({ huhu: "This is a great prompt" }),
+          output: JSON.stringify({ haha: "This is a great response" }),
+          start_time: new Date("2022-01-01T00:00:00.000Z").getTime(),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }),
+      ]);
 
-      await upsertObservation({
-        id: randomUUID(),
-        trace_id: traceId,
-        project_id: projectId,
-        name: "great-llm-name",
-        type: "GENERATION",
-        input: JSON.stringify({ huhu: "This is a great prompt again" }),
-        output: JSON.stringify({ haha: "This is a great response again" }),
-        start_time: convertDateToClickhouseDateTime(
-          new Date("2022-01-02T00:00:00.000Z"),
-        ),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
+      await createObservationsGreptime([
+        createObservation({
+          id: randomUUID(),
+          trace_id: traceId,
+          project_id: projectId,
+          name: "great-llm-name",
+          type: "GENERATION",
+          input: JSON.stringify({ huhu: "This is a great prompt again" }),
+          output: JSON.stringify({ haha: "This is a great response again" }),
+          start_time: new Date("2022-01-02T00:00:00.000Z").getTime(),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }),
+      ]);
 
       const variableMapping = variableMappingList.parse([
         {
@@ -2619,19 +2626,21 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
           updated_at: convertDateToClickhouseDateTime(new Date()),
         });
 
-        await upsertObservation({
-          id: randomUUID(),
-          trace_id: traceId,
-          project_id: projectId,
-          name: `great-${observationType.toLowerCase()}-name`,
-          type: observationType,
-          environment: "production",
-          input: JSON.stringify({ huhu: "This is a great prompt" }),
-          output: JSON.stringify({ haha: "This is a great response" }),
-          start_time: convertDateToClickhouseDateTime(new Date()),
-          created_at: convertDateToClickhouseDateTime(new Date()),
-          updated_at: convertDateToClickhouseDateTime(new Date()),
-        });
+        await createObservationsGreptime([
+          createObservation({
+            id: randomUUID(),
+            trace_id: traceId,
+            project_id: projectId,
+            name: `great-${observationType.toLowerCase()}-name`,
+            type: observationType,
+            environment: "production",
+            input: JSON.stringify({ huhu: "This is a great prompt" }),
+            output: JSON.stringify({ haha: "This is a great response" }),
+            start_time: Date.now(),
+            created_at: Date.now(),
+            updated_at: Date.now(),
+          }),
+        ]);
 
         const variableMapping = variableMappingList.parse([
           {
@@ -3314,7 +3323,7 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
       });
 
       // Create clickhouse run item
-      await createDatasetRunItemsCh([
+      await createDatasetRunItemsGreptime([
         createDatasetRunItem({
           project_id: projectId,
           dataset_id: datasetId,

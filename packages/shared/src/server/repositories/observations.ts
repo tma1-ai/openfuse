@@ -1,9 +1,3 @@
-import {
-  commandClickhouse,
-  queryClickhouse,
-  upsertClickhouse,
-} from "./clickhouse";
-import { logger } from "../logger";
 import { prisma } from "../../db";
 import { ObservationRecordReadType } from "./definitions";
 import { FilterState } from "../../types";
@@ -11,10 +5,7 @@ import { FilterList, FullObservations } from "../queries";
 import { OrderByState } from "../../interfaces/orderBy";
 import { getTracesByIds } from "./traces";
 import { PreferredClickhouseService } from "../clickhouse/client";
-import {
-  convertObservation,
-  enrichObservationWithModelData,
-} from "./observations_converters";
+import { enrichObservationWithModelData } from "./observations_converters";
 import { env } from "../../env";
 import { TracingSearchType } from "../../interfaces/search";
 import { ClickHouseClientConfigOptions } from "@clickhouse/client";
@@ -58,31 +49,6 @@ export const checkObservationExists = (
  * Accepts a trace in a Clickhouse-ready format.
  * id, project_id, and timestamp must always be provided.
  */
-export const upsertObservation = async (
-  observation: Partial<ObservationRecordReadType>,
-) => {
-  if (
-    !["id", "project_id", "start_time", "type"].every(
-      (key) => key in observation,
-    )
-  ) {
-    throw new Error(
-      "Identifier fields must be provided to upsert Observation.",
-    );
-  }
-  await upsertClickhouse({
-    table: "observations",
-    records: [observation as ObservationRecordReadType],
-    eventBodyMapper: convertObservation,
-    tags: {
-      feature: "tracing",
-      type: "observation",
-      kind: "upsert",
-      projectId: observation.project_id ?? "",
-    },
-  });
-};
-
 export type GetObservationsForTraceOpts<IncludeIO extends boolean> = {
   traceId: string;
   projectId: string;
@@ -288,102 +254,8 @@ export const getCostForTraces = (
   traceIds: string[],
 ) => greptimeObservationReads.getCostForTraces(projectId, timestamp, traceIds);
 
-export const deleteObservationsByTraceIds = async (
-  projectId: string,
-  traceIds: string[],
-) => {
-  const preflight = await queryClickhouse<{
-    min_ts: string;
-    max_ts: string;
-    cnt: string;
-  }>({
-    query: `
-      SELECT
-        min(start_time) - INTERVAL 1 HOUR as min_ts,
-        max(start_time) + INTERVAL 1 HOUR as max_ts,
-        count(*) as cnt
-      FROM observations
-      WHERE project_id = {projectId: String} AND trace_id IN ({traceIds: Array(String)})
-    `,
-    params: { projectId, traceIds },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-    },
-    tags: {
-      feature: "tracing",
-      type: "observation",
-      kind: "delete-preflight",
-      projectId,
-    },
-  });
-
-  const count = Number(preflight[0]?.cnt ?? 0);
-  if (count === 0) {
-    logger.info(
-      `deleteObservationsByTraceIds: no rows found for project ${projectId}, skipping DELETE`,
-    );
-    return;
-  }
-
-  await commandClickhouse({
-    query: `
-      DELETE FROM observations
-      WHERE project_id = {projectId: String}
-      AND trace_id IN ({traceIds: Array(String)})
-      AND start_time >= {minTs: String}::DateTime64(3)
-      AND start_time <= {maxTs: String}::DateTime64(3)
-    `,
-    params: {
-      projectId,
-      traceIds,
-      minTs: preflight[0].min_ts,
-      maxTs: preflight[0].max_ts,
-    },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-    },
-    tags: {
-      feature: "tracing",
-      type: "observation",
-      kind: "delete",
-      projectId,
-    },
-  });
-};
-
 export const hasAnyObservation = (projectId: string) =>
   greptimeObservationReads.hasAnyObservation(projectId);
-
-export const deleteObservationsByProjectId = async (
-  projectId: string,
-): Promise<boolean> => {
-  const hasData = await hasAnyObservation(projectId);
-  if (!hasData) {
-    return false;
-  }
-
-  const query = `
-    DELETE FROM observations
-    WHERE project_id = {projectId: String};
-  `;
-  const tags = {
-    feature: "tracing",
-    type: "observation",
-    kind: "delete",
-    projectId,
-  };
-
-  await commandClickhouse({
-    query,
-    params: { projectId },
-    clickhouseConfigs: {
-      request_timeout: env.LANGFUSE_CLICKHOUSE_DELETION_TIMEOUT_MS,
-    },
-    tags,
-  });
-
-  return true;
-};
 
 export const hasAnyObservationOlderThan = async (
   projectId: string,

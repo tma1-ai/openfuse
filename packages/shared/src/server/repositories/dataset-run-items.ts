@@ -13,6 +13,7 @@ import {
   type DatasetRunsMetrics,
   getDatasetItemIdsByTraceIdGreptime,
   getDatasetItemIdsWithRunDataGreptime,
+  getExistingRunItemDatasetItemIdsGreptime,
   getDatasetItemsWithRunDataCountGreptime,
   getDatasetRunItemCountsByProjectInCreationIntervalGreptime,
   getDatasetRunItemsCountByDatasetIdGreptime,
@@ -185,6 +186,12 @@ export const getDatasetRunItemsWithoutIOByItemIds = (
   opts: DatasetRunItemsByItemIdsWithoutIOQuery,
 ): Promise<DatasetRunItemDomain<false>[]> =>
   getDatasetRunItemsWithoutIOByItemIdsGreptime(opts);
+
+export const getExistingRunItemDatasetItemIds = (opts: {
+  projectId: string;
+  datasetId: string;
+  runId: string;
+}): Promise<Set<string>> => getExistingRunItemDatasetItemIdsGreptime(opts);
 
 // ---------------------------------------------------------------------------
 // multi-run comparison

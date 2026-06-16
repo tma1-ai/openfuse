@@ -1,5 +1,4 @@
 import {
-  deleteScores,
   deleteEntitiesFromGreptime,
   logger,
   traceException,
@@ -14,14 +13,11 @@ export const processClickhouseScoreDelete = async (
   );
 
   try {
-    await Promise.all([
-      deleteEntitiesFromGreptime({
-        projectId,
-        entityType: "score",
-        entityIds: scoreIds,
-      }),
-      deleteScores(projectId, scoreIds),
-    ]);
+    await deleteEntitiesFromGreptime({
+      projectId,
+      entityType: "score",
+      entityIds: scoreIds,
+    });
   } catch (e) {
     logger.error(
       `Error deleting scores ${JSON.stringify(scoreIds)} in project ${projectId} from Clickhouse`,

@@ -2,18 +2,24 @@ import { randomUUID } from "crypto";
 import { expect, describe, it } from "vitest";
 import {
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createOrgProjectAndApiKey,
   createTraceScore,
-  createScoresCh,
+  createScoresGreptime,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createManyDatasetItems,
   applyCommentFilters,
   createEvent,
-  createEventsCh,
+  createEventsAsGreptime,
   getEventsForBlobStorageExport,
 } from "@langfuse/shared/src/server";
+
+// events_full is gone: seed the GreptimeDB observations projection plus a
+// synthesized denormalised trace so the events read path resolves on GreptimeDB.
+const seedObservationEvents = (
+  events: Parameters<typeof createEventsAsGreptime>[0],
+) => createEventsAsGreptime(events, { synthesizeTraces: true });
 import { BatchExportTableName, DatasetStatus } from "@langfuse/shared";
 import { prisma } from "@langfuse/shared/src/db";
 import { getDatabaseReadStreamPaginated } from "../features/database-read-stream/getDatabaseReadStream";
@@ -41,7 +47,7 @@ describe("batch export test suite", () => {
       id: traceId,
     });
 
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     const observations = [
       createObservation({
@@ -69,8 +75,8 @@ describe("batch export test suite", () => {
       value: 123,
     });
 
-    await createScoresCh([score]);
-    await createObservationsCh(observations);
+    await createScoresGreptime([score]);
+    await createObservationsGreptime(observations);
 
     const stream = await getObservationStream({
       projectId: projectId,
@@ -144,7 +150,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     const stream = await getObservationStream({
       projectId: projectId,
@@ -211,7 +217,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     const stream = await getObservationStream({
       projectId: projectId,
@@ -257,7 +263,7 @@ describe("batch export test suite", () => {
       id: randomUUID(),
     });
 
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     // Create observations with different score values
     const observations = [
@@ -287,7 +293,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     // Create scores with different values
     const scores = [
@@ -317,7 +323,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createScoresCh(scores);
+    await createScoresGreptime(scores);
 
     // Filter observations with accuracy >= 0.7
     const stream = await getObservationStream({
@@ -386,7 +392,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const generations = [
       createObservation({
@@ -414,8 +420,8 @@ describe("batch export test suite", () => {
       value: 123,
     });
 
-    await createScoresCh([score]);
-    await createObservationsCh(generations);
+    await createScoresGreptime([score]);
+    await createObservationsGreptime(generations);
 
     const stream = await getDatabaseReadStreamPaginated({
       projectId: projectId,
@@ -492,7 +498,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const generations = [
       createObservation({
@@ -512,7 +518,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createObservationsCh(generations);
+    await createObservationsGreptime(generations);
 
     const stream = await getDatabaseReadStreamPaginated({
       projectId: projectId,
@@ -565,7 +571,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const score = createTraceScore({
       project_id: projectId,
@@ -591,7 +597,7 @@ describe("batch export test suite", () => {
       data_type: "BOOLEAN",
     });
 
-    await createScoresCh([score, qualitativeScore, booleanScore]);
+    await createScoresGreptime([score, qualitativeScore, booleanScore]);
 
     const stream = await getTraceStream({
       projectId: projectId,
@@ -633,7 +639,7 @@ describe("batch export test suite", () => {
       id: randomUUID(),
     });
 
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     const categoricalScore = createTraceScore({
       project_id: projectId,
@@ -644,7 +650,7 @@ describe("batch export test suite", () => {
       data_type: "CATEGORICAL",
     });
 
-    await createScoresCh([categoricalScore]);
+    await createScoresGreptime([categoricalScore]);
 
     const stream = await getTraceStream({
       projectId,
@@ -671,7 +677,7 @@ describe("batch export test suite", () => {
       id: traceId,
     });
 
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     const observation = createObservation({
       project_id: projectId,
@@ -680,7 +686,7 @@ describe("batch export test suite", () => {
       type: "GENERATION",
     });
 
-    await createObservationsCh([observation]);
+    await createObservationsGreptime([observation]);
 
     const categoricalScore = createTraceScore({
       project_id: projectId,
@@ -692,7 +698,7 @@ describe("batch export test suite", () => {
       data_type: "CATEGORICAL",
     });
 
-    await createScoresCh([categoricalScore]);
+    await createScoresGreptime([categoricalScore]);
 
     const stream = await getObservationStream({
       projectId,
@@ -744,7 +750,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const stream = await getTraceStream({
       projectId: projectId,
@@ -800,7 +806,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Create observations to associate scores with
     const observations = [
@@ -820,7 +826,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     // Create scores with different names and values
     const scores = [
@@ -858,7 +864,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createScoresCh(scores);
+    await createScoresGreptime(scores);
 
     // Export scores with filter on name and sort by timestamp
     const stream = await getDatabaseReadStreamPaginated({
@@ -909,7 +915,7 @@ describe("batch export test suite", () => {
       name: "trace-for-qualitative-scores",
     });
 
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     // Create an observation to associate scores with
     const observation = createObservation({
@@ -920,7 +926,7 @@ describe("batch export test suite", () => {
       name: "observation-for-qualitative-scores",
     });
 
-    await createObservationsCh([observation]);
+    await createObservationsGreptime([observation]);
 
     // Create scores with string values
     const scores = [
@@ -942,7 +948,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createScoresCh(scores);
+    await createScoresGreptime(scores);
 
     // Export all scores
     const stream = await getDatabaseReadStreamPaginated({
@@ -994,7 +1000,7 @@ describe("batch export test suite", () => {
       name: "trace-for-date-range",
     });
 
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     // Create an observation to associate scores with
     const observation = createObservation({
@@ -1005,7 +1011,7 @@ describe("batch export test suite", () => {
       name: "observation-for-date-range",
     });
 
-    await createObservationsCh([observation]);
+    await createObservationsGreptime([observation]);
 
     // Create scores with different timestamps
     const scores = [
@@ -1035,7 +1041,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createScoresCh(scores);
+    await createScoresGreptime(scores);
 
     // Export scores with date range filter
     const stream = await getDatabaseReadStreamPaginated({
@@ -1091,7 +1097,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Create observations to associate scores with
     const observations = [
@@ -1111,7 +1117,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     // Create scores with different attributes
     const scores = [
@@ -1149,7 +1155,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createScoresCh(scores);
+    await createScoresGreptime(scores);
 
     // Export scores with multiple filter conditions
     const stream = await getDatabaseReadStreamPaginated({
@@ -1351,7 +1357,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const observations = [
       createObservation({
@@ -1370,7 +1376,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     // Create dataset items with different source relationships
     const datasetItems = [
@@ -1584,7 +1590,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const streamByName = await getTraceStream({
       projectId: projectId,
@@ -1629,7 +1635,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Create observations with varying latencies
     const observations = [
@@ -1649,7 +1655,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     // Apply filters that include observation-level filters
     // These should be ignored and all traces matching trace-level filters should be returned
@@ -1720,7 +1726,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // This mirrors the query from the issue
     const stream = await getTraceStream({
@@ -1810,7 +1816,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Create observations for all traces with specific names
     const observations = [
@@ -1839,7 +1845,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     // Apply filters that include trace-level filters (tags)
     // These should be ignored and all observations matching observation-level filters should be returned
@@ -1928,7 +1934,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Create observations with specific properties
     const observations = [
@@ -1958,7 +1964,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createObservationsCh(observations);
+    await createObservationsGreptime(observations);
 
     // Apply a mix of trace-level and observation-level filters
     const stream = await getObservationStream({
@@ -2046,7 +2052,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Export traces with Trace ID filter (using both uiTableName and uiTableId)
     const streamById = await getTraceStream({
@@ -2132,7 +2138,7 @@ describe("batch export test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Export all traces
     const stream = await getTraceStream({
@@ -2203,7 +2209,7 @@ describe("batch export test suite", () => {
         id: randomUUID(),
       }),
     ];
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Add comment to first session only
     await prisma.comment.create({
@@ -2266,7 +2272,7 @@ describe("batch export test suite", () => {
       session_id: sessionId,
       id: randomUUID(),
     });
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     // Apply comment filter preprocessing - should match nothing
     const { filterState: processedFilter, hasNoMatches } =
@@ -2307,7 +2313,7 @@ describe("batch export test suite", () => {
         name: "trace-without-comments",
       }),
     ];
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     // Add comment to first trace only
     await prisma.comment.create({
@@ -2401,7 +2407,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       const stream = await getDatabaseReadStreamPaginated({
         projectId,
@@ -2479,7 +2485,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -2545,7 +2551,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       // Filter by type
       const stream = await getEventsStream({
@@ -2605,7 +2611,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -2644,7 +2650,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       // Create scores linked to this event
       const score = createTraceScore({
@@ -2656,7 +2662,7 @@ describe("batch export test suite", () => {
         data_type: "NUMERIC",
       });
 
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -2690,7 +2696,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       // Create categorical score
       const score = createTraceScore({
@@ -2703,7 +2709,7 @@ describe("batch export test suite", () => {
         data_type: "CATEGORICAL",
       });
 
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -2737,7 +2743,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       const score = createTraceScore({
         project_id: projectId,
@@ -2749,7 +2755,7 @@ describe("batch export test suite", () => {
         data_type: "CATEGORICAL",
       });
 
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -2818,7 +2824,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -2889,7 +2895,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       // Filter for mid-January only
       const stream = await getEventsStream({
@@ -2936,7 +2942,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -2986,7 +2992,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3027,7 +3033,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3069,7 +3075,7 @@ describe("batch export test suite", () => {
         }),
       );
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       // Limit to 5 rows
       const stream = await getEventsStream({
@@ -3102,7 +3108,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       // Create multiple scores of different types
       const scores = [
@@ -3133,7 +3139,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3210,7 +3216,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       // Filter by type=GENERATION AND environment=production
       const stream = await getEventsStream({
@@ -3285,7 +3291,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3351,7 +3357,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       // Filter by type
       const stream = await getEventsStream({
@@ -3411,7 +3417,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3450,7 +3456,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       // Create scores linked to this event
       const score = createTraceScore({
@@ -3462,7 +3468,7 @@ describe("batch export test suite", () => {
         data_type: "NUMERIC",
       });
 
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3496,7 +3502,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       // Create categorical score
       const score = createTraceScore({
@@ -3509,7 +3515,7 @@ describe("batch export test suite", () => {
         data_type: "CATEGORICAL",
       });
 
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3543,7 +3549,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       const score = createTraceScore({
         project_id: projectId,
@@ -3555,7 +3561,7 @@ describe("batch export test suite", () => {
         data_type: "CATEGORICAL",
       });
 
-      await createScoresCh([score]);
+      await createScoresGreptime([score]);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3624,7 +3630,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3695,7 +3701,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       // Filter for mid-January only
       const stream = await getEventsStream({
@@ -3742,7 +3748,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3792,7 +3798,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3833,7 +3839,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -3875,7 +3881,7 @@ describe("batch export test suite", () => {
         }),
       );
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       // Limit to 5 rows
       const stream = await getEventsStream({
@@ -3908,7 +3914,7 @@ describe("batch export test suite", () => {
         start_time: now,
       });
 
-      await createEventsCh([event]);
+      await seedObservationEvents([event]);
 
       // Create multiple scores of different types
       const scores = [
@@ -3939,7 +3945,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createScoresCh(scores);
+      await createScoresGreptime(scores);
 
       const stream = await getEventsStream({
         projectId: projectId,
@@ -4016,7 +4022,7 @@ describe("batch export test suite", () => {
         }),
       ];
 
-      await createEventsCh(events);
+      await seedObservationEvents(events);
 
       // Filter by type=GENERATION AND environment=production
       const stream = await getEventsStream({
@@ -4072,7 +4078,7 @@ maybeDescribe("getEventsForBlobStorageExport", () => {
       start_time: now * 1000, // microseconds
     });
 
-    await createEventsCh([event]);
+    await seedObservationEvents([event]);
 
     const stream = getEventsForBlobStorageExport(
       projectId,
@@ -4106,7 +4112,7 @@ maybeDescribe("getEventsForBlobStorageExport", () => {
       public: true,
     });
 
-    await createEventsCh([event]);
+    await seedObservationEvents([event]);
 
     const stream = getEventsForBlobStorageExport(
       projectId,
@@ -4151,7 +4157,7 @@ maybeDescribe("getEventsForBlobStorageExport", () => {
       start_time: now * 1000, // now (microseconds)
     });
 
-    await createEventsCh([oldEvent, recentEvent]);
+    await seedObservationEvents([oldEvent, recentEvent]);
 
     // Query for events in the last 2 hours only
     const stream = getEventsForBlobStorageExport(
@@ -4185,7 +4191,7 @@ maybeDescribe("getEventsForBlobStorageExport", () => {
       start_time: (now - 5 * 60 * 60 * 1000) * 1000, // 5 hours ago (microseconds)
     });
 
-    await createEventsCh([pastEvent]);
+    await seedObservationEvents([pastEvent]);
 
     // Query for events in the last hour only (event is older)
     const stream = getEventsForBlobStorageExport(
@@ -4236,7 +4242,7 @@ maybeDescribe("getEventsForBlobStorageExport", () => {
       metadata_values: ["production"],
     });
 
-    await createEventsCh([event]);
+    await seedObservationEvents([event]);
 
     const stream = getEventsForBlobStorageExport(
       projectId,
@@ -4382,7 +4388,7 @@ maybeDescribe("getEventsForBlobStorageExport", () => {
       start_time: now * 1000,
     });
 
-    await createEventsCh([event]);
+    await seedObservationEvents([event]);
 
     const stream = getEventsForBlobStorageExport(
       projectId,
@@ -4470,7 +4476,7 @@ maybeDescribe("getEventsForBlobStorageExport", () => {
       output: "world",
     });
 
-    await createEventsCh([event]);
+    await seedObservationEvents([event]);
 
     const stream = getEventsForBlobStorageExport(
       projectId,

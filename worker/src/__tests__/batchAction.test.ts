@@ -16,15 +16,15 @@ import {
 import {
   createOrgProjectAndApiKey,
   createTraceScore,
-  createScoresCh,
+  createScoresGreptime,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createEvent,
-  createEventsCh,
+  createEventsAsGreptime,
   getScoresByIds,
   QueueJobs,
   QueueName,
-  createDatasetRunItemsCh,
+  createDatasetRunItemsGreptime,
   createDatasetRunItem,
   createDatasetItem,
   createNewRedisInstance,
@@ -32,6 +32,12 @@ import {
   redisQueueRetryOptions,
   TQueueJobTypes,
 } from "@langfuse/shared/src/server";
+
+// events_full is gone: seed the GreptimeDB observations projection plus a
+// synthesized denormalised trace so the events read path resolves on GreptimeDB.
+const seedObservationEvents = (
+  events: Parameters<typeof createEventsAsGreptime>[0],
+) => createEventsAsGreptime(events, { synthesizeTraces: true });
 import { prisma } from "@langfuse/shared/src/db";
 import { Decimal } from "decimal.js";
 import waitForExpect from "wait-for-expect";
@@ -124,7 +130,7 @@ describe("select all test suite", () => {
       }),
     );
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const selectAllJob = {
       payload: {
@@ -177,7 +183,7 @@ describe("select all test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const selectAllJob = {
       payload: {
@@ -219,7 +225,7 @@ describe("select all test suite", () => {
     const { projectId } = await createOrgProjectAndApiKey();
 
     const score = createTraceScore({ project_id: projectId });
-    await createScoresCh([score]);
+    await createScoresGreptime([score]);
 
     // When
     await handleBatchActionJob({
@@ -264,7 +270,7 @@ describe("select all test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const selectAllJob = {
       payload: {
@@ -318,7 +324,7 @@ describe("select all test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const templateId = uuidv4();
 
@@ -449,7 +455,7 @@ describe("select all test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const datasetName = uuidv4();
     const dataset = await prisma.dataset.create({
@@ -515,7 +521,7 @@ describe("select all test suite", () => {
       event_ts: datasetRunItemTimestamp.getTime(),
     });
 
-    await createDatasetRunItemsCh([datasetRunItem1, datasetRunItem2]);
+    await createDatasetRunItemsGreptime([datasetRunItem1, datasetRunItem2]);
 
     const templateId = uuidv4();
 
@@ -629,7 +635,7 @@ describe("select all test suite", () => {
     // Create a trace
     const traceId = uuidv4();
     const traceTimestamp = new Date("2024-01-01T00:00:00.000Z");
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({
         project_id: projectId,
         id: traceId,
@@ -679,7 +685,7 @@ describe("select all test suite", () => {
 
     const traceId = uuidv4();
     const traceTimestamp = new Date("2024-01-01T00:00:00.000Z");
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({
         project_id: projectId,
         id: traceId,
@@ -766,7 +772,7 @@ describe("select all test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const queueId = uuidv4();
     await prisma.annotationQueue.create({
@@ -825,7 +831,7 @@ describe("select all test suite", () => {
       }),
     ];
 
-    await createTracesCh(traces);
+    await createTracesGreptime(traces);
 
     const queueId = uuidv4();
     await prisma.annotationQueue.create({
@@ -902,7 +908,7 @@ maybeDescribe("events table batch actions", () => {
       }),
     ];
 
-    await createEventsCh(events);
+    await seedObservationEvents(events);
 
     const queueId = uuidv4();
     await prisma.annotationQueue.create({
@@ -954,7 +960,7 @@ maybeDescribe("events table batch actions", () => {
       id: traceId,
       timestamp: new Date().getTime(),
     });
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     const eventInput1 = { prompt: "Hello, how are you?" };
     const eventOutput1 = { response: "I'm fine, thank you!" };
@@ -978,7 +984,7 @@ maybeDescribe("events table batch actions", () => {
       metadata_values: ["test"],
     });
 
-    await createEventsCh([event1, event2]);
+    await seedObservationEvents([event1, event2]);
 
     const datasetName = uuidv4();
     const dataset = await prisma.dataset.create({
@@ -1067,7 +1073,7 @@ maybeDescribe("events table batch actions", () => {
       id: traceId,
       timestamp: new Date().getTime(),
     });
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     const eventInput = {
       messages: [
@@ -1089,7 +1095,7 @@ maybeDescribe("events table batch actions", () => {
       metadata_values: Object.values(eventMetadata),
     });
 
-    await createEventsCh([event]);
+    await seedObservationEvents([event]);
 
     const datasetName = uuidv4();
     const dataset = await prisma.dataset.create({
@@ -1215,7 +1221,7 @@ maybeDescribe("events table batch actions", () => {
       id: traceId,
       timestamp: new Date().getTime(),
     });
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     const event1 = createEvent({
       project_id: projectId,
@@ -1230,7 +1236,7 @@ maybeDescribe("events table batch actions", () => {
       output: JSON.stringify({ response: "Bye" }),
     });
 
-    await createEventsCh([event1, event2]);
+    await seedObservationEvents([event1, event2]);
 
     // Create annotation queue
     const queueId = uuidv4();

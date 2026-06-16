@@ -38,14 +38,13 @@ import {
   TraceUpsertQueue,
   CloudFreeTierUsageThresholdQueue,
   CloudUsageMeteringQueue,
-  EventPropagationQueue,
   EvalExecutionQueue,
   SecondaryEvalExecutionQueue,
   LLMAsJudgeExecutionQueue,
   CodeEvalExecutionQueue,
 } from "@langfuse/shared/src/server";
 import { monitorProcessorTtl } from "@langfuse/shared/monitors/server";
-import { env, v4WritesToEventsTable } from "./env";
+import { env } from "./env";
 import { ingestionQueueProcessorBuilder } from "./queues/ingestionQueue";
 import { BackgroundMigrationManager } from "./backgroundMigrations/backgroundMigrationManager";
 import { prisma } from "@langfuse/shared/src/db";
@@ -74,7 +73,6 @@ import { entityChangeQueueProcessor } from "./queues/entityChangeQueue";
 import { webhookProcessor } from "./queues/webhooks";
 import { datasetDeleteProcessor } from "./queues/datasetDelete";
 import { otelIngestionQueueProcessorBuilder } from "./queues/otelIngestionQueue";
-import { eventPropagationProcessor } from "./queues/eventPropagationQueue";
 import { notificationQueueProcessor } from "./queues/notificationQueue";
 import { BatchProjectCleaner } from "./features/batch-project-cleaner";
 import { MediaRetentionCleaner } from "./features/media-retention-cleaner";
@@ -578,24 +576,6 @@ if (env.QUEUE_CONSUMER_ENTITY_CHANGE_QUEUE_IS_ENABLED === "true") {
     entityChangeQueueProcessor,
     {
       concurrency: env.LANGFUSE_ENTITY_CHANGE_QUEUE_PROCESSING_CONCURRENCY,
-    },
-  );
-}
-
-// The event-propagation queue is required whenever we write to events_full
-// (V4 WRITE_MODE in {dual, events_only}).
-if (
-  env.QUEUE_CONSUMER_EVENT_PROPAGATION_QUEUE_IS_ENABLED === "true" &&
-  v4WritesToEventsTable(env)
-) {
-  // Instantiate the queue to trigger scheduled jobs
-  EventPropagationQueue.getInstance();
-
-  WorkerManager.register(
-    QueueName.EventPropagationQueue,
-    eventPropagationProcessor,
-    {
-      concurrency: 1,
     },
   );
 }

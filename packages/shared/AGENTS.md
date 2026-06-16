@@ -85,7 +85,6 @@ the same PR.
 - Build: `pnpm --filter @langfuse/shared run build`
 - Prisma generate: `pnpm --filter @langfuse/shared run db:generate`
 - Prisma migrate (dev): `pnpm --filter @langfuse/shared run db:migrate`
-- ClickHouse reset: `pnpm --filter @langfuse/shared run ch:reset`
 
 ## Playbooks
 

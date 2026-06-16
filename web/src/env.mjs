@@ -278,12 +278,6 @@ export const env = createEnv({
       ),
 
     // clickhouse
-    CLICKHOUSE_URL: z.url(),
-    CLICKHOUSE_CLUSTER_NAME: z.string().default("default"),
-    CLICKHOUSE_DB: z.string().default("default"),
-    CLICKHOUSE_USER: z.string(),
-    CLICKHOUSE_PASSWORD: z.string(),
-    CLICKHOUSE_CLUSTER_ENABLED: z.enum(["true", "false"]).default("true"),
 
     // EE ui customization
     LANGFUSE_UI_API_HOST: z.string().optional(),
@@ -424,13 +418,6 @@ export const env = createEnv({
     LANGFUSE_DISABLE_LEGACY_TRACING_IO_SEARCH: z
       .enum(["true", "false"])
       .default("false"),
-    // V4 write mode. Mirrors worker/src/env.ts so the web package can gate
-    // public API routes that rely on the legacy traces/observations tables.
-    // The worker owns the writes; the web only needs to know whether legacy
-    // tables are still being populated to decide whether to serve reads.
-    LANGFUSE_MIGRATION_V4_WRITE_MODE: z
-      .enum(["legacy", "dual", "events_only"])
-      .default("legacy"),
 
     // Blocked users for chat completion API (userId:reason format)
     LANGFUSE_BLOCKED_USERIDS_CHATCOMPLETION: z
@@ -740,12 +727,6 @@ export const env = createEnv({
     PLAIN_CARDS_API_TOKEN: process.env.PLAIN_CARDS_API_TOKEN,
     PYLON_API_KEY: process.env.PYLON_API_KEY,
     // clickhouse
-    CLICKHOUSE_URL: process.env.CLICKHOUSE_URL,
-    CLICKHOUSE_CLUSTER_NAME: process.env.CLICKHOUSE_CLUSTER_NAME,
-    CLICKHOUSE_DB: process.env.CLICKHOUSE_DB,
-    CLICKHOUSE_USER: process.env.CLICKHOUSE_USER,
-    CLICKHOUSE_PASSWORD: process.env.CLICKHOUSE_PASSWORD,
-    CLICKHOUSE_CLUSTER_ENABLED: process.env.CLICKHOUSE_CLUSTER_ENABLED,
     // EE ui customization
     LANGFUSE_UI_API_HOST: process.env.LANGFUSE_UI_API_HOST,
     LANGFUSE_UI_DOCUMENTATION_HREF: process.env.LANGFUSE_UI_DOCUMENTATION_HREF,
@@ -835,8 +816,6 @@ export const env = createEnv({
       process.env.LANGFUSE_API_TRACEBYID_DEFAULT_FIELDS,
     LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN:
       process.env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN,
-    LANGFUSE_MIGRATION_V4_WRITE_MODE:
-      process.env.LANGFUSE_MIGRATION_V4_WRITE_MODE,
     // Legacy tracing search controls
     LANGFUSE_DISABLE_LEGACY_TRACING_IO_SEARCH:
       process.env.LANGFUSE_DISABLE_LEGACY_TRACING_IO_SEARCH,

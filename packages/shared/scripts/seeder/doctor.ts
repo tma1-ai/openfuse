@@ -44,12 +44,9 @@ const checkEnvFile = (): CheckResult => {
   // them before importing src/server, whose env schema would otherwise throw).
   // === undefined, not falsy — empty strings are valid for some of these
   // (matches the bootstrap precheck in ../cli.ts)
-  const missing = [
-    "DATABASE_URL",
-    "CLICKHOUSE_URL",
-    "CLICKHOUSE_USER",
-    "CLICKHOUSE_PASSWORD",
-  ].filter((name) => process.env[name] === undefined);
+  const missing = ["DATABASE_URL"].filter(
+    (name) => process.env[name] === undefined,
+  );
   return missing.length === 0
     ? { name: "env", status: "pass", detail: "required env vars present" }
     : {

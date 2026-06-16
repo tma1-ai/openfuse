@@ -8,7 +8,7 @@ import {
   TQueueJobTypes,
   createOrgProjectAndApiKey,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   getTracesByIds,
 } from "@langfuse/shared/src/server";
 import { Job } from "bullmq";
@@ -55,7 +55,7 @@ describe("trace deletion queue processor", () => {
     const eventTraceIds = [randomUUID(), randomUUID()];
 
     // Create traces in ClickHouse
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({ id: eventTraceIds[0], project_id: projectId }),
       createTrace({ id: eventTraceIds[1], project_id: projectId }),
     ]);
@@ -87,7 +87,7 @@ describe("trace deletion queue processor", () => {
     const newEventTrace = randomUUID();
 
     // Create all traces in ClickHouse
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({ id: alreadyDeletedTrace, project_id: projectId }),
       createTrace({ id: notDeletedTrace, project_id: projectId }),
       createTrace({ id: newEventTrace, project_id: projectId }),
@@ -160,7 +160,7 @@ describe("trace deletion queue processor", () => {
     const eventTrace2 = randomUUID();
 
     // Create all traces in ClickHouse
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({ id: pendingTrace1, project_id: projectId }),
       createTrace({ id: pendingTrace2, project_id: projectId }),
       createTrace({ id: eventTrace1, project_id: projectId }),
@@ -217,7 +217,7 @@ describe("trace deletion queue processor", () => {
     const pendingTrace = randomUUID();
 
     // Create trace in ClickHouse
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({ id: pendingTrace, project_id: projectId }),
     ]);
 
@@ -261,7 +261,7 @@ describe("trace deletion queue processor", () => {
     const pendingOnlyTrace = randomUUID();
 
     // Create all traces in ClickHouse
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({ id: overlappingTrace, project_id: projectId }),
       createTrace({ id: eventOnlyTrace, project_id: projectId }),
       createTrace({ id: pendingOnlyTrace, project_id: projectId }),
@@ -317,7 +317,7 @@ describe("trace deletion queue processor", () => {
     const alreadyDeletedTrace = randomUUID();
 
     // Create trace in ClickHouse (this represents a trace that was already deleted previously)
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({ id: alreadyDeletedTrace, project_id: projectId }),
     ]);
 
@@ -363,7 +363,7 @@ describe("trace deletion queue processor", () => {
     const validEventTrace = randomUUID();
 
     // Create both traces in ClickHouse
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({ id: alreadyDeletedTrace, project_id: projectId }),
       createTrace({ id: validEventTrace, project_id: projectId }),
     ]);
@@ -415,7 +415,7 @@ describe("trace deletion queue processor", () => {
     const overlappingTrace = randomUUID();
 
     // Create all traces in ClickHouse
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({ id: alreadyDeletedTrace, project_id: projectId }),
       createTrace({ id: pendingTrace, project_id: projectId }),
       createTrace({ id: newEventTrace, project_id: projectId }),

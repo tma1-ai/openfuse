@@ -1,11 +1,7 @@
 import { Job, Processor } from "bullmq";
 import {
-  deleteEventsByProjectId,
   deleteMediaLinkRowsByProjectId,
   deleteMediaFiles,
-  deleteObservationsByProjectId,
-  deleteScoresByProjectId,
-  deleteTracesByProjectId,
   deleteDatasetRunItemsByProjectId,
   deleteProjectFromGreptime,
   findAllMediaByProjectId,
@@ -17,7 +13,7 @@ import {
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
 import { Prisma } from "@prisma/client";
-import { env, v4WritesToEventsTable } from "../env";
+import { env } from "../env";
 
 export const projectDeleteProcessor: Processor = async (
   job: Job<TQueueJobTypes[QueueName.ProjectDelete]>,
@@ -62,15 +58,7 @@ export const projectDeleteProcessor: Processor = async (
   );
 
   // Delete project data from ClickHouse first
-  await Promise.all([
-    deleteProjectFromGreptime(projectId),
-    deleteTracesByProjectId(projectId),
-    deleteObservationsByProjectId(projectId),
-    deleteScoresByProjectId(projectId),
-    v4WritesToEventsTable(env)
-      ? deleteEventsByProjectId(projectId)
-      : Promise.resolve(),
-  ]);
+  await deleteProjectFromGreptime(projectId);
 
   // Trigger async delete of dataset run items
   await deleteDatasetRunItemsByProjectId(projectId);

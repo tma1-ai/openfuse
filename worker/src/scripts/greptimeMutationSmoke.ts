@@ -11,7 +11,7 @@
  *   - scores: projection-only (annotation/manual scores have no faithfully-replayable ingestion
  *     event), asserted across all data types so the value-column mapping is exercised.
  */
-import { redis, clickhouseClient } from "@langfuse/shared/src/server";
+import { redis } from "@langfuse/shared/src/server";
 import {
   upsertTrace,
   upsertScore,
@@ -24,7 +24,6 @@ import {
   deleteEntitiesFromGreptime,
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
-import { ClickhouseWriter } from "../services/ClickhouseWriter";
 import { GreptimeWriter } from "../services/GreptimeWriter";
 import { IngestionService } from "../services/IngestionService";
 
@@ -81,10 +80,7 @@ const rebuild = async (entityId: string, createdAt: Date) => {
   const svc = new IngestionService(
     redis!,
     prisma,
-    ClickhouseWriter.getInstance(),
-    clickhouseClient(),
     GreptimeWriter.getInstance(),
-    /* rebuildFromHistory */ true,
   );
   await svc.mergeAndWrite(
     "trace",
@@ -92,7 +88,6 @@ const rebuild = async (entityId: string, createdAt: Date) => {
     entityId,
     createdAt,
     events as never,
-    /* forwardToEventsTable */ false,
   );
   await GreptimeWriter.getInstance().flushAll(true);
   await sleep(700);

@@ -1,14 +1,10 @@
 import {
-  deleteEventsByTraceIds,
-  deleteObservationsByTraceIds,
-  deleteScoresByTraceIds,
   deleteTracesFromGreptime,
-  deleteTraces,
   getS3MediaStorageClient,
   logger,
   traceException,
 } from "@langfuse/shared/src/server";
-import { env, v4WritesToEventsTable } from "../../env";
+import { env } from "../../env";
 import { Prisma, prisma } from "@langfuse/shared/src/db";
 import { chunk } from "lodash";
 
@@ -137,15 +133,7 @@ export const processClickhouseTraceDelete = async (
   await deleteMediaItemsForTraces(projectId, traceIds);
 
   try {
-    await Promise.all([
-      deleteTracesFromGreptime({ projectId, traceIds }),
-      deleteTraces(projectId, traceIds),
-      deleteObservationsByTraceIds(projectId, traceIds),
-      deleteScoresByTraceIds(projectId, traceIds),
-      v4WritesToEventsTable(env)
-        ? deleteEventsByTraceIds(projectId, traceIds)
-        : Promise.resolve(),
-    ]);
+    await deleteTracesFromGreptime({ projectId, traceIds });
   } catch (e) {
     logger.error(
       `Error deleting trace ${JSON.stringify(traceIds)} in project ${projectId} from Clickhouse`,

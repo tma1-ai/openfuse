@@ -111,7 +111,6 @@ describe("getInternalTracingHandler", () => {
       expect.any(Object),
       expect.objectContaining({
         isLangfuseInternal: true,
-        forwardToEventsTable: false,
       }),
     );
   });
@@ -131,7 +130,6 @@ describe("getInternalTracingHandler", () => {
       expect.any(Object),
       expect.objectContaining({
         isLangfuseInternal: true,
-        forwardToEventsTable: undefined,
       }),
     );
     expect(mockWrite).not.toHaveBeenCalled();

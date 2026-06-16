@@ -85,6 +85,20 @@ const ensureTestDatabaseExists = async () => {
   console.log("Test database schema verified/updated");
 };
 
+const ensureGreptimeSchema = async () => {
+  if (process.env.NODE_ENV !== "test") {
+    return;
+  }
+  // Servertests read/write the GreptimeDB projection (the analytics store). Apply the schema
+  // migrations so the merge projection + EAV tables exist before any test seeds data. Idempotent:
+  // every table uses CREATE TABLE IF NOT EXISTS, so re-runs across watch mode are safe.
+  const { applyGreptimeMigrations } =
+    await import("@langfuse/shared/src/server");
+  await applyGreptimeMigrations();
+  console.log("GreptimeDB schema verified/updated");
+};
+
 export async function setup() {
   await ensureTestDatabaseExists();
+  await ensureGreptimeSchema();
 }

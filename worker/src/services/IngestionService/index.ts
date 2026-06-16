@@ -9,12 +9,6 @@ import {
   type JsonNested,
 } from "@langfuse/shared";
 import {
-  ClickhouseClientType,
-  convertDateToClickhouseDateTime,
-  convertObservationReadToInsert,
-  convertScoreReadToInsert,
-  convertTraceReadToInsert,
-  convertTraceToStagingObservation,
   eventTypes,
   IngestionEntityTypes,
   IngestionEventType,
@@ -23,7 +17,6 @@ import {
   ObservationEvent,
   observationRecordInsertSchema,
   ObservationRecordInsertType,
-  observationRecordReadSchema,
   PromptService,
   QueueJobs,
   recordIncrement,
@@ -31,11 +24,9 @@ import {
   DatasetRunItemEventType,
   scoreRecordInsertSchema,
   ScoreRecordInsertType,
-  scoreRecordReadSchema,
   TraceEventType,
   traceRecordInsertSchema,
   TraceRecordInsertType,
-  traceRecordReadSchema,
   TraceUpsertQueue,
   UsageCostType,
   findModel,
@@ -53,7 +44,6 @@ import {
 
 import { tokenCountAsync } from "../../features/tokenisation/async-usage";
 import { tokenCount } from "../../features/tokenisation/usage";
-import { ClickhouseWriter, TableName } from "../ClickhouseWriter";
 import { GreptimeWriter, GreptimeTable } from "../GreptimeWriter";
 import {
   convertJsonSchemaToRecord,
@@ -62,8 +52,6 @@ import {
   overwriteObject,
 } from "./utils";
 import { randomUUID } from "crypto";
-import { SpanKind } from "@opentelemetry/api";
-import { ClickhouseReadSkipCache } from "../../utils/clickhouseReadSkipCache";
 
 /**
  * Parse a value to a UInt16-compatible number (0–65535).
@@ -84,19 +72,19 @@ type InsertRecord =
 export type EventInput = InternalTraceEventInput;
 
 const immutableEntityKeys: {
-  [TableName.Traces]: (keyof TraceRecordInsertType)[];
-  [TableName.Scores]: (keyof ScoreRecordInsertType)[];
-  [TableName.Observations]: (keyof ObservationRecordInsertType)[];
-  [TableName.DatasetRunItems]: (keyof DatasetRunItemRecordInsertType)[];
+  [GreptimeTable.Traces]: (keyof TraceRecordInsertType)[];
+  [GreptimeTable.Scores]: (keyof ScoreRecordInsertType)[];
+  [GreptimeTable.Observations]: (keyof ObservationRecordInsertType)[];
+  [GreptimeTable.DatasetRunItems]: (keyof DatasetRunItemRecordInsertType)[];
 } = {
-  [TableName.Traces]: [
+  [GreptimeTable.Traces]: [
     "id",
     "project_id",
     "timestamp",
     "created_at",
     "environment",
   ],
-  [TableName.Scores]: [
+  [GreptimeTable.Scores]: [
     "id",
     "project_id",
     "timestamp",
@@ -104,7 +92,7 @@ const immutableEntityKeys: {
     "created_at",
     "environment",
   ],
-  [TableName.Observations]: [
+  [GreptimeTable.Observations]: [
     "id",
     "project_id",
     "trace_id",
@@ -113,7 +101,7 @@ const immutableEntityKeys: {
     "environment",
   ],
   // We do not accept updates, hence this list is currently not used.
-  [TableName.DatasetRunItems]: [
+  [GreptimeTable.DatasetRunItems]: [
     "id",
     "project_id",
     "dataset_run_id",
@@ -140,16 +128,10 @@ export class IngestionService {
   constructor(
     private redis: Redis | Cluster,
     private prisma: PrismaClient,
-    private clickHouseWriter: ClickhouseWriter,
-    private clickhouseClient: ClickhouseClientType,
-    // Dual-write target during the GreptimeDB migration (02-write-path.md). Optional so existing
-    // call sites/tests keep working; when present, every merged projection record is also written
-    // to GreptimeDB alongside ClickHouse.
-    private greptimeWriter?: GreptimeWriter,
-    // When true, the merge skips the ClickHouse baseline read and rebuilds the entity snapshot
-    // purely from the events passed in (the entity's full raw_events history). Out-of-order
-    // delivery resolves naturally; created_at must be supplied as min(ingested_at).
-    private rebuildFromHistory: boolean = false,
+    // GreptimeDB is the sole projection backend (02-write-path.md). Every merged projection record
+    // is written here; the merge rebuilds each entity snapshot from its full raw_events history
+    // (created_at = min(ingested_at)), so there is no baseline read.
+    private greptimeWriter: GreptimeWriter,
   ) {
     this.promptService = new PromptService(prisma, redis);
   }
@@ -160,7 +142,6 @@ export class IngestionService {
     eventBodyId: string,
     createdAtTimestamp: Date,
     events: IngestionEventType[],
-    forwardToEventsTable: boolean,
     // True when the entity was deleted (raw_events tombstone seen). The merged projection is marked
     // is_deleted=true so a replay rebuilds it soft-deleted instead of resurrecting live data.
     deleted: boolean = false,
@@ -176,7 +157,6 @@ export class IngestionService {
           entityId: eventBodyId,
           createdAtTimestamp,
           traceEventList: events as TraceEventType[],
-          createEventTraceRecord: forwardToEventsTable,
           deleted,
         });
       case "observation":
@@ -185,7 +165,6 @@ export class IngestionService {
           entityId: eventBodyId,
           createdAtTimestamp,
           observationEventList: events as ObservationEvent[],
-          writeToStagingTables: forwardToEventsTable,
           deleted,
         });
       case "score": {
@@ -221,9 +200,9 @@ export class IngestionService {
    *
    * @param eventData - The event data from processToEvent()
    * @param fileKey - The file key where the raw event data is stored
-   * @returns The enriched event record ready for writing or eval scheduling
+   * @returns The enriched, normalized event record consumed by eval scheduling
    */
-  public async createEventRecord(
+  public async createNormalizedEventRecord(
     eventData: EventInput,
     fileKey: string,
   ): Promise<EventRecordInsertType> {
@@ -396,17 +375,6 @@ export class IngestionService {
     return eventRecord;
   }
 
-  /**
-   * Writes an event record directly to the events_full table.
-   * A materialized view auto-populates events_core from events_full.
-   * Use createEventRecord() first to get the record, then call this to write.
-   *
-   * @param eventRecord - The event record to write
-   */
-  public writeEventRecord(eventRecord: EventRecordInsertType): void {
-    this.clickHouseWriter.addToQueue(TableName.EventsFull, eventRecord);
-  }
-
   private async processDatasetRunItemEventList(params: {
     projectId: string;
     entityId: string;
@@ -496,8 +464,7 @@ export class IngestionService {
 
     finalDatasetRunItemRecords.forEach((record) => {
       if (record) {
-        this.clickHouseWriter.addToQueue(TableName.DatasetRunItems, record);
-        this.greptimeWriter?.addToQueue(GreptimeTable.DatasetRunItems, record);
+        this.greptimeWriter.addToQueue(GreptimeTable.DatasetRunItems, record);
       }
     });
   }
@@ -516,99 +483,65 @@ export class IngestionService {
     const timeSortedEvents =
       IngestionService.toTimeSortedEventList(scoreEventList);
 
-    const minTimestamp = Math.min(
-      ...timeSortedEvents.flatMap((e) =>
-        e.timestamp ? [new Date(e.timestamp).getTime()] : [],
+    const scoreRecords = await Promise.all(
+      timeSortedEvents.map(async (scoreEvent) => {
+        try {
+          const validatedScore = await validateAndInflateScore({
+            body: scoreEvent.body,
+            scoreId: entityId,
+            projectId,
+          });
+
+          return {
+            id: entityId,
+            project_id: projectId,
+            environment: validatedScore.environment,
+            timestamp: this.getMillisecondTimestamp(scoreEvent.timestamp),
+            name: validatedScore.name,
+            value: validatedScore.value,
+            source: validatedScore.source,
+            trace_id: validatedScore.traceId,
+            session_id: validatedScore.sessionId,
+            dataset_run_id: validatedScore.datasetRunId,
+            data_type: validatedScore.dataType,
+            observation_id: validatedScore.observationId,
+            config_id: validatedScore.configId,
+            comment: validatedScore.comment,
+            metadata: scoreEvent.body.metadata
+              ? convertJsonSchemaToRecord(scoreEvent.body.metadata)
+              : {},
+            string_value: validatedScore.stringValue,
+            long_string_value: validatedScore.longStringValue,
+            execution_trace_id: validatedScore.executionTraceId,
+            queue_id: validatedScore.queueId ?? null,
+            created_at: Date.now(),
+            updated_at: Date.now(),
+            event_ts: new Date(scoreEvent.timestamp).getTime(),
+            is_deleted: 0,
+          };
+          // Gracefully handle any score schema validation errors, skip the score insert and reject silently.
+        } catch (error) {
+          logger.info(
+            `Failed to validate and enrich score body for project: ${projectId} and score: ${entityId}`,
+            error,
+          );
+          return null;
+        }
+      }),
+    ).then((results) =>
+      results.filter(
+        (record): record is NonNullable<typeof record> => record !== null,
       ),
     );
-    const timestamp =
-      minTimestamp === Infinity
-        ? undefined
-        : convertDateToClickhouseDateTime(new Date(minTimestamp));
-    const [clickhouseScoreRecord, scoreRecords] = await Promise.all([
-      this.getClickhouseRecord({
-        projectId,
-        entityId,
-        table: TableName.Scores,
-        additionalFilters: {
-          whereCondition: timestamp
-            ? " AND timestamp >= {timestamp: DateTime64(3)} "
-            : "",
-          params: { timestamp },
-        },
-      }),
-      Promise.all(
-        timeSortedEvents.map(async (scoreEvent) => {
-          try {
-            const validatedScore = await validateAndInflateScore({
-              body: scoreEvent.body,
-              scoreId: entityId,
-              projectId,
-            });
-
-            return {
-              id: entityId,
-              project_id: projectId,
-              environment: validatedScore.environment,
-              timestamp: this.getMillisecondTimestamp(scoreEvent.timestamp),
-              name: validatedScore.name,
-              value: validatedScore.value,
-              source: validatedScore.source,
-              trace_id: validatedScore.traceId,
-              session_id: validatedScore.sessionId,
-              dataset_run_id: validatedScore.datasetRunId,
-              data_type: validatedScore.dataType,
-              observation_id: validatedScore.observationId,
-              config_id: validatedScore.configId,
-              comment: validatedScore.comment,
-              metadata: scoreEvent.body.metadata
-                ? convertJsonSchemaToRecord(scoreEvent.body.metadata)
-                : {},
-              string_value: validatedScore.stringValue,
-              long_string_value: validatedScore.longStringValue,
-              execution_trace_id: validatedScore.executionTraceId,
-              queue_id: validatedScore.queueId ?? null,
-              created_at: Date.now(),
-              updated_at: Date.now(),
-              event_ts: new Date(scoreEvent.timestamp).getTime(),
-              is_deleted: 0,
-            };
-            // Gracefully handle any score schema validation errors, skip the score insert and reject silently.
-          } catch (error) {
-            logger.info(
-              `Failed to validate and enrich score body for project: ${projectId} and score: ${entityId}`,
-              error,
-            );
-            return null;
-          }
-        }),
-      ).then((results) =>
-        results.filter(
-          (record): record is NonNullable<typeof record> => record !== null,
-        ),
-      ),
-    ]);
-
-    if (clickhouseScoreRecord) {
-      recordIncrement("langfuse.ingestion.lookup.hit", 1, {
-        store: "clickhouse",
-        object: "score",
-      });
-    }
 
     const finalScoreRecord: ScoreRecordInsertType =
-      await this.mergeScoreRecords({
-        clickhouseScoreRecord,
-        scoreRecords,
-      });
-    finalScoreRecord.created_at =
-      clickhouseScoreRecord?.created_at ?? createdAtTimestamp.getTime();
+      await this.mergeScoreRecords({ scoreRecords });
+    finalScoreRecord.created_at = createdAtTimestamp.getTime();
 
     // Tombstoned entity: mark soft-deleted so a replay rebuilds it deleted, not resurrected.
     if (deleted) finalScoreRecord.is_deleted = 1;
 
-    this.clickHouseWriter.addToQueue(TableName.Scores, finalScoreRecord);
-    this.greptimeWriter?.addToQueue(GreptimeTable.Scores, finalScoreRecord);
+    this.greptimeWriter.addToQueue(GreptimeTable.Scores, finalScoreRecord);
   }
 
   private async processTraceEventList(params: {
@@ -616,17 +549,10 @@ export class IngestionService {
     entityId: string;
     createdAtTimestamp: Date;
     traceEventList: TraceEventType[];
-    createEventTraceRecord: boolean;
     deleted?: boolean;
   }) {
-    const {
-      projectId,
-      entityId,
-      createdAtTimestamp,
-      traceEventList,
-      createEventTraceRecord,
-      deleted,
-    } = params;
+    const { projectId, entityId, createdAtTimestamp, traceEventList, deleted } =
+      params;
     if (traceEventList.length === 0) return;
 
     const timeSortedEvents =
@@ -639,7 +565,6 @@ export class IngestionService {
     });
 
     // Search for the first non-null input and output in the trace events and set them on the merged result.
-    // Fallback to the ClickHouse input/output if none are found within the events list.
     const reversedRawRecords = timeSortedEvents.slice().reverse();
     const finalIO = {
       input: this.stringify(
@@ -650,49 +575,15 @@ export class IngestionService {
       ),
     };
 
-    const minTimestamp = Math.min(
-      ...timeSortedEvents.flatMap((e) =>
-        e.body?.timestamp ? [new Date(e.body.timestamp).getTime()] : [],
-      ),
-    );
-    const timestamp =
-      minTimestamp === Infinity
-        ? undefined
-        : convertDateToClickhouseDateTime(new Date(minTimestamp));
-    const clickhouseTraceRecord = await this.getClickhouseRecord({
-      projectId,
-      entityId,
-      table: TableName.Traces,
-      additionalFilters: {
-        whereCondition: timestamp
-          ? " AND timestamp >= {timestamp: DateTime64(3)} "
-          : "",
-        params: { timestamp },
-      },
-    });
-
-    if (clickhouseTraceRecord) {
-      recordIncrement("langfuse.ingestion.lookup.hit", 1, {
-        store: "clickhouse",
-        object: "trace",
-      });
-    }
-
-    const finalTraceRecord = await this.mergeTraceRecords({
-      clickhouseTraceRecord,
-      traceRecords,
-    });
-    finalTraceRecord.created_at =
-      clickhouseTraceRecord?.created_at ?? createdAtTimestamp.getTime();
-
-    finalTraceRecord.input = finalIO.input ?? clickhouseTraceRecord?.input;
-    finalTraceRecord.output = finalIO.output ?? clickhouseTraceRecord?.output;
+    const finalTraceRecord = await this.mergeTraceRecords({ traceRecords });
+    finalTraceRecord.created_at = createdAtTimestamp.getTime();
+    finalTraceRecord.input = finalIO.input;
+    finalTraceRecord.output = finalIO.output;
 
     // Tombstoned entity: mark soft-deleted so a replay rebuilds it deleted, not resurrected.
     if (deleted) finalTraceRecord.is_deleted = 1;
 
-    this.clickHouseWriter.addToQueue(TableName.Traces, finalTraceRecord);
-    this.greptimeWriter?.addToQueue(GreptimeTable.Traces, finalTraceRecord);
+    this.greptimeWriter.addToQueue(GreptimeTable.Traces, finalTraceRecord);
 
     // If the trace has a sessionId, we upsert the corresponding session into Postgres.
     const traceRecordWithSession = traceRecords
@@ -714,19 +605,6 @@ export class IngestionService {
         );
         throw e;
       }
-    }
-
-    // Dual-write to staging table for batch propagation to events table
-    // We pretend the trace is a "span" where span_id = trace_id
-    if (createEventTraceRecord) {
-      const traceAsStagingObservation = convertTraceToStagingObservation(
-        finalTraceRecord,
-        this.getPartitionAwareTimestamp(createdAtTimestamp),
-      );
-      this.clickHouseWriter.addToQueue(
-        TableName.ObservationsBatchStaging,
-        traceAsStagingObservation,
-      );
     }
 
     // Add trace into trace upsert queue for eval processing
@@ -767,7 +645,6 @@ export class IngestionService {
     entityId: string;
     createdAtTimestamp: Date;
     observationEventList: ObservationEvent[];
-    writeToStagingTables: boolean;
     deleted?: boolean;
   }) {
     const {
@@ -775,7 +652,6 @@ export class IngestionService {
       entityId,
       createdAtTimestamp,
       observationEventList,
-      writeToStagingTables,
       deleted,
     } = params;
     if (observationEventList.length === 0) return;
@@ -783,39 +659,7 @@ export class IngestionService {
     const timeSortedEvents =
       IngestionService.toTimeSortedEventList(observationEventList);
 
-    const type = this.getObservationType(observationEventList[0]);
-    const minStartTime = Math.min(
-      ...observationEventList.flatMap((e) =>
-        e.body?.startTime ? [new Date(e.body.startTime).getTime()] : [],
-      ),
-    );
-    const startTime =
-      minStartTime === Infinity
-        ? undefined
-        : convertDateToClickhouseDateTime(new Date(minStartTime));
-
-    const [clickhouseObservationRecord, prompt] = await Promise.all([
-      this.getClickhouseRecord({
-        projectId,
-        entityId,
-        table: TableName.Observations,
-        additionalFilters: {
-          whereCondition: `AND type = {type: String} ${startTime ? "AND start_time >= {startTime: DateTime64(3)} " : ""}`,
-          params: {
-            type,
-            startTime,
-          },
-        },
-      }),
-      this.getPrompt(projectId, observationEventList),
-    ]);
-
-    if (clickhouseObservationRecord) {
-      recordIncrement("langfuse.ingestion.lookup.hit", 1, {
-        store: "clickhouse",
-        object: "observation",
-      });
-    }
+    const prompt = await this.getPrompt(projectId, observationEventList);
 
     const observationRecords = this.mapObservationEventsToRecords({
       observationEventList: timeSortedEvents,
@@ -827,21 +671,16 @@ export class IngestionService {
     const mergedObservationRecord = await this.mergeObservationRecords({
       projectId,
       observationRecords,
-      clickhouseObservationRecord,
     });
-    mergedObservationRecord.created_at =
-      clickhouseObservationRecord?.created_at ?? createdAtTimestamp.getTime();
+    mergedObservationRecord.created_at = createdAtTimestamp.getTime();
     mergedObservationRecord.level = mergedObservationRecord.level ?? "DEFAULT";
 
     // Search for the first non-null input and output in the observation events and set them on the merged result.
-    // Fallback to the ClickHouse input/output if none are found within the events list.
     const reversedRawRecords = timeSortedEvents.slice().reverse();
-    const rawInput =
-      reversedRawRecords.find((record) => record?.body?.input)?.body?.input ??
-      clickhouseObservationRecord?.input;
-    const rawOutput =
-      reversedRawRecords.find((record) => record?.body?.output)?.body?.output ??
-      clickhouseObservationRecord?.output;
+    const rawInput = reversedRawRecords.find((record) => record?.body?.input)
+      ?.body?.input;
+    const rawOutput = reversedRawRecords.find((record) => record?.body?.output)
+      ?.body?.output;
     const normalizedTools = normalizeToolsForObservation(
       rawInput,
       rawOutput,
@@ -896,41 +735,17 @@ export class IngestionService {
         is_deleted: 0,
       };
 
-      this.clickHouseWriter.addToQueue(TableName.Traces, wrapperTraceRecord);
-      this.greptimeWriter?.addToQueue(GreptimeTable.Traces, wrapperTraceRecord);
+      this.greptimeWriter.addToQueue(GreptimeTable.Traces, wrapperTraceRecord);
       finalObservationRecord.trace_id = finalObservationRecord.id;
     }
 
     // Tombstoned entity: mark soft-deleted so a replay rebuilds it deleted, not resurrected.
     if (deleted) finalObservationRecord.is_deleted = 1;
 
-    this.clickHouseWriter.addToQueue(
-      TableName.Observations,
-      finalObservationRecord,
-    );
-    this.greptimeWriter?.addToQueue(
+    this.greptimeWriter.addToQueue(
       GreptimeTable.Observations,
       finalObservationRecord,
     );
-
-    // Dual-write to staging table for batch propagation to events table
-    // Here, we add some additional logic around the first seen timestamp.
-    // We "lock" partitions 4min after their creation, i.e. the 15:00:00 partition
-    // should stop receiving updates at 15:04:00.
-    // This means that we keep the createdAtTimestamp as-is if it is within the last
-    // 3.5 minutes (incl. a 30s buffer around writes) and otherwise,
-    // we set the current timestamp for the event.
-    if (writeToStagingTables) {
-      const stagingRecord = {
-        ...finalObservationRecord,
-        s3_first_seen_timestamp:
-          this.getPartitionAwareTimestamp(createdAtTimestamp),
-      };
-      this.clickHouseWriter.addToQueue(
-        TableName.ObservationsBatchStaging,
-        stagingRecord,
-      );
-    }
   }
 
   private async mergeScoreRecords(params: {
@@ -946,7 +761,7 @@ export class IngestionService {
 
     const mergedRecord = this.mergeRecords(
       recordsToMerge,
-      immutableEntityKeys[TableName.Scores],
+      immutableEntityKeys[GreptimeTable.Scores],
     );
 
     // If metadata exists, it is an object due to previous parsing
@@ -970,7 +785,7 @@ export class IngestionService {
 
     const mergedRecord = this.mergeRecords(
       recordsToMerge,
-      immutableEntityKeys[TableName.Traces],
+      immutableEntityKeys[GreptimeTable.Traces],
     );
 
     // If metadata exists, it is an object due to previous parsing
@@ -996,7 +811,7 @@ export class IngestionService {
 
     const mergedRecord = this.mergeRecords(
       recordsToMerge,
-      immutableEntityKeys[TableName.Observations],
+      immutableEntityKeys[GreptimeTable.Observations],
     );
 
     // If metadata exists, it is an object due to previous parsing
@@ -1400,143 +1215,6 @@ export class IngestionService {
       cost_details: finalCostDetails,
       total_cost: finalTotalCost,
     };
-  }
-
-  private async getClickhouseRecord(params: {
-    projectId: string;
-    entityId: string;
-    table: TableName.Traces;
-    additionalFilters: {
-      whereCondition: string;
-      params: Record<string, unknown>;
-    };
-  }): Promise<TraceRecordInsertType | null>;
-
-  private async getClickhouseRecord(params: {
-    projectId: string;
-    entityId: string;
-    table: TableName.Scores;
-    additionalFilters: {
-      whereCondition: string;
-      params: Record<string, unknown>;
-    };
-  }): Promise<ScoreRecordInsertType | null>;
-
-  private async getClickhouseRecord(params: {
-    projectId: string;
-    entityId: string;
-    table: TableName.Observations;
-    additionalFilters: {
-      whereCondition: string;
-      params: Record<string, unknown>;
-    };
-  }): Promise<ObservationRecordInsertType | null>;
-
-  private async getClickhouseRecord(params: {
-    projectId: string;
-    entityId: string;
-    table: TableName;
-    additionalFilters: {
-      whereCondition: string;
-      params: Record<string, unknown>;
-    };
-  }) {
-    // Full-history rebuild path: never read the ClickHouse baseline — the passed events already
-    // represent the entity's complete history, so the merge starts from an empty snapshot.
-    if (this.rebuildFromHistory) {
-      return null;
-    }
-    if (
-      await ClickhouseReadSkipCache.getInstance(
-        this.prisma,
-      ).shouldSkipClickHouseRead(params.projectId)
-    ) {
-      recordIncrement("langfuse.ingestion.clickhouse_read_for_update", 1, {
-        skipped: "true",
-        table: params.table,
-      });
-      return null;
-    }
-    recordIncrement("langfuse.ingestion.clickhouse_read_for_update", 1, {
-      skipped: "false",
-      table: params.table,
-    });
-
-    const recordParser = {
-      traces: traceRecordReadSchema,
-      scores: scoreRecordReadSchema,
-      observations: observationRecordReadSchema,
-    };
-    const { projectId, entityId, table, additionalFilters } = params;
-
-    return await instrumentAsync(
-      { name: `get-clickhouse-${table}`, spanKind: SpanKind.CLIENT },
-      async (span) => {
-        span.setAttribute("ch.query.table", table);
-        span.setAttribute("db.system", "clickhouse");
-        span.setAttribute("db.operation.name", "SELECT");
-        span.setAttribute("projectId", projectId);
-        const queryResult = await this.clickhouseClient.query({
-          query: `
-            SELECT *
-            FROM ${table}
-            WHERE project_id = {projectId: String}
-            AND id = {entityId: String}
-            ${additionalFilters.whereCondition}
-            ORDER BY event_ts DESC
-            LIMIT 1 BY id, project_id SETTINGS use_query_cache = false;
-          `,
-          format: "JSONEachRow",
-          query_params: { projectId, entityId, ...additionalFilters.params },
-          clickhouse_settings: {
-            log_comment: JSON.stringify({
-              feature: "ingestion",
-              projectId,
-            }),
-          },
-        });
-
-        span.setAttribute("ch.queryId", queryResult.query_id);
-        const summaryHeader =
-          queryResult.response_headers["x-clickhouse-summary"];
-        if (summaryHeader) {
-          try {
-            const summary = Array.isArray(summaryHeader)
-              ? JSON.parse(summaryHeader[0])
-              : JSON.parse(summaryHeader);
-            for (const key in summary) {
-              span.setAttribute(`ch.${key}`, summary[key]);
-            }
-          } catch (error) {
-            logger.debug(
-              `Failed to parse clickhouse summary header ${summaryHeader}`,
-              error,
-            );
-          }
-        }
-
-        const result = await queryResult.json();
-
-        if (result.length === 0) return null;
-
-        switch (table) {
-          case TableName.Traces:
-            return convertTraceReadToInsert(
-              recordParser[table].parse(result[0]),
-            );
-          case TableName.Scores:
-            return convertScoreReadToInsert(
-              recordParser[table].parse(result[0]),
-            );
-          case TableName.Observations:
-            return convertObservationReadToInsert(
-              recordParser[table].parse(result[0]),
-            );
-          default:
-            throw new Error(`Unsupported table name: ${table}`);
-        }
-      },
-    );
   }
 
   private mapTraceEventsToRecords(params: {

@@ -318,8 +318,7 @@ export const commentsRouter = createTRPCRouter({
             input.projectId,
             input.sessionId,
           )
-        : // eslint-disable-next-line @typescript-eslint/no-deprecated
-          await getTracesIdentifierForSession(input.projectId, input.sessionId);
+        : await getTracesIdentifierForSession(input.projectId, input.sessionId);
 
       const allTraceCommentCounts = await ctx.prisma.$queryRaw<
         Array<{ objectId: string; count: bigint }>
@@ -357,8 +356,7 @@ export const commentsRouter = createTRPCRouter({
             input.projectId,
             input.sessionId,
           )
-        : // eslint-disable-next-line @typescript-eslint/no-deprecated
-          await getTracesIdentifierForSession(input.projectId, input.sessionId);
+        : await getTracesIdentifierForSession(input.projectId, input.sessionId);
 
       const traceIds = clickhouseTraces.map((t) => t.id);
 

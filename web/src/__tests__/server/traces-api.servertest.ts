@@ -2,7 +2,7 @@ import {
   createObservation,
   createTraceScore,
   createSessionScore,
-  createScoresCh,
+  createScoresGreptime,
   createTrace,
   getTraceById,
   createEvent,
@@ -10,10 +10,16 @@ import {
   type EventRecordInsertType,
 } from "@langfuse/shared/src/server";
 import {
-  createObservationsCh,
-  createTracesCh,
-  createEventsCh,
+  createObservationsGreptime,
+  createTracesGreptime,
+  createEventsAsGreptime,
 } from "@langfuse/shared/src/server";
+
+// events_full is gone: seed the GreptimeDB observations projection plus a
+// synthesized denormalised trace so the events read path resolves on GreptimeDB.
+const seedObservationEvents = (
+  events: Parameters<typeof createEventsAsGreptime>[0],
+) => createEventsAsGreptime(events, { synthesizeTraces: true });
 import {
   makeZodVerifiedAPICall,
   makeZodVerifiedAPICallSilent,
@@ -145,7 +151,7 @@ const createTraceWithObservations = async (
   trace: ReturnType<typeof createTrace>,
   observations: ObservationEventData[],
 ) => {
-  await createTracesCh([trace]);
+  await createTracesGreptime([trace]);
 
   if (useEventsTable) {
     // For events table: create root trace event + observation events
@@ -184,13 +190,13 @@ const createTraceWithObservations = async (
       }),
     );
 
-    await createEventsCh([rootTraceEvent, ...observationEvents] as any);
+    await seedObservationEvents([rootTraceEvent, ...observationEvents] as any);
   } else {
     // For observations table: just create observations
     const data = observations.map((obs) =>
       createObservationOrEvent(useEventsTable, obs),
     );
-    await createObservationsCh(data as any);
+    await createObservationsGreptime(data as any);
   }
 };
 
@@ -241,8 +247,8 @@ describe("/api/public/traces API Endpoint", () => {
     ];
 
     await Promise.all([
-      createTracesCh([createdTrace]),
-      createObservationsCh(observations),
+      createTracesGreptime([createdTrace]),
+      createObservationsGreptime(observations),
     ]);
 
     const trace = await makeZodVerifiedAPICall(
@@ -306,9 +312,9 @@ describe("/api/public/traces API Endpoint", () => {
     });
 
     await Promise.all([
-      createTracesCh([createdTrace]),
-      createObservationsCh([observation]),
-      createScoresCh([score]),
+      createTracesGreptime([createdTrace]),
+      createObservationsGreptime([observation]),
+      createScoresGreptime([score]),
     ]);
 
     const trace = await makeZodVerifiedAPICall(
@@ -358,9 +364,9 @@ describe("/api/public/traces API Endpoint", () => {
     });
 
     await Promise.all([
-      createTracesCh([createdTrace]),
-      createObservationsCh([observation]),
-      createScoresCh([score]),
+      createTracesGreptime([createdTrace]),
+      createObservationsGreptime([observation]),
+      createScoresGreptime([score]),
     ]);
 
     const trace = await makeZodVerifiedAPICall(
@@ -401,8 +407,8 @@ describe("/api/public/traces API Endpoint", () => {
     });
 
     await Promise.all([
-      createTracesCh([createdTrace]),
-      createObservationsCh([observation]),
+      createTracesGreptime([createdTrace]),
+      createObservationsGreptime([observation]),
     ]);
 
     const trace = await makeZodVerifiedAPICall(
@@ -456,8 +462,8 @@ describe("/api/public/traces API Endpoint", () => {
     ];
 
     await Promise.all([
-      createTracesCh([createdTrace]),
-      createObservationsCh(observations),
+      createTracesGreptime([createdTrace]),
+      createObservationsGreptime(observations),
     ]);
 
     const traces = await makeZodVerifiedAPICall(
@@ -510,7 +516,7 @@ describe("/api/public/traces API Endpoint", () => {
         metadata: { key: "value" },
       });
 
-      await createTracesCh([createdTrace, dummyTrace]);
+      await createTracesGreptime([createdTrace, dummyTrace]);
 
       const traces = await makeZodVerifiedAPICall(
         GetTracesV1Response,
@@ -539,9 +545,9 @@ describe("/api/public/traces API Endpoint", () => {
       environment,
     });
 
-    await createTracesCh([createdTrace]);
+    await createTracesGreptime([createdTrace]);
 
-    await createObservationsCh([
+    await createObservationsGreptime([
       createObservation({
         trace_id: traceId,
         environment,
@@ -555,7 +561,7 @@ describe("/api/public/traces API Endpoint", () => {
       }),
     ]);
 
-    await createScoresCh([
+    await createScoresGreptime([
       createTraceScore({
         trace_id: traceId,
         environment,
@@ -596,9 +602,9 @@ describe("/api/public/traces API Endpoint", () => {
       environment,
     });
 
-    await createTracesCh([createdTrace]);
+    await createTracesGreptime([createdTrace]);
 
-    await createObservationsCh([
+    await createObservationsGreptime([
       createObservation({
         trace_id: traceId,
         environment,
@@ -612,7 +618,7 @@ describe("/api/public/traces API Endpoint", () => {
       }),
     ]);
 
-    await createScoresCh([
+    await createScoresGreptime([
       createTraceScore({
         trace_id: traceId,
         environment,
@@ -657,7 +663,7 @@ describe("/api/public/traces API Endpoint", () => {
       tags: [tag],
     });
 
-    await createTracesCh([createdTrace]);
+    await createTracesGreptime([createdTrace]);
 
     const traces = await makeZodVerifiedAPICall(
       GetTracesV1Response,
@@ -694,7 +700,7 @@ describe("/api/public/traces API Endpoint", () => {
       tags: [tag],
     });
 
-    await createTracesCh([createdTrace1, createdTrace2, createdTrace3]);
+    await createTracesGreptime([createdTrace1, createdTrace2, createdTrace3]);
 
     const traces = await makeZodVerifiedAPICall(
       GetTracesV1Response,
@@ -726,7 +732,7 @@ describe("/api/public/traces API Endpoint", () => {
       tags: [tag],
     });
 
-    await createTracesCh([createdTrace1, createdTrace2]);
+    await createTracesGreptime([createdTrace1, createdTrace2]);
 
     const traces = await makeZodVerifiedAPICall(
       GetTracesV1Response,
@@ -773,7 +779,7 @@ describe("/api/public/traces API Endpoint", () => {
       }),
     });
 
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     const traces = await makeZodVerifiedAPICall(
       GetTracesV1Response,
@@ -812,7 +818,7 @@ describe("/api/public/traces API Endpoint", () => {
       }),
     });
 
-    await createTracesCh([trace]);
+    await createTracesGreptime([trace]);
 
     const traceResponse = await makeZodVerifiedAPICall(
       GetTraceV1Response,
@@ -850,8 +856,8 @@ describe("/api/public/traces API Endpoint", () => {
       }),
     });
 
-    await createTracesCh([trace]);
-    await createObservationsCh([
+    await createTracesGreptime([trace]);
+    await createObservationsGreptime([
       createObservation({
         trace_id: traceId,
         project_id: projectId,
@@ -882,7 +888,7 @@ describe("/api/public/traces API Endpoint", () => {
       name: "trace-to-delete",
       project_id: projectId,
     });
-    await createTracesCh([createdTrace]);
+    await createTracesGreptime([createdTrace]);
 
     // When
     const deleteResponse = await makeZodVerifiedAPICall(
@@ -911,7 +917,7 @@ describe("/api/public/traces API Endpoint", () => {
       name: "trace-to-delete-2",
       project_id: projectId,
     });
-    await createTracesCh([createdTrace1, createdTrace2]);
+    await createTracesGreptime([createdTrace1, createdTrace2]);
 
     // When
     const deleteResponse = await makeZodVerifiedAPICall(
@@ -948,9 +954,9 @@ describe("/api/public/traces API Endpoint", () => {
         createFieldsFilteringFixture(projectId);
 
       await Promise.all([
-        createTracesCh([createdTrace]),
-        createObservationsCh([observation]),
-        createScoresCh([score]),
+        createTracesGreptime([createdTrace]),
+        createObservationsGreptime([observation]),
+        createScoresGreptime([score]),
       ]);
 
       const traces = await makeZodVerifiedAPICall(
@@ -1005,9 +1011,9 @@ describe("/api/public/traces API Endpoint", () => {
       });
 
       await Promise.all([
-        createTracesCh([createdTrace]),
-        createObservationsCh([observation]),
-        createScoresCh([score]),
+        createTracesGreptime([createdTrace]),
+        createObservationsGreptime([observation]),
+        createScoresGreptime([score]),
       ]);
 
       const traces = await makeZodVerifiedAPICall(
@@ -1052,7 +1058,7 @@ describe("/api/public/traces API Endpoint", () => {
         output: JSON.stringify({ response: "test response" }),
       });
 
-      await createTracesCh([createdTrace]);
+      await createTracesGreptime([createdTrace]);
 
       const traces = await makeZodVerifiedAPICall(
         GetTracesV1Response,
@@ -1096,8 +1102,8 @@ describe("/api/public/traces API Endpoint", () => {
       });
 
       await Promise.all([
-        createTracesCh([createdTrace]),
-        createScoresCh([score]),
+        createTracesGreptime([createdTrace]),
+        createScoresGreptime([score]),
       ]);
 
       const traces = await makeZodVerifiedAPICall(
@@ -1142,8 +1148,8 @@ describe("/api/public/traces API Endpoint", () => {
       });
 
       await Promise.all([
-        createTracesCh([createdTrace]),
-        createObservationsCh([observation]),
+        createTracesGreptime([createdTrace]),
+        createObservationsGreptime([observation]),
       ]);
 
       const traces = await makeZodVerifiedAPICall(
@@ -1189,8 +1195,8 @@ describe("/api/public/traces API Endpoint", () => {
       });
 
       await Promise.all([
-        createTracesCh([createdTrace]),
-        createObservationsCh([observation]),
+        createTracesGreptime([createdTrace]),
+        createObservationsGreptime([observation]),
       ]);
 
       const traces = await makeZodVerifiedAPICall(
@@ -1237,9 +1243,9 @@ describe("/api/public/traces API Endpoint", () => {
         createFieldsFilteringFixture(projectId);
 
       await Promise.all([
-        createTracesCh([createdTrace]),
-        createObservationsCh([observation]),
-        createScoresCh([score]),
+        createTracesGreptime([createdTrace]),
+        createObservationsGreptime([observation]),
+        createScoresGreptime([score]),
       ]);
 
       const traces = await makeZodVerifiedAPICall(
@@ -1974,7 +1980,7 @@ describe("/api/public/traces API Endpoint", () => {
           await Promise.all([
             createTraceWithObservations(useEventsTable, trace1, []),
             createTraceWithObservations(useEventsTable, trace2, []),
-            createScoresCh([score1, score2]),
+            createScoresGreptime([score1, score2]),
           ]);
 
           // Test filtering by score_categories (check for "good" score)
@@ -2309,7 +2315,7 @@ describe("/api/public/traces API Endpoint", () => {
             value: 0.9,
           });
 
-          await createScoresCh([score]);
+          await createScoresGreptime([score]);
 
           const traces = await makeZodVerifiedAPICall(
             GetTracesV1Response,
@@ -2454,9 +2460,9 @@ describe("/api/public/traces API Endpoint", () => {
       });
 
       await Promise.all([
-        createTracesCh([createdTrace]),
-        createObservationsCh([observation]),
-        createScoresCh([score]),
+        createTracesGreptime([createdTrace]),
+        createObservationsGreptime([observation]),
+        createScoresGreptime([score]),
       ]);
 
       const response = await makeZodVerifiedAPICall(
@@ -2492,7 +2498,7 @@ describe("/api/public/traces API Endpoint", () => {
         output: JSON.stringify({ response: "test response" }),
       });
 
-      await createTracesCh([createdTrace]);
+      await createTracesGreptime([createdTrace]);
 
       const response = await makeZodVerifiedAPICall(
         GetTracesV1Response,

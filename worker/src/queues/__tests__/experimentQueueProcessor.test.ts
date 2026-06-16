@@ -24,8 +24,8 @@ vi.mock("../../features/utils", () => ({
   retryLLMRateLimitError: vi.fn(),
 }));
 
-vi.mock("../../features/experiments/experimentServiceClickhouse", () => ({
-  createExperimentJobClickhouse: vi.fn(),
+vi.mock("../../features/experiments/experimentService", () => ({
+  createExperimentJob: vi.fn(),
 }));
 
 vi.mock("../../errors/UnrecoverableError", async () => {
@@ -37,7 +37,7 @@ vi.mock("../../errors/UnrecoverableError", async () => {
 });
 
 import { isLLMCompletionError } from "@langfuse/shared/src/server";
-import { createExperimentJobClickhouse } from "../../features/experiments/experimentServiceClickhouse";
+import { createExperimentJob } from "../../features/experiments/experimentService";
 import { retryLLMRateLimitError } from "../../features/utils";
 import { experimentCreateQueueProcessor } from "../experimentQueue";
 import { isUnrecoverableError } from "../../errors/UnrecoverableError";
@@ -62,7 +62,7 @@ describe("experimentCreateQueueProcessor", () => {
   it("rethrows retryable LLM errors when the retry queue is unavailable", async () => {
     const llmError = new Error("Rate limit exceeded");
     (llmError as Error & { isRetryable: boolean }).isRetryable = true;
-    (createExperimentJobClickhouse as Mock).mockRejectedValue(llmError);
+    (createExperimentJob as Mock).mockRejectedValue(llmError);
     (isLLMCompletionError as Mock).mockReturnValue(true);
     (retryLLMRateLimitError as Mock).mockResolvedValue({
       outcome: "queue_unavailable",

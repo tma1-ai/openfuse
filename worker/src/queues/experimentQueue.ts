@@ -10,14 +10,14 @@ import {
 } from "@langfuse/shared/src/server";
 import { retryLLMRateLimitError } from "../features/utils";
 import { delayInMs } from "./utils/delays";
-import { createExperimentJobClickhouse } from "../features/experiments/experimentServiceClickhouse";
+import { createExperimentJob } from "../features/experiments/experimentService";
 import { isUnrecoverableError } from "../errors/UnrecoverableError";
 
 export const experimentCreateQueueProcessor = async (
   job: Job<TQueueJobTypes[QueueName.ExperimentCreate]>,
 ) => {
   try {
-    await createExperimentJobClickhouse({
+    await createExperimentJob({
       event: job.data.payload,
     });
     return true;

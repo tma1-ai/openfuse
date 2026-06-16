@@ -22,5 +22,4 @@ pnpm run db:generate
 # Keep local databases initialized for worker/web tests during maintenance runs.
 pnpm --filter=shared run db:reset:test
 pnpm --filter=shared run db:reset -f
-SKIP_CONFIRM=1 pnpm --filter=shared run ch:reset
 pnpm --filter=shared run db:seed:examples

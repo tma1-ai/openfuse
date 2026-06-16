@@ -518,6 +518,9 @@ export const getScoresAndCorrectionsForTraces = (
 // groupings (filter-option helpers) — plain scores path
 // ---------------------------------------------------------------------------
 
+// Control-char separator for array_to_string(array_agg(...)); robust against commas in score values.
+const CATEGORICAL_VALUE_SEP = String.fromCharCode(1);
+
 const applyScoresColumnsFilter = (filter: FilterState) =>
   new FilterList(
     createGreptimeFilterFromFilterState(
@@ -555,7 +558,7 @@ export const getScoresGroupedByNameSourceType = async ({
         AND ${dt.sql}
         AND ${notDeleted("s")}
       GROUP BY name, source, data_type
-      ORDER BY count(*) DESC
+      ORDER BY count(*) DESC, name ASC, source ASC, data_type ASC
       LIMIT 200`,
     params: {
       projectId,
@@ -599,9 +602,16 @@ export const getCategoricalScoresGroupedByName = async (
   filter?: FilterState,
 ) => {
   const filterRes = filter ? applyScoresColumnsFilter(filter) : undefined;
-  const rows = await greptimeQuery<{ label: string; values: unknown }>({
+  // mysql2 returns array_agg as an unquoted bracket-string ("[a, b]"), not JSON, so
+  // `array_to_string(array_agg(DISTINCT ...), :sep)` with a control-char separator yields a clean,
+  // NULL-skipping joined string we split in app code (robust to commas in score values). Mirrors the
+  // experiments / sessions readers.
+  const rows = await greptimeQuery<{
+    label: string;
+    values_raw: string | null;
+  }>({
     query: `
-      SELECT name AS label, array_agg(DISTINCT string_value) AS values
+      SELECT name AS label, array_to_string(array_agg(DISTINCT string_value), :valueSep) AS values_raw
       FROM scores s
       WHERE s.project_id = :projectId
         AND s.data_type = 'CATEGORICAL'
@@ -610,14 +620,18 @@ export const getCategoricalScoresGroupedByName = async (
       GROUP BY name
       ORDER BY count(*) DESC
       LIMIT 200`,
-    params: { projectId, ...(filterRes ? filterRes.params : {}) },
+    params: {
+      projectId,
+      valueSep: CATEGORICAL_VALUE_SEP,
+      ...(filterRes ? filterRes.params : {}),
+    },
     readOnly: true,
   });
 
   const normalized = rows.map((row) => ({
     label: row.label,
-    values: greptimeJson<string[]>(row.values, [])
-      .filter((v): v is string => v != null)
+    values: (row.values_raw ? row.values_raw.split(CATEGORICAL_VALUE_SEP) : [])
+      .filter((v) => v !== "")
       .slice(0, 20),
   }));
 

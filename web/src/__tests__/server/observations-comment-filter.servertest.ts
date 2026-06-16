@@ -5,9 +5,9 @@ import { createInnerTRPCContext } from "@/src/server/api/trpc";
 import {
   createOrgProjectAndApiKey,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
 } from "@langfuse/shared/src/server";
 import { randomUUID } from "crypto";
 
@@ -78,7 +78,7 @@ describe("Observations Comment Filtering", () => {
         project_id: projectId,
         id: randomUUID(),
       });
-      await createTracesCh([trace1, trace2]);
+      await createTracesGreptime([trace1, trace2]);
 
       const observation1Id = randomUUID();
       const observation2Id = randomUUID();
@@ -95,7 +95,7 @@ describe("Observations Comment Filtering", () => {
         trace_id: trace2.id,
         type: "GENERATION",
       });
-      await createObservationsCh([observation1, observation2]);
+      await createObservationsGreptime([observation1, observation2]);
 
       // Add 2 comments to observation1
       await prisma.comment.createMany({
@@ -158,7 +158,7 @@ describe("Observations Comment Filtering", () => {
         project_id: projectId,
         id: randomUUID(),
       });
-      await createTracesCh([trace1, trace2]);
+      await createTracesGreptime([trace1, trace2]);
 
       const observation1Id = randomUUID();
       const observation2Id = randomUUID();
@@ -175,7 +175,7 @@ describe("Observations Comment Filtering", () => {
         trace_id: trace2.id,
         type: "GENERATION",
       });
-      await createObservationsCh([observation1, observation2]);
+      await createObservationsGreptime([observation1, observation2]);
 
       // Add comments with different content
       await prisma.comment.create({
@@ -222,7 +222,7 @@ describe("Observations Comment Filtering", () => {
         project_id: projectId,
         id: randomUUID(),
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const observationId = randomUUID();
       const observation = createObservation({
@@ -231,7 +231,7 @@ describe("Observations Comment Filtering", () => {
         trace_id: trace.id,
         type: "GENERATION",
       });
-      await createObservationsCh([observation]);
+      await createObservationsGreptime([observation]);
 
       // Add 2 comments with "bug" in content
       await prisma.comment.createMany({
@@ -282,7 +282,7 @@ describe("Observations Comment Filtering", () => {
         project_id: projectId,
         id: randomUUID(),
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const observationId = randomUUID();
       const observation = createObservation({
@@ -291,7 +291,7 @@ describe("Observations Comment Filtering", () => {
         trace_id: trace.id,
         type: "GENERATION",
       });
-      await createObservationsCh([observation]);
+      await createObservationsGreptime([observation]);
 
       // Add comment
       await prisma.comment.create({
@@ -333,7 +333,7 @@ describe("Observations Comment Filtering", () => {
         project_id: projectId,
         id: randomUUID(),
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const observationId = randomUUID();
       const observation = createObservation({
@@ -342,7 +342,7 @@ describe("Observations Comment Filtering", () => {
         trace_id: trace.id,
         type: "GENERATION",
       });
-      await createObservationsCh([observation]);
+      await createObservationsGreptime([observation]);
 
       // Add comment
       await prisma.comment.create({
@@ -388,7 +388,7 @@ describe("Observations Comment Filtering", () => {
         project_id: projectId,
         id: randomUUID(),
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const observationId = randomUUID();
       const observation = createObservation({
@@ -397,7 +397,7 @@ describe("Observations Comment Filtering", () => {
         trace_id: trace.id,
         type: "GENERATION",
       });
-      await createObservationsCh([observation]);
+      await createObservationsGreptime([observation]);
 
       // Add comment
       await prisma.comment.create({
@@ -430,7 +430,7 @@ describe("Observations Comment Filtering", () => {
         project_id: projectId,
         id: randomUUID(),
       });
-      await createTracesCh([trace]);
+      await createTracesGreptime([trace]);
 
       const observationId = randomUUID();
       const observation = createObservation({
@@ -439,7 +439,7 @@ describe("Observations Comment Filtering", () => {
         trace_id: trace.id,
         type: "GENERATION",
       });
-      await createObservationsCh([observation]);
+      await createObservationsGreptime([observation]);
 
       // Add comment with special characters
       await prisma.comment.create({

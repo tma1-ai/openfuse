@@ -1,12 +1,12 @@
 import { expect, describe, it, beforeAll } from "vitest";
 import {
   createObservation,
-  createObservationsCh,
+  createObservationsGreptime,
   createOrgProjectAndApiKey,
   createTraceScore,
-  createScoresCh,
+  createScoresGreptime,
   createTrace,
-  createTracesCh,
+  createTracesGreptime,
   getObservationsForTrace,
   getScoresForTraces,
   getTracesByIds,
@@ -37,9 +37,11 @@ describe("trace deletion", () => {
     const { projectId } = await createOrgProjectAndApiKey();
 
     const traceId = randomUUID();
-    await createTracesCh([createTrace({ id: traceId })]);
-    await createObservationsCh([createObservation({ trace_id: traceId })]);
-    await createScoresCh([createTraceScore({ trace_id: traceId })]);
+    await createTracesGreptime([createTrace({ id: traceId })]);
+    await createObservationsGreptime([
+      createObservation({ trace_id: traceId }),
+    ]);
+    await createScoresGreptime([createTraceScore({ trace_id: traceId })]);
 
     // When
     await processClickhouseTraceDelete("projectId", [traceId]);
@@ -69,8 +71,10 @@ describe("trace deletion", () => {
     const traceId = randomUUID();
     const observationId = randomUUID();
 
-    await createTracesCh([createTrace({ id: traceId, project_id: projectId })]);
-    await createObservationsCh([
+    await createTracesGreptime([
+      createTrace({ id: traceId, project_id: projectId }),
+    ]);
+    await createObservationsGreptime([
       createObservation({
         id: observationId,
         trace_id: traceId,
@@ -170,7 +174,7 @@ describe("trace deletion", () => {
     const traceId1 = randomUUID();
     const traceId2 = randomUUID();
 
-    await createTracesCh([
+    await createTracesGreptime([
       createTrace({ id: traceId1, project_id: projectId }),
       createTrace({ id: traceId2, project_id: projectId }),
     ]);

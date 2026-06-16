@@ -59,7 +59,6 @@ import {
   ScoreDeleteQueue,
   QueueJobs,
   getScoreMetadataById,
-  deleteScores,
   deleteEntitiesFromGreptime,
   getTracesIdentifierForSession,
   validateConfigAgainstBody,
@@ -94,12 +93,9 @@ type AllScoresReturnType = Omit<ScoreDomain, "metadata"> & {
   hasMetadata: boolean;
 };
 
-type AllScoresFromEventsReturnType = Omit<ScoreDomain, "metadata"> & {
-  jobConfigurationId: string | null;
-  authorUserImage: string | null;
-  authorUserName: string | null;
-  hasMetadata: boolean;
-};
+// The events read path now collapses onto the GreptimeDB scores projection,
+// which (like the v1 reader) returns the trace-denormalised fields.
+type AllScoresFromEventsReturnType = AllScoresReturnType;
 
 export const scoresRouter = createTRPCRouter({
   /**
@@ -508,7 +504,6 @@ export const scoresRouter = createTRPCRouter({
           };
 
       if (inflatedParams.traceId) {
-        // eslint-disable-next-line @typescript-eslint/no-deprecated
         const clickhouseTrace = await getTraceById({
           traceId: inflatedParams.traceId,
           projectId: input.projectId,
@@ -525,7 +520,6 @@ export const scoresRouter = createTRPCRouter({
         }
       } else if (inflatedParams.sessionId) {
         // We consider no longer writing all sessions into postgres, hence we should search for traces with the session id
-        // eslint-disable-next-line @typescript-eslint/no-deprecated
         const traceIdentifiers = await getTracesIdentifierForSession(
           input.projectId,
           inflatedParams.sessionId,
@@ -678,7 +672,6 @@ export const scoresRouter = createTRPCRouter({
             };
 
         if (inflatedParams.traceId) {
-          // eslint-disable-next-line @typescript-eslint/no-deprecated
           const clickhouseTrace = await getTraceById({
             traceId: inflatedParams.traceId,
             projectId: input.projectId,
@@ -695,7 +688,6 @@ export const scoresRouter = createTRPCRouter({
           }
         } else if (inflatedParams.sessionId) {
           // We consider no longer writing all sessions into postgres, hence we should search for traces with the session id
-          // eslint-disable-next-line @typescript-eslint/no-deprecated
           const traceIdentifiers = await getTracesIdentifierForSession(
             input.projectId,
             inflatedParams.sessionId,
@@ -913,14 +905,11 @@ export const scoresRouter = createTRPCRouter({
         before: clickhouseScore,
       });
 
-      await Promise.all([
-        deleteEntitiesFromGreptime({
-          projectId: input.projectId,
-          entityType: "score",
-          entityIds: [clickhouseScore.id],
-        }),
-        deleteScores(input.projectId, [clickhouseScore.id]),
-      ]);
+      await deleteEntitiesFromGreptime({
+        projectId: input.projectId,
+        entityType: "score",
+        entityIds: [clickhouseScore.id],
+      });
 
       return validateDbScore(clickhouseScore);
     }),
@@ -944,7 +933,6 @@ export const scoresRouter = createTRPCRouter({
         scope: "scores:CUD",
       });
 
-      // eslint-disable-next-line @typescript-eslint/no-deprecated
       const clickhouseTrace = await getTraceById({
         traceId: input.traceId,
         projectId: input.projectId,

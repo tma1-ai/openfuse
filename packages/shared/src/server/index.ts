@@ -50,6 +50,7 @@ export * from "./utils/compareVersions";
 export * from "./otel/utils";
 export * from "./clickhouse/client";
 export * from "./greptime/client";
+export * from "./greptime/applyMigrations";
 // Namespaced: greptime-filter intentionally mirrors clickhouse-filter's class names
 // (StringFilter/FilterList/...), so it cannot be flat re-exported alongside ./queries.
 export * as greptimeFilters from "./greptime/sql/greptime-filter";
@@ -66,13 +67,8 @@ export * from "./greptime/converters";
 export * from "./greptime/deletion";
 export * from "./greptime/ingest/tableSchemas";
 export * from "./greptime/ingest/rowBuilders";
-export {
-  getClickHouseCompatibilitySettings,
-  initializeClickhouseCompatibility,
-} from "./clickhouse/compatibility";
 export * from "./clickhouse/schemaUtils";
 export * from "./clickhouse/schema";
-export * from "./clickhouse/queryTracking";
 export * from "./repositories/definitions";
 export * from "../utils/IORepresentation/chatML/types";
 export * from "../server/ingestion/types";
@@ -114,7 +110,6 @@ export * from "./webhooks/ipBlocking";
 export * from "./redis/experimentCreateQueue";
 export * from "./redis/dlqRetryQueue";
 export * from "./redis/entityChangeQueue";
-export * from "./redis/eventPropagationQueue";
 export * from "./redis/otelProjectTracking";
 export * from "./redis/s3SlowdownTracking";
 export * from "./auth/types";

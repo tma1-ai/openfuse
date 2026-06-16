@@ -492,6 +492,43 @@ export const getDatasetItemIdsByTraceIdGreptime = async (
 };
 
 // ---------------------------------------------------------------------------
+// existing dataset-item ids for a run (experiment dedup)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the set of dataset_item_ids that already have a run item in the given
+ * (project, dataset, run). Used by the experiment processor to skip items that
+ * were already materialized, replacing the ClickHouse `dataset_run_items_rmt`
+ * dedup read.
+ */
+export const getExistingRunItemDatasetItemIdsGreptime = async (opts: {
+  projectId: string;
+  datasetId: string;
+  runId: string;
+}): Promise<Set<string>> => {
+  const { projectId, datasetId, runId } = opts;
+  const innerWhere = [
+    "project_id = :projectId",
+    "dataset_id = :datasetId",
+    "dataset_run_id = :runId",
+    notDeleted(),
+  ].join(" AND ");
+  const dedup = dedupSubquery({
+    columns: ["dataset_item_id"],
+    whereSql: innerWhere,
+  });
+  const rows = await greptimeQuery<{ dataset_item_id: string }>({
+    query: `
+      SELECT dri.dataset_item_id AS dataset_item_id
+      FROM (${dedup}) dri
+      WHERE dri.rn = 1`,
+    params: { projectId, datasetId, runId },
+    readOnly: true,
+  });
+  return new Set(rows.map((r) => r.dataset_item_id));
+};
+
+// ---------------------------------------------------------------------------
 // multi-run intersection (dataset items qualifying across ALL runs)
 // ---------------------------------------------------------------------------
 

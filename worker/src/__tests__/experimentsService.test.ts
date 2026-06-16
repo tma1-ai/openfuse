@@ -3,7 +3,7 @@ import { prisma } from "@langfuse/shared/src/db";
 import { randomUUID } from "crypto";
 import { LLMAdapter } from "@langfuse/shared";
 import { encrypt } from "@langfuse/shared/encryption";
-import { createExperimentJobClickhouse } from "../features/experiments/experimentServiceClickhouse";
+import { createExperimentJob } from "../features/experiments/experimentService";
 import {
   createDatasetItem,
   createOrgProjectAndApiKey,
@@ -101,14 +101,14 @@ describe("create experiment jobs", () => {
       runId,
     };
 
-    const result = await createExperimentJobClickhouse({ event: payload });
+    const result = await createExperimentJob({ event: payload });
 
     // Just verify it doesn't throw and returns success
     expect(result).toEqual({ success: true });
 
     // Verify that processing info was logged
     expect(mockLogger.info).toHaveBeenCalledWith(
-      "Processing experiment create job with ClickHouse batching",
+      "Processing experiment create job",
       expect.objectContaining({
         projectId,
         datasetId,
@@ -159,7 +159,7 @@ describe("create experiment jobs", () => {
       runId,
     };
 
-    const result = await createExperimentJobClickhouse({ event: payload });
+    const result = await createExperimentJob({ event: payload });
 
     // Verify it doesn't throw and returns success even with validation errors
     expect(result).toEqual({ success: true });
@@ -240,7 +240,7 @@ describe("create experiment jobs", () => {
       runId,
     };
 
-    const result = await createExperimentJobClickhouse({ event: payload });
+    const result = await createExperimentJob({ event: payload });
 
     // Just verify it doesn't throw and returns success
     expect(result).toEqual({ success: true });
@@ -312,7 +312,7 @@ describe("create experiment jobs", () => {
       runId,
     };
 
-    const result = await createExperimentJobClickhouse({ event: payload });
+    const result = await createExperimentJob({ event: payload });
 
     // Just verify it doesn't throw and returns success
     expect(result).toEqual({ success: true });
@@ -418,7 +418,7 @@ describe("create experiment jobs with placeholders", () => {
       runId,
     };
 
-    const result = await createExperimentJobClickhouse({ event: payload });
+    const result = await createExperimentJob({ event: payload });
 
     // Just verify it doesn't throw and returns success
     expect(result).toEqual({ success: true });
@@ -442,7 +442,7 @@ describe("create experiment jobs with placeholders", () => {
       runId,
     };
 
-    const result = await createExperimentJobClickhouse({ event: payload });
+    const result = await createExperimentJob({ event: payload });
 
     // Just verify it doesn't throw and returns success
     expect(result).toEqual({ success: true });
@@ -466,7 +466,7 @@ describe("create experiment jobs with placeholders", () => {
       runId,
     };
 
-    const result = await createExperimentJobClickhouse({ event: payload });
+    const result = await createExperimentJob({ event: payload });
 
     // Just verify it doesn't throw and returns success
     expect(result).toEqual({ success: true });
@@ -547,7 +547,7 @@ describe("experiment processing integration", () => {
       runId,
     };
 
-    const result = await createExperimentJobClickhouse({ event: payload });
+    const result = await createExperimentJob({ event: payload });
 
     // Just verify it completes successfully
     expect(result).toEqual({ success: true });
