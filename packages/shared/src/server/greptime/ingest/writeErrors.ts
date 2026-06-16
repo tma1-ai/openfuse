@@ -67,7 +67,8 @@ const errorClassLabel = (err: unknown): string => {
  * code-8 request will fail forever on retry but succeeds once split/truncated. A `TimeoutError`
  * reflects latency, not a bad row, so it retries the whole batch rather than being isolated and
  * dropped. Everything else defers to the SDK's conservative retriability (transient transport/region
- * conditions retry, deterministic value/schema/business errors do not).
+ * conditions retry, deterministic value/schema/business errors do not). Unknown foreign errors are
+ * treated as transient: dropping data requires a known deterministic row-level failure signal.
  */
 export const classifyGreptimeWriteError = (
   err: unknown,
@@ -82,6 +83,9 @@ export const classifyGreptimeWriteError = (
   // The SDK marks a client-side timeout non-retriable (it's the caller's deadline), but our retries
   // are queue-driven, not in-call — a timeout is a latency blip to retry, never a poison row to drop.
   if (err instanceof TimeoutError || isRetriable(err, "conservative")) {
+    return { class: "transient", errorClass };
+  }
+  if (!(err instanceof IngesterError)) {
     return { class: "transient", errorClass };
   }
   return { class: "poison", errorClass };

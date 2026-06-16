@@ -221,6 +221,27 @@ describe("GreptimeWriter batch-failure isolation", () => {
     ).toHaveLength(0);
   });
 
+  it("treats unknown writer errors as transient instead of poison-isolating rows", async () => {
+    const { write } = fakeWriter(() => new Error("foreign client error"));
+    const writer = GreptimeWriter.createForTest({ write });
+
+    for (const id of ["t1", "t2"]) {
+      writer.addToQueue(
+        GreptimeTable.Traces,
+        createTrace({ project_id: "p", id, metadata: {}, tags: [] }),
+      );
+    }
+    await writer.flushAll(true);
+
+    expect(write.mock.calls.length).toBeGreaterThan(1);
+    expect(
+      incrementsFor("langfuse.queue.greptime_writer.bisect_runs"),
+    ).toHaveLength(0);
+    expect(
+      incrementsFor("langfuse.queue.greptime_writer.rows_dropped"),
+    ).toHaveLength(0);
+  });
+
   it("truncates an oversized isolated row and retries instead of dropping it", async () => {
     const cap = env.LANGFUSE_GREPTIME_WRITE_MAX_FIELD_BYTES;
     const failThreshold = Math.floor(cap * 1.5);

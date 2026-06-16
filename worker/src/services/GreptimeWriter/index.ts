@@ -41,7 +41,10 @@ import { env } from "../../env";
  * backOff whose retry predicate only retries *transient* failures; a *deterministic* (poison/oversize)
  * failure breaks out immediately and is handed to `bisectGroups`, which splits the batch by logical
  * group to isolate the bad entity while good entities land. The bisection unit is the logical group —
- * an entity's projection row plus its EAV rows — so projection/EAV fate-sharing is never broken.
+ * an entity's projection row plus its EAV rows — so bisection never splits a projection from its EAV.
+ * (Independently, the per-table `batchSize` splice can still spread one fan-out across flushes if a
+ * queue crosses the threshold mid-record; that is pre-existing behaviour, healed by the idempotent
+ * full-history rebuild, not something bisection introduces or worsens.)
  */
 
 // Re-exported so existing `import { GreptimeWriter, GreptimeTable } from ".../GreptimeWriter"`
@@ -236,7 +239,11 @@ export class GreptimeWriter {
   }
 
   private requeueGroups(groups: WriteGroup<QueueItem>[]): void {
-    this.requeueItems(groups.flatMap((g) => g.items));
+    const items: { table: string; item: QueueItem }[] = [];
+    for (const group of groups) {
+      for (const item of group.items) items.push(item);
+    }
+    this.requeueItems(items);
   }
 
   /**
@@ -374,11 +381,11 @@ export class GreptimeWriter {
         const classification = classifyGreptimeWriteError(err);
         if (classification.class === "transient") {
           logger.error("GreptimeWriter.flushAll (transient)", err);
-          this.requeueItems(
-            spliced.flatMap(({ table, items }) =>
-              items.map((item) => ({ table, item })),
-            ),
-          );
+          const items: { table: string; item: QueueItem }[] = [];
+          for (const { table, items: queueItems } of spliced) {
+            for (const item of queueItems) items.push({ table, item });
+          }
+          this.requeueItems(items);
           return;
         }
         // Deterministic failure: isolate the bad group(s) so good groups still land.

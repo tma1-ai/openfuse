@@ -56,9 +56,9 @@ describe("classifyGreptimeWriteError", () => {
     });
   });
 
-  it("treats unknown foreign throws as poison", () => {
+  it("treats unknown foreign throws as transient", () => {
     expect(classifyGreptimeWriteError(new Error("boom"))).toEqual({
-      class: "poison",
+      class: "transient",
       errorClass: "unknown",
     });
   });
