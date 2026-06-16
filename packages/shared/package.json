@@ -80,7 +80,8 @@
     "db:generate": "dotenv -e ../../.env -- npx prisma generate --no-hints",
     "db:seed:examples": "dotenv -e ../../.env -- npx prisma db seed -- --environment examples",
     "db:seed:load": "dotenv -e ../../.env -- npx prisma db seed -- --environment load",
-    "seed:scenario": "dotenv -e ../../.env -- tsx scripts/seeder/cli.ts"
+    "seed:scenario": "dotenv -e ../../.env -- tsx scripts/seeder/cli.ts",
+    "greptime:migrate": "dotenv -e ../../.env -- tsx scripts/applyGreptimeSchema.ts"
   },
   "prisma": {
     "seed": "ts-node -r dotenv/config --compiler-options {\"module\":\"CommonJS\"} scripts/seeder/seed-postgres.ts"
