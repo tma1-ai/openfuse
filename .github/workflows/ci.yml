@@ -28,7 +28,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       # Dummy env just to satisfy import-time env validation; no service is contacted here.
@@ -88,7 +88,7 @@ jobs:
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: pnpm
 
       # GreptimeDB needs a custom start command, which GitHub `services:` cannot
