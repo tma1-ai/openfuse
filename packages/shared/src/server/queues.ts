@@ -78,6 +78,11 @@ export const ScoresQueueEventSchema = z.object({
   projectId: z.string(),
   scoreIds: z.array(z.string()),
 });
+// Upper bound on a single reconciliation page, enforced on both the admin route and the queue
+// payload so a manual trigger (or a self-requeue) cannot blow one job up into a huge DB scan +
+// rebuild batch.
+export const GREPTIME_RECONCILIATION_MAX_BATCH_SIZE = 1000;
+
 export const GreptimeReconciliationEventSchema = z.object({
   projectId: z.string(),
   // Keyset cursor into raw_events ordered by (entity_type, entity_id). Omitted on the first job;
@@ -90,7 +95,12 @@ export const GreptimeReconciliationEventSchema = z.object({
     .optional(),
   // Entities enumerated + rebuilt per job before self-requeue. Optional so the producer can rely on
   // the worker-side default.
-  batchSize: z.number().int().positive().optional(),
+  batchSize: z
+    .number()
+    .int()
+    .positive()
+    .max(GREPTIME_RECONCILIATION_MAX_BATCH_SIZE)
+    .optional(),
 });
 export const DatasetQueueEventSchema = z.discriminatedUnion("deletionType", [
   // Delete all run items for a specific dataset

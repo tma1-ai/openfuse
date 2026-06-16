@@ -2,6 +2,7 @@ import { type NextApiRequest, type NextApiResponse } from "next";
 import { z } from "zod";
 import { randomUUID } from "crypto";
 import {
+  GREPTIME_RECONCILIATION_MAX_BATCH_SIZE,
   GreptimeReconciliationQueue,
   logger,
   QueueJobs,
@@ -10,7 +11,12 @@ import { AdminApiAuthService } from "@/src/ee/features/admin-api/server/adminApi
 
 const GreptimeReconciliationBody = z.object({
   projectId: z.string().min(1),
-  batchSize: z.number().int().positive().optional(),
+  batchSize: z
+    .number()
+    .int()
+    .positive()
+    .max(GREPTIME_RECONCILIATION_MAX_BATCH_SIZE)
+    .optional(),
 });
 
 /**

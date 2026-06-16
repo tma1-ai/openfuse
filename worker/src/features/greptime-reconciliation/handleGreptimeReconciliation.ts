@@ -1,6 +1,7 @@
 import { randomUUID } from "crypto";
 import {
   getProjectDeletedAt,
+  GREPTIME_RECONCILIATION_MAX_BATCH_SIZE,
   GreptimeReconciliationEventType,
   GreptimeReconciliationQueue,
   type IngestionEntityTypes,
@@ -34,8 +35,12 @@ export async function handleGreptimeReconciliation(
   payload: GreptimeReconciliationEventType,
 ): Promise<void> {
   const { projectId } = payload;
-  const batchSize =
-    payload.batchSize ?? env.LANGFUSE_GREPTIME_RECONCILIATION_BATCH_SIZE;
+  // Clamp to the shared ceiling so neither an oversized env default nor a forged payload can blow one
+  // job into a huge scan + rebuild batch (the queue/admin schemas also reject over-limit values).
+  const batchSize = Math.min(
+    payload.batchSize ?? env.LANGFUSE_GREPTIME_RECONCILIATION_BATCH_SIZE,
+    GREPTIME_RECONCILIATION_MAX_BATCH_SIZE,
+  );
 
   if (!redis) throw new Error("Redis not available");
   if (!prisma) throw new Error("Prisma not available");
