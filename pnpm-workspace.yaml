@@ -11,7 +11,7 @@ minimumReleaseAge: 7200
 minimumReleaseAgeExclude:
   - ai@5.0.195
   - "@ai-sdk/gateway@2.0.96"
-  - "@greptime/ingester@0.2.0"
+  - "@greptime/ingester@0.2.1"
   - console-table-printer@2.16.1
 allowBuilds:
   "@prisma/client": true
