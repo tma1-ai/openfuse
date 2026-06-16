@@ -405,7 +405,7 @@ export class GreptimeQueryBuilder {
         "histogram does not support dimensions or a time dimension on GreptimeDB.",
       );
     }
-    if (metric.relationTable || metric.isByType) {
+    if (metric.relationTable || metric.isByType || metric.sql === "*") {
       throw new InvalidRequestError(
         "histogram is only supported for a base (non-relation) numeric measure on GreptimeDB.",
       );
@@ -421,11 +421,12 @@ export class GreptimeQueryBuilder {
       relations,
     );
 
-    const minMaxSql = `SELECT min(${valueExpr}) AS lo, max(${valueExpr}) AS hi, count(${valueExpr}) AS c ${fromClause}`;
+    const nonNullValue = `(${valueExpr}) IS NOT NULL`;
+    const minMaxSql = `SELECT min(${valueExpr}) AS lo, max(${valueExpr}) AS hi, count(*) AS c ${fromClause} AND ${nonNullValue}`;
     // `:hmin` / `:hbinwidth` / `:hmaxbucket` are supplied by the executor after the min/max probe.
     const bucketSql =
       `SELECT CAST(least(floor((${valueExpr} - :hmin) / :hbinwidth), :hmaxbucket) AS BIGINT) AS bucket, count(*) AS c ` +
-      `${fromClause} GROUP BY bucket`;
+      `${fromClause} AND ${nonNullValue} GROUP BY bucket`;
 
     return {
       query: minMaxSql,

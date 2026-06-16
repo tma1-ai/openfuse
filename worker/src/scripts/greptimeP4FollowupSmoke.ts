@@ -603,6 +603,30 @@ async function main() {
     byQualityLow.length === 2,
     byQualityLow.map((e) => e.id),
   );
+  const byQualityAndSentiment = await getExperimentsFromEvents({
+    projectId: SMOKE_PROJECT,
+    filter: [
+      {
+        column: "trace_scores_avg",
+        key: "quality",
+        operator: ">=",
+        value: 0.85,
+        type: "numberObject",
+      },
+      {
+        column: "trace_score_categories",
+        key: "sentiment",
+        operator: "any of",
+        value: ["positive"],
+        type: "categoryOptions",
+      },
+    ],
+  });
+  check(
+    "experiments LIST mixed numeric+categorical score filters: only RUN1",
+    byQualityAndSentiment.length === 1 && byQualityAndSentiment[0].id === RUN1,
+    byQualityAndSentiment.map((e) => e.id),
+  );
 
   // --- A2: experiment items (qualification + per-(item,experiment) data) ---
   const items = await getExperimentItemsFromEvents({

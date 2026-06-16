@@ -530,9 +530,9 @@ const buildNumericScoreFilter = (
     if (!NUMERIC_OPS.has(f.operator)) {
       throw new InvalidRequestError(`Invalid score operator: ${f.operator}`);
     }
-    const k = `lsk${i}`;
-    const v = `lsv${i}`;
-    const g = `lsg${i}`;
+    const k = `lnsk${i}`;
+    const v = `lnsv${i}`;
+    const g = `lnsg${i}`;
     params[k] = f.key;
     params[v] = f.value;
     params[g] = scoreGrainLiteral(f.column);
@@ -548,55 +548,66 @@ const buildNumericScoreFilter = (
 };
 
 /**
- * Categorical run-level score filters. Kept as a precise correlated `EXISTS/NOT EXISTS` over `scores`
- * (string-set membership, with `none of` matching runs that have no such category) — a preaggregated
- * string-concat would be fragile for set membership and especially `none of`. Categorical filters are
- * rare, so the correlated form here is acceptable.
+ * Categorical run-level score filters resolved against the preaggregated `run_score_cat` CTE (DISTINCT
+ * categories per run/name/grain). `any of` -> EXISTS, `none of` -> NOT EXISTS (matching runs lacking
+ * the category) — precise set membership, no string-concat. A flat CTE with a single-level EXISTS on
+ * dataset_run_id is required: GreptimeDB rejects the nested correlated subquery
+ * (`cs.trace_id IN (SELECT ... FROM item_dedup WHERE dataset_run_id = ra.dataset_run_id)`) with
+ * "Unsupported operation: get stream from a distributed table".
  */
 const buildCategoricalScoreFilter = (
   categoricalFilters: FilterState,
   outerPrefix: string,
-): { sql: string; params: Record<string, unknown> } => {
+): { sql: string; params: Record<string, unknown>; needsCte: boolean } => {
   const clauses: string[] = [];
   const params: Record<string, unknown> = {};
-  const traceCorr = `cs.${quoteIdent("trace_id")} IN (SELECT ${quoteIdent("trace_id")} FROM item_dedup WHERE ${quoteIdent("dataset_run_id")} = ${outerPrefix}.${quoteIdent("dataset_run_id")})`;
+  let needsCte = false;
   categoricalFilters.forEach((f, i) => {
     if (f.type !== "categoryOptions") return;
     if (f.value.length === 0) {
       clauses.push(f.operator === "any of" ? "1 = 0" : "1 = 1");
       return;
     }
-    const isObs = f.column.startsWith("obs_");
-    const obsPred = isObs
-      ? `cs.${quoteIdent("observation_id")} IS NOT NULL AND cs.${quoteIdent("observation_id")} != ''`
-      : `(cs.${quoteIdent("observation_id")} IS NULL OR cs.${quoteIdent("observation_id")} = '')`;
-    const base = `SELECT 1 FROM ${quoteIdent("scores")} cs WHERE cs.${quoteIdent("project_id")} = :projectId AND ${traceCorr} AND ${obsPred} AND cs.${quoteIdent("is_deleted")} = false`;
-    const k = `lsk${i}`;
+    needsCte = true;
+    const k = `lcsk${i}`;
+    const g = `lcsg${i}`;
     params[k] = f.key;
+    params[g] = scoreGrainLiteral(f.column);
     const placeholders = f.value.map((val, j) => {
-      const name = `lscv${i}_${j}`;
+      const name = `lcsv${i}_${j}`;
       params[name] = val;
       return `:${name}`;
     });
     const negate = f.operator === "none of";
     clauses.push(
-      `${negate ? "NOT EXISTS" : "EXISTS"} (${base} AND cs.${quoteIdent("name")} = :${k} AND cs.${quoteIdent("data_type")} = 'CATEGORICAL' AND cs.${quoteIdent("string_value")} IN (${placeholders.join(", ")}))`,
+      `${negate ? "NOT EXISTS" : "EXISTS"} (SELECT 1 FROM run_score_cat rsc WHERE rsc.${quoteIdent("dataset_run_id")} = ${outerPrefix}.${quoteIdent("dataset_run_id")} AND rsc.${quoteIdent("name")} = :${k} AND rsc.grain = :${g} AND rsc.string_value IN (${placeholders.join(", ")}))`,
     );
   });
-  return { sql: clauses.join(" AND "), params };
+  return { sql: clauses.join(" AND "), params, needsCte };
 };
 
-/** Preaggregated per-(run, name, grain) numeric score average CTE (single pass over scores). */
+/** Per-(run, name, grain) score CTE built once over item_dedup ⋈ scores (numeric avg + DISTINCT categories). */
+const SCORE_GRAIN_CASE = `CASE WHEN cs.${quoteIdent("observation_id")} IS NULL OR cs.${quoteIdent("observation_id")} = '' THEN 'trace' ELSE 'obs' END`;
+
 const runScoreAggCte = (): string =>
   `run_score_agg AS (
     SELECT d.${quoteIdent("dataset_run_id")} AS dataset_run_id, cs.${quoteIdent("name")} AS name,
-      CASE WHEN cs.${quoteIdent("observation_id")} IS NULL OR cs.${quoteIdent("observation_id")} = '' THEN 'trace' ELSE 'obs' END AS grain,
+      ${SCORE_GRAIN_CASE} AS grain,
       avg(cs.${quoteIdent("value")}) AS avg_value
     FROM (SELECT DISTINCT ${quoteIdent("dataset_run_id")}, ${quoteIdent("trace_id")} FROM item_dedup) d
     JOIN ${quoteIdent("scores")} cs ON cs.${quoteIdent("project_id")} = :projectId AND cs.${quoteIdent("trace_id")} = d.${quoteIdent("trace_id")}
       AND cs.${quoteIdent("is_deleted")} = false AND cs.${quoteIdent("data_type")} IN ('NUMERIC', 'BOOLEAN')
-    GROUP BY d.${quoteIdent("dataset_run_id")}, cs.${quoteIdent("name")},
-      CASE WHEN cs.${quoteIdent("observation_id")} IS NULL OR cs.${quoteIdent("observation_id")} = '' THEN 'trace' ELSE 'obs' END
+    GROUP BY d.${quoteIdent("dataset_run_id")}, cs.${quoteIdent("name")}, ${SCORE_GRAIN_CASE}
+  )`;
+
+const runScoreCatCte = (): string =>
+  `run_score_cat AS (
+    SELECT DISTINCT d.${quoteIdent("dataset_run_id")} AS dataset_run_id, cs.${quoteIdent("name")} AS name,
+      ${SCORE_GRAIN_CASE} AS grain,
+      cs.${quoteIdent("string_value")} AS string_value
+    FROM (SELECT DISTINCT ${quoteIdent("dataset_run_id")}, ${quoteIdent("trace_id")} FROM item_dedup) d
+    JOIN ${quoteIdent("scores")} cs ON cs.${quoteIdent("project_id")} = :projectId AND cs.${quoteIdent("trace_id")} = d.${quoteIdent("trace_id")}
+      AND cs.${quoteIdent("is_deleted")} = false AND cs.${quoteIdent("data_type")} = 'CATEGORICAL'
   )`;
 
 const DEDUP_LIST_COLS = [
@@ -695,9 +706,14 @@ const buildListCtes = (
         GROUP BY d.${quoteIdent("dataset_run_id")}
       )`;
 
+  const scoreCtes = [
+    numericScore.needsCte ? runScoreAggCte() : null,
+    categoricalScore.needsCte ? runScoreCatCte() : null,
+  ].filter(Boolean);
+
   return {
-    ctes: numericScore.needsCte
-      ? `${baseCtes},\n      ${runScoreAggCte()}`
+    ctes: scoreCtes.length
+      ? `${baseCtes},\n      ${scoreCtes.join(",\n      ")}`
       : baseCtes,
     scoreWhere: scoreSql ? `WHERE ${scoreSql}` : "",
     params,

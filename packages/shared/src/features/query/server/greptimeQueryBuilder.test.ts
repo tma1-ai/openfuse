@@ -228,7 +228,9 @@ describe("GreptimeQueryBuilder", () => {
     });
     expect(tps.query).toMatch(/avg\(/);
     expect(tps.query).toMatch(/usage_details/);
-    expect(tps.query).toMatch(/to_unixtime\(o\.end_time\) - to_unixtime\(o\.start_time\)/);
+    expect(tps.query).toMatch(
+      /to_unixtime\(o\.end_time\) - to_unixtime\(o\.start_time\)/,
+    );
     const otps = build({
       view: "observations",
       metrics: [{ measure: "outputTokensPerSecond", aggregation: "avg" }],
@@ -277,8 +279,10 @@ describe("GreptimeQueryBuilder", () => {
       chartConfig: { type: "HISTOGRAM", bins: 10 },
     } as Partial<QueryType> & Pick<QueryType, "view">);
     expect(query).toMatch(/min\(s\.value\).*max\(s\.value\)/);
+    expect(query).toMatch(/s\.value\) IS NOT NULL/);
     expect(postProcess.histogram?.bins).toBe(10);
     expect(postProcess.histogram?.bucketSql).toMatch(/floor\(/);
+    expect(postProcess.histogram?.bucketSql).toMatch(/s\.value\) IS NOT NULL/);
     expect(postProcess.histogram?.bucketSql).toMatch(/GROUP BY bucket/);
     expect(postProcess.metricColumns).toEqual([]);
   });
@@ -298,5 +302,11 @@ describe("GreptimeQueryBuilder", () => {
         timeDimension: { granularity: "day" },
       }),
     ).toThrow(/histogram does not support dimensions or a time dimension/i);
+    expect(() =>
+      build({
+        view: "scores-numeric",
+        metrics: [{ measure: "count", aggregation: "histogram" }],
+      }),
+    ).toThrow(/histogram is only supported for a base .* numeric measure/i);
   });
 });
