@@ -12,12 +12,12 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      clickhouse:
+      greptimedb:
         condition: service_healthy
     ports:
       - "3000:3000"
-    environment: &langfuse-web-env
-      # Docker injects HOSTNAME=<container-id>; override it so app servers bind on all interfaces.
+    environment:
+      &langfuse-web-env # Docker injects HOSTNAME=<container-id>; override it so app servers bind on all interfaces.
       HOSTNAME: 0.0.0.0
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postgres}
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-mysecret}
@@ -35,11 +35,12 @@ services:
       LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
-      CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL:-clickhouse://clickhouse:9000}
-      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
-      CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
+      GREPTIME_GRPC_URL: ${GREPTIME_GRPC_URL:-greptimedb:4001}
+      GREPTIME_SQL_HOST: ${GREPTIME_SQL_HOST:-greptimedb}
+      GREPTIME_SQL_PORT: ${GREPTIME_SQL_PORT:-4002}
+      GREPTIME_DB: ${GREPTIME_DB:-openfuse}
+      GREPTIME_USER: ${GREPTIME_USER:-}
+      GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-}
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse}
       LANGFUSE_S3_EVENT_UPLOAD_REGION: ${LANGFUSE_S3_EVENT_UPLOAD_REGION:-us-east-1}
       LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID:-minio}
@@ -56,7 +57,15 @@ services:
       REDIS_TLS_KEY: ${REDIS_TLS_KEY:-/certs/redis.key}
     restart: always
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3000/api/public/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:3000/api/public/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -78,7 +87,15 @@ services:
       <<: *langfuse-web-env
     restart: always
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:3030/api/health"]
+      test:
+        [
+          "CMD",
+          "wget",
+          "--no-verbose",
+          "--tries=1",
+          "--spider",
+          "http://127.0.0.1:3030/api/health",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -86,25 +103,31 @@ services:
       start_period: 60s
       start_interval: 2s
 
-  clickhouse:
-    image: docker.io/clickhouse/clickhouse-server
-    user: "101:101"
-    environment:
-      CLICKHOUSE_DB: default
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse}
+  greptimedb:
+    # GreptimeDB analytics store (replaces ClickHouse). Standalone mode exposes HTTP (4000),
+    # gRPC (4001, ingest SDK), MySQL wire (4002, read path + migrations), Postgres wire (4003).
+    image: docker.io/greptime/greptimedb:latest
+    command:
+      - standalone
+      - start
+      - --http-addr=0.0.0.0:4000
+      - --rpc-bind-addr=0.0.0.0:4001
+      - --mysql-addr=0.0.0.0:4002
+      - --postgres-addr=0.0.0.0:4003
+      - --data-home=/greptimedb_data
     volumes:
-      - langfuse_clickhouse_data:/var/lib/clickhouse
-      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      - langfuse_greptimedb_data:/greptimedb_data
     ports:
-      - "8123:8123"
-      - "9000:9000"
+      - "4000:4000"
+      - "4001:4001"
+      - "4002:4002"
+      - "4003:4003"
     healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 1s
+      start_period: 2s
 
   minio:
     image: cgr.dev/chainguard/minio
@@ -162,9 +185,7 @@ services:
 volumes:
   langfuse_postgres_data:
     driver: local
-  langfuse_clickhouse_data:
-    driver: local
-  langfuse_clickhouse_logs:
+  langfuse_greptimedb_data:
     driver: local
   langfuse_minio_data:
     driver: local
