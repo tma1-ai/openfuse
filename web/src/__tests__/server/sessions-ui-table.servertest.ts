@@ -8,42 +8,20 @@ import {
   createSessionScore,
   createTracesGreptime,
   getSessionsWithMetrics,
-  getSessionsWithMetricsFromEvents,
-  getSessionMetricsFromEvents,
   getSessionsTable,
-  getSessionsTableFromEvents,
   type TraceRecordInsertType,
   type ObservationRecordInsertType,
 } from "@langfuse/shared/src/server";
 import { createTrace } from "@langfuse/shared/src/server";
 import { type FilterState } from "@langfuse/shared";
-import { env } from "@/src/env.mjs";
 
-const isEventsPath = env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true";
+const sessionsTable = getSessionsTable;
 
-// Pick the right listing function based on env flag
-const sessionsTable = isEventsPath
-  ? getSessionsTableFromEvents
-  : getSessionsTable;
-
-// Adapter for metrics: legacy takes filter/orderBy, events-based takes sessionIds
 async function sessionsWithMetrics(props: {
   projectId: string;
   filter: FilterState;
 }) {
-  if (!isEventsPath) {
-    return getSessionsWithMetrics(props);
-  }
-  const idFilter = props.filter.find(
-    (f): f is Extract<FilterState[number], { column: "id" }> =>
-      f.column === "id",
-  );
-  const sessionIds =
-    idFilter && "value" in idFilter ? (idFilter.value as string[]) : [];
-  return getSessionMetricsFromEvents({
-    projectId: props.projectId,
-    sessionIds,
-  });
+  return getSessionsWithMetrics(props);
 }
 
 /**
@@ -516,126 +494,5 @@ describe("trpc.sessions", () => {
 
     expect(tableRows).toHaveLength(1);
     expect(tableRows[0].session_id).toEqual(session_id_with_score);
-  });
-});
-
-// The events tables only exist where the v4 preview is enabled (CI creates
-// them via ch:dev-tables in the default deploy mode only).
-const maybeEventsTable = isEventsPath ? describe : describe.skip;
-
-maybeEventsTable("parity: sessions metrics from events vs legacy", () => {
-  it("returns equivalent metric fields for the same session data", async () => {
-    const { projectId } = await createOrgProjectAndApiKey();
-    const sessionId = v4();
-
-    await prisma.traceSession.create({
-      data: { id: sessionId, projectId },
-    });
-
-    const traces = [
-      createTrace({
-        session_id: sessionId,
-        project_id: projectId,
-        user_id: "user1",
-      }),
-      createTrace({
-        session_id: sessionId,
-        project_id: projectId,
-        user_id: "user2",
-      }),
-    ];
-
-    const observations = traces.flatMap((trace) => [
-      createObservation({ trace_id: trace.id, project_id: projectId }),
-      createObservation({ trace_id: trace.id, project_id: projectId }),
-    ]);
-
-    // Seed legacy path (sessions materialized view) and events table in parallel
-    await createTracesGreptime(traces);
-    await createObservationsGreptime(observations);
-
-    const filter: FilterState = [];
-
-    const [legacy, fromEvents] = await Promise.all([
-      getSessionsWithMetrics({ projectId, filter }),
-      getSessionsWithMetricsFromEvents({ projectId, filter }),
-    ]);
-
-    expect(legacy).toHaveLength(1);
-    expect(fromEvents).toHaveLength(1);
-
-    const l = legacy[0];
-    const e = fromEvents[0];
-
-    expect(e.session_id).toBe(l.session_id);
-    expect(e.trace_count).toBe(l.trace_count);
-    expect([...e.trace_ids].sort()).toEqual([...l.trace_ids].sort());
-    expect([...e.user_ids].sort()).toEqual([...l.user_ids].sort());
-    expect(e.total_observations).toBe(l.total_observations);
-
-    // Export-critical cost/usage fields (getDatabaseReadStream maps these directly)
-    expect(Number(e.session_input_cost)).toBeCloseTo(
-      Number(l.session_input_cost),
-      4,
-    );
-    expect(Number(e.session_output_cost)).toBeCloseTo(
-      Number(l.session_output_cost),
-      4,
-    );
-    expect(Number(e.session_total_cost)).toBeCloseTo(
-      Number(l.session_total_cost),
-      4,
-    );
-    expect(Number(e.session_input_usage)).toBeCloseTo(
-      Number(l.session_input_usage),
-      0,
-    );
-    expect(Number(e.session_output_usage)).toBeCloseTo(
-      Number(l.session_output_usage),
-      0,
-    );
-    expect(Number(e.session_total_usage)).toBeCloseTo(
-      Number(l.session_total_usage),
-      0,
-    );
-  });
-
-  it("honours the same filter so only the targeted session is returned", async () => {
-    const { projectId } = await createOrgProjectAndApiKey();
-    const targetId = v4();
-    const otherId = v4();
-
-    await prisma.traceSession.createMany({
-      data: [
-        { id: targetId, projectId },
-        { id: otherId, projectId },
-      ],
-    });
-
-    const traces = [
-      createTrace({ session_id: targetId, project_id: projectId }),
-      createTrace({ session_id: otherId, project_id: projectId }),
-    ];
-
-    await createTracesGreptime(traces);
-
-    const filter: FilterState = [
-      {
-        column: "id",
-        type: "stringOptions",
-        operator: "any of",
-        value: [targetId],
-      },
-    ];
-
-    const [legacy, fromEvents] = await Promise.all([
-      getSessionsWithMetrics({ projectId, filter }),
-      getSessionsWithMetricsFromEvents({ projectId, filter }),
-    ]);
-
-    expect(legacy).toHaveLength(1);
-    expect(fromEvents).toHaveLength(1);
-    expect(legacy[0].session_id).toBe(targetId);
-    expect(fromEvents[0].session_id).toBe(targetId);
   });
 });

@@ -66,7 +66,6 @@ function createSession(
       featureFlags: {
         excludeClickhouseRead: false,
         templateFlag: true,
-        v4BetaToggleVisible: false,
         observationEvals: false,
         experimentsV4Enabled: false,
       },

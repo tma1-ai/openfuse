@@ -54,7 +54,6 @@ const buildSession = (params: {
       inAppAgent: false,
       templateFlag: false,
       excludeClickhouseRead: false,
-      v4BetaToggleVisible: false,
       observationEvals: false,
       experimentsV4Enabled: false,
     },

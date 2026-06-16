@@ -3,7 +3,6 @@ import type * as SharedEnvModule from "@langfuse/shared/src/env";
 
 const { runCodeEvalTestForJobConfigMock } = vi.hoisted(() => {
   process.env.LANGFUSE_CODE_EVAL_DISPATCHER = "insecure-local";
-  process.env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN = "true";
 
   return {
     runCodeEvalTestForJobConfigMock: vi.fn(),

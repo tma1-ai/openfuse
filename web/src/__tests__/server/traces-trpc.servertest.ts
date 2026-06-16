@@ -8,21 +8,11 @@ import {
   createTraceScore,
   createScoresGreptime,
   getTraceByIdFromTracesTable,
-  createEventsAsGreptime,
-  createEvent,
-  getTraceByIdFromEventsTable,
   createObservation,
   createObservationsGreptime,
 } from "@langfuse/shared/src/server";
 
-// events_full is gone: seed the GreptimeDB observations projection plus a
-// synthesized denormalised trace so the events read path resolves on GreptimeDB.
-const seedObservationEvents = (
-  events: Parameters<typeof createEventsAsGreptime>[0],
-) => createEventsAsGreptime(events, { synthesizeTraces: true });
-import waitForExpect from "wait-for-expect";
 import { randomUUID } from "crypto";
-import { env } from "@/src/env.mjs";
 import { composeAggregateScoreKey } from "@/src/features/scores/lib/aggregateScores";
 import { BatchExportFileFormat, BatchTableNames } from "@langfuse/shared";
 
@@ -728,8 +718,6 @@ describe("traces trpc", () => {
   });
 
   describe("traces flags", () => {
-    const useEventsTable =
-      env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true";
     it("should bookmark a trace", async () => {
       // Create a trace that is not bookmarked
       const trace = createTrace({
@@ -738,19 +726,6 @@ describe("traces trpc", () => {
       });
 
       await createTracesGreptime([trace]);
-
-      if (useEventsTable) {
-        await seedObservationEvents([
-          createEvent({
-            id: trace.id,
-            span_id: trace.id,
-            trace_id: trace.id,
-            project_id: trace.project_id,
-            parent_span_id: null,
-            bookmarked: false,
-          }),
-        ]);
-      }
 
       const cleanTrace = await getTraceByIdFromTracesTable({
         traceId: trace.id,
@@ -779,34 +754,6 @@ describe("traces trpc", () => {
 
       expect(updatedTrace).toBeDefined();
       expect(updatedTrace?.bookmarked).toBe(true);
-
-      if (useEventsTable) {
-        await waitForExpect(async () => {
-          // Verify events_core
-          const eventTrace = await getTraceByIdFromEventsTable({
-            projectId,
-            traceId: trace.id,
-            renderingProps: {
-              truncated: true,
-              shouldJsonParse: false,
-            },
-          });
-          expect(eventTrace).toBeDefined();
-          expect(eventTrace?.bookmarked).toBe(true);
-
-          // Verify events_full
-          const eventTraceFull = await getTraceByIdFromEventsTable({
-            projectId,
-            traceId: trace.id,
-            renderingProps: {
-              truncated: false,
-              shouldJsonParse: true,
-            },
-          });
-          expect(eventTraceFull).toBeDefined();
-          expect(eventTraceFull?.bookmarked).toBe(true);
-        });
-      }
     });
 
     it("should make a trace public", async () => {
@@ -817,19 +764,6 @@ describe("traces trpc", () => {
       });
 
       await createTracesGreptime([trace]);
-
-      if (useEventsTable) {
-        await seedObservationEvents([
-          createEvent({
-            id: trace.id,
-            span_id: trace.id,
-            trace_id: trace.id,
-            project_id: trace.project_id,
-            parent_span_id: null,
-            public: false,
-          }),
-        ]);
-      }
 
       const cleanTrace = await getTraceByIdFromTracesTable({
         traceId: trace.id,
@@ -858,34 +792,6 @@ describe("traces trpc", () => {
 
       expect(updatedTrace).toBeDefined();
       expect(updatedTrace?.public).toBe(true);
-
-      if (useEventsTable) {
-        await waitForExpect(async () => {
-          // Verify events_core
-          const eventTrace = await getTraceByIdFromEventsTable({
-            projectId,
-            traceId: trace.id,
-            renderingProps: {
-              truncated: true,
-              shouldJsonParse: false,
-            },
-          });
-          expect(eventTrace).toBeDefined();
-          expect(eventTrace?.public).toBe(true);
-
-          // Verify events_full
-          const eventTraceFull = await getTraceByIdFromEventsTable({
-            projectId,
-            traceId: trace.id,
-            renderingProps: {
-              truncated: false,
-              shouldJsonParse: true,
-            },
-          });
-          expect(eventTraceFull).toBeDefined();
-          expect(eventTraceFull?.public).toBe(true);
-        });
-      }
     });
   });
 });

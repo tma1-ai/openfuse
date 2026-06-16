@@ -9,7 +9,6 @@ import {
   type EventRecordInsertType,
 } from "@langfuse/shared/src/server";
 import { randomUUID } from "crypto";
-import { env } from "@/src/env.mjs";
 import { type FilterCondition } from "@langfuse/shared";
 
 /**
@@ -80,18 +79,8 @@ function createRootObservationScore(params: {
 
 const projectId = "7a88fb47-b4e2-43b8-a06c-a5ce950dc53a";
 
-const maybe =
-  env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true"
-    ? describe
-    : describe.skip;
-
 describe("Clickhouse Experiment Items Repository Test", () => {
-  it("should kill redis connection", () => {
-    // we need at least one test case to avoid hanging
-    // redis connection when everything else is skipped.
-  });
-
-  maybe("getExperimentItemsFromEvents - Score Filtering", () => {
+  describe("getExperimentItemsFromEvents - Score Filtering", () => {
     it("should filter items by trace-level numeric scores", async () => {
       // GIVEN: One item with trace-level score
       const baselineExpId = randomUUID();
@@ -388,7 +377,7 @@ describe("Clickhouse Experiment Items Repository Test", () => {
     });
   });
 
-  maybe("getExperimentItemsFromEvents - Iterations", () => {
+  describe("getExperimentItemsFromEvents - Iterations", () => {
     it("should return deterministic latest trace with multiple iterations", async () => {
       // GIVEN: Same dataset item with 3 traces at different start_times
       const baselineExpId = randomUUID();
@@ -544,7 +533,7 @@ describe("Clickhouse Experiment Items Repository Test", () => {
     });
   });
 
-  maybe("getExperimentItemsFromEvents - Combined Filters", () => {
+  describe("getExperimentItemsFromEvents - Combined Filters", () => {
     it("should filter by item metadata AND score filters together", async () => {
       // GIVEN: Items with different metadata and scores
       const baselineExpId = randomUUID();
@@ -754,7 +743,7 @@ describe("Clickhouse Experiment Items Repository Test", () => {
     });
   });
 
-  maybe("getExperimentItemsFromEvents - Essentials", () => {
+  describe("getExperimentItemsFromEvents - Essentials", () => {
     it("should paginate results correctly", async () => {
       // GIVEN: 10 items
       const baselineExpId = randomUUID();
@@ -999,7 +988,7 @@ describe("Clickhouse Experiment Items Repository Test", () => {
     });
   });
 
-  maybe("getExperimentItemsFromEvents - Item Visibility", () => {
+  describe("getExperimentItemsFromEvents - Item Visibility", () => {
     it("should respect requireBaselinePresence config", async () => {
       // GIVEN: Two items
       // - Item 1: exists in BOTH baseline and comparison experiments
@@ -1117,7 +1106,7 @@ describe("Clickhouse Experiment Items Repository Test", () => {
     });
   });
 
-  maybe("getExperimentItemsBatchIO", () => {
+  describe("getExperimentItemsBatchIO", () => {
     it("should fetch IO and truncate to specified length", async () => {
       // GIVEN: Item with long input/output strings
       const baselineExpId = randomUUID();
