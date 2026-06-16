@@ -305,12 +305,41 @@ async function main() {
     evalRows.every((r) => "span_id" in r && "parent_span_id" in r),
     Object.keys(evalRows[0] ?? {}).slice(0, 12),
   );
-  // Guards the trace LEFT JOIN: the eval consumer needs the trace-denormalised fields populated,
-  // not just present as NULL columns.
+  // Item 1: experiment context is reconstructed from the deduped dataset_run_items LEFT JOIN. The
+  // demo project carries dataset-experiment data, so at least one streamed observation must expose a
+  // populated experiment_id (+ root span id) — previously these were hardcoded to null. A large
+  // rowLimit also exercises multi-page keyset paging (the cursor needs `start_time` in the page
+  // projection, which a single page never surfaces).
+  const expStream = await getEventsStreamForEval({
+    projectId: PROJECT_ID,
+    filter: [],
+    rowLimit: 5000,
+  });
+  const expRows = await collectStream<Record<string, unknown>>(expStream, 5000);
+  // Guards the trace LEFT JOIN: the eval consumer needs the trace-denormalised fields populated, not
+  // just present as NULL columns. Sampled over the large stream (the newest few rows may legitimately
+  // belong to user-less experiment traces).
   check(
     "eval-stream rows carry populated trace denorm (user_id non-null somewhere)",
-    evalRows.some((r) => r.user_id != null && r.trace_id != null),
-    { user_id: evalRows[0]?.user_id, trace_name: evalRows[0]?.trace_name },
+    expRows.some((r) => r.user_id != null && r.trace_id != null),
+    { sampled: expRows.length },
+  );
+  const expHit = expRows.find((r) => r.experiment_id != null);
+  check(
+    "eval-stream populates experiment_id from dataset_run_items join",
+    expHit != null,
+    { sampled: expRows.length },
+  );
+  check(
+    "eval-stream experiment rows expose root_span_id + expected_output",
+    expHit != null &&
+      "experiment_item_root_span_id" in expHit &&
+      "experiment_item_expected_output" in expHit &&
+      expHit.experiment_item_root_span_id != null,
+    {
+      experiment_id: expHit?.experiment_id,
+      root: expHit?.experiment_item_root_span_id,
+    },
   );
 
   console.log(`\n== ${pass} passed, ${fail} failed ==`);
