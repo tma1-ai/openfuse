@@ -57,11 +57,8 @@ export const createBatchActionJob = async ({
   });
 
   // v4 events-table preview is gone; the worker always reads legacy data
-  // sources. Override any client-sent useEventsTable value.
-  const queryWithSnapshot: BatchActionQuery = {
-    ...query,
-    useEventsTable: false,
-  };
+  // sources and ignores any client-sent useEventsTable value.
+  const queryWithSnapshot: BatchActionQuery = query;
 
   const batchActionId = generateBatchActionId(projectId, actionId, tableName);
 

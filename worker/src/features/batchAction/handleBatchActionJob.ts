@@ -33,10 +33,7 @@ import { prisma } from "@langfuse/shared/src/db";
 import { randomUUID } from "node:crypto";
 import { processClickhouseScoreDelete } from "../scores/processClickhouseScoreDelete";
 import { getObservationStream } from "../database-read-stream/observation-stream";
-import {
-  getEventsStreamForDataset,
-  getEventsStreamForAnnotationQueue,
-} from "../database-read-stream/event-stream";
+import { getEventsStreamForDataset } from "../database-read-stream/event-stream";
 import { processAddObservationsToDataset } from "./processAddObservationsToDataset";
 import { ObservationAddToDatasetConfigSchema } from "@langfuse/shared";
 import { processBatchedObservationEval } from "./processBatchedObservationEval";
@@ -189,16 +186,13 @@ export const handleBatchActionJob = async (
             ...streamParams,
             orderBy: query.orderBy,
           })
-        : tableName === BatchTableNames.Events
-          ? await getEventsStreamForAnnotationQueue(streamParams)
-          : tableName === BatchTableNames.Observations
-            ? await getObservationStream(streamParams)
-            : await getDatabaseReadStreamPaginated({
-                ...streamParams,
-                orderBy: query.orderBy,
-                tableName: tableName as BatchTableNames,
-                useEventsTable: query.useEventsTable,
-              });
+        : tableName === BatchTableNames.Observations
+          ? await getObservationStream(streamParams)
+          : await getDatabaseReadStreamPaginated({
+              ...streamParams,
+              orderBy: query.orderBy,
+              tableName: tableName as BatchTableNames,
+            });
 
     // Process stream in database-sized batches
     // 1. Read all records

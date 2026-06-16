@@ -34,12 +34,9 @@ export const batchExportRouter = createTRPCRouter({
 
         const { projectId, format, name } = input;
 
-        // v4 events-table preview is gone; always export from the legacy data
-        // sources. Override any client-sent useEventsTable value.
-        const query = {
-          ...input.query,
-          useEventsTable: false,
-        };
+        // v4 events-table preview is gone; the worker always reads legacy data
+        // sources and ignores any client-sent useEventsTable value.
+        const query = input.query;
 
         if (query.tableName === BatchExportTableName.AuditLogs) {
           throwIfNoEntitlement({
