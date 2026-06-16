@@ -35,11 +35,16 @@ export async function handleGreptimeReconciliation(
   payload: GreptimeReconciliationEventType,
 ): Promise<void> {
   const { projectId } = payload;
-  // Clamp to the shared ceiling so neither an oversized env default nor a forged payload can blow one
-  // job into a huge scan + rebuild batch (the queue/admin schemas also reject over-limit values).
-  const batchSize = Math.min(
-    payload.batchSize ?? env.LANGFUSE_GREPTIME_RECONCILIATION_BATCH_SIZE,
-    GREPTIME_RECONCILIATION_MAX_BATCH_SIZE,
+  // Clamp to [1, ceiling] so neither an oversized env default / forged payload blows one job into a
+  // huge scan + rebuild batch, nor a zero/negative value leaves `pageRefs` empty while `hasMore` is
+  // true (which would crash on the next-cursor computation). The queue/admin schemas also reject
+  // out-of-range values; this is the single resolution point and stays robust regardless.
+  const batchSize = Math.max(
+    1,
+    Math.min(
+      payload.batchSize ?? env.LANGFUSE_GREPTIME_RECONCILIATION_BATCH_SIZE,
+      GREPTIME_RECONCILIATION_MAX_BATCH_SIZE,
+    ),
   );
 
   if (!redis) throw new Error("Redis not available");

@@ -61,4 +61,12 @@ describe("listRawEventEntities (D2 keyset enumeration)", () => {
       "LIMIT 1",
     );
   });
+
+  it("renders a finite LIMIT for a non-finite limit instead of `LIMIT NaN`", async () => {
+    await listRawEventEntities({ projectId: "project-1", limit: NaN });
+    await listRawEventEntities({ projectId: "project-1", limit: Infinity });
+    for (const call of mocks.greptimeQuery.mock.calls) {
+      expect(normalize(call[0].query)).toContain("LIMIT 1");
+    }
+  });
 });

@@ -128,13 +128,20 @@ export const listRawEventEntities = async (params: {
       ]
     : [params.projectId];
 
+  // Clamp to a finite positive integer before interpolating into the SQL: a NaN/Infinity limit would
+  // otherwise render `LIMIT NaN`/`LIMIT Infinity` and fail at the engine. This helper is exported, so
+  // it must guard its own interpolation rather than trust callers.
+  const limit = Number.isFinite(params.limit)
+    ? Math.max(1, Math.floor(params.limit))
+    : 1;
+
   return greptimeQuery<RawEventEntityRef>({
     query: `
       SELECT DISTINCT ${entityType}, ${entityId}
       FROM ${table}
       ${where}
       ORDER BY ${entityType} ASC, ${entityId} ASC
-      LIMIT ${Math.max(1, Math.floor(params.limit))}
+      LIMIT ${limit}
     `,
     params: bind,
     readOnly: true,

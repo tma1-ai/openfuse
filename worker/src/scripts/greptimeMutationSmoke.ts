@@ -89,13 +89,7 @@ const rebuild = async (entityId: string, createdAt: Date) => {
     prisma,
     GreptimeWriter.getInstance(),
   );
-  await svc.mergeAndWrite(
-    "trace",
-    PROJECT,
-    entityId,
-    createdAt,
-    events as never,
-  );
+  await svc.mergeAndWrite("trace", PROJECT, entityId, createdAt, events);
   await GreptimeWriter.getInstance().flushAll(true);
   await sleep(700);
 };
@@ -125,7 +119,7 @@ const reconcile = async (
     projectId,
     entityId,
     new Date(minIngestedAtMs),
-    events as never,
+    events,
     isDeleted,
   );
   await GreptimeWriter.getInstance().flushAll(true);
