@@ -53,8 +53,8 @@ jobs:
       # P7 cutover guard: the ClickHouse client/query/writer call-sites were
       # physically removed. Fail the build if any reappear so a refactor can't
       # silently reintroduce the retired backend. The compatibility leftovers
-      # (ClickHouseResourceError error contract, convertDateToClickhouseDateTime,
-      # PreferredClickhouseService) intentionally do NOT match these tokens.
+      # (DbResourceError error contract and convertDateToDbDateTime)
+      # intentionally do NOT match these tokens.
       - name: Guard — ClickHouse client/query/writer stay removed
         run: |
           if grep -rEn '\b(clickhouseClient|queryClickhouse|commandClickhouse|ClickhouseWriter)\b' \
