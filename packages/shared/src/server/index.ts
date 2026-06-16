@@ -123,7 +123,6 @@ export * from "./logger";
 export * from "./headerPropagation";
 export * from "./queries";
 export * from "./queries/clickhouse-sql/orderby-factory";
-export * from "./queries/clickhouse-sql/query-options";
 export * from "./repositories";
 export * from "./repositories/observations";
 export * from "./repositories/traces";

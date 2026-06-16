@@ -3,9 +3,8 @@
  *
  * This test suite validates the complete data pipeline for pivot table widgets:
  * - Query generation and execution through executeQuery function
- * - SQL generation by QueryBuilder for various pivot table configurations
  * - Data transformation from raw query results to pivot table structure
- * - Integration with ClickHouse database and error handling
+ * - Integration with the GreptimeDB dashboard query engine and error handling
  *
  * Test Coverage:
  * - Zero dimension pivot tables (grand total only)
@@ -23,7 +22,7 @@ import {
   createObservation,
   createObservationsGreptime,
 } from "@langfuse/shared/src/server";
-import { QueryBuilder, executeQuery } from "@langfuse/shared/query/server";
+import { executeQuery } from "@langfuse/shared/query/server";
 import { type QueryType } from "@langfuse/shared/query";
 import {
   transformToPivotTable,
@@ -353,130 +352,6 @@ describe("Dashboard Router - Pivot Table Integration", () => {
       expect(Array.isArray(result)).toBe(true);
       // Time dimension queries can return rows with 0 counts for time filling
       expect(result.length).toBeGreaterThanOrEqual(0);
-    });
-  });
-
-  describe("Query Builder integration with pivot table configurations", () => {
-    it("should generate correct SQL for zero-dimension pivot table", async () => {
-      const query: QueryType = {
-        view: "traces",
-        dimensions: [],
-        metrics: [{ measure: "count", aggregation: "count" }],
-        filters: [],
-        timeDimension: {
-          granularity: "day",
-        },
-        fromTimestamp: defaultFromTime,
-        toTimestamp: defaultToTime,
-        orderBy: null,
-        chartConfig: {
-          type: "PIVOT_TABLE",
-          row_limit: 20,
-        },
-      };
-
-      const queryBuilder = new QueryBuilder(query.chartConfig);
-      const { query: sql, parameters } = await queryBuilder.build(
-        query,
-        projectId,
-      );
-
-      // Verify SQL generation
-      expect(sql).toBeDefined();
-      expect(typeof sql).toBe("string");
-      expect(parameters).toBeDefined();
-      expect(typeof parameters).toBe("object");
-
-      // SQL should contain GROUP BY for time dimension when timeDimension is present
-      expect(sql.toLowerCase()).toContain("group by");
-
-      // Should contain aggregation
-      expect(sql.toLowerCase()).toContain("count(");
-    });
-
-    it("should generate correct SQL for single-dimension pivot table", async () => {
-      const query: QueryType = {
-        view: "traces",
-        dimensions: [{ field: "environment" }],
-        metrics: [{ measure: "count", aggregation: "count" }],
-        filters: [],
-        timeDimension: {
-          granularity: "day",
-        },
-        fromTimestamp: defaultFromTime,
-        toTimestamp: defaultToTime,
-        orderBy: [{ field: "environment", direction: "asc" }],
-        chartConfig: {
-          type: "PIVOT_TABLE",
-          row_limit: 20,
-        },
-      };
-
-      const queryBuilder = new QueryBuilder(query.chartConfig);
-      const { query: sql, parameters } = await queryBuilder.build(
-        query,
-        projectId,
-      );
-
-      // Verify SQL generation
-      expect(sql).toBeDefined();
-      expect(typeof sql).toBe("string");
-      expect(parameters).toBeDefined();
-
-      // SQL should contain GROUP BY for dimension
-      expect(sql.toLowerCase()).toContain("group by");
-      expect(sql.toLowerCase()).toContain("environment");
-
-      // Should contain ORDER BY
-      expect(sql.toLowerCase()).toContain("order by");
-    });
-
-    it("should generate correct SQL for two-dimension pivot table", async () => {
-      const query: QueryType = {
-        view: "observations",
-        dimensions: [{ field: "environment" }, { field: "providedModelName" }],
-        metrics: [
-          { measure: "count", aggregation: "count" },
-          { measure: "totalTokens", aggregation: "sum" },
-        ],
-        filters: [],
-        timeDimension: {
-          granularity: "day",
-        },
-        fromTimestamp: defaultFromTime,
-        toTimestamp: defaultToTime,
-        orderBy: [
-          { field: "environment", direction: "asc" },
-          { field: "providedModelName", direction: "asc" },
-        ],
-        chartConfig: {
-          type: "PIVOT_TABLE",
-          row_limit: 20,
-        },
-      };
-
-      const queryBuilder = new QueryBuilder(query.chartConfig);
-      const { query: sql, parameters } = await queryBuilder.build(
-        query,
-        projectId,
-      );
-
-      // Verify SQL generation
-      expect(sql).toBeDefined();
-      expect(typeof sql).toBe("string");
-      expect(parameters).toBeDefined();
-
-      // SQL should contain GROUP BY for both dimensions
-      expect(sql.toLowerCase()).toContain("group by");
-      expect(sql.toLowerCase()).toContain("environment");
-      expect(sql.toLowerCase()).toContain("providedmodelname");
-
-      // Should contain multiple aggregations
-      expect(sql.toLowerCase()).toContain("count(");
-      expect(sql.toLowerCase()).toContain("sum(");
-
-      // Should contain ORDER BY for both dimensions
-      expect(sql.toLowerCase()).toContain("order by");
     });
   });
 
