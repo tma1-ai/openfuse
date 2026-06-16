@@ -9,6 +9,7 @@ import {
   logger,
   markProjectS3Slowdown,
   parseRawEventHistory,
+  getProjectDeletedAt,
   QueueName,
   readRawEventsForEntity,
   recordDistribution,
@@ -220,6 +221,15 @@ export const ingestionQueueProcessorBuilder = (
           `No events found for project ${projectId} and entity ${entityId}`,
         );
         return;
+      }
+
+      // Project-level deletion guard: a deleted project has no re-create semantics. Once a project
+      // tombstone exists, every entity rebuild for that project stays soft-deleted so late appends
+      // during the delete window cannot resurrect projections. Cheap MAX over the tiny
+      // project_tombstones table; caching on this hot path is a perf follow-up.
+      const projectDeletedAt = await getProjectDeletedAt(projectId);
+      if (projectDeletedAt !== null) {
+        deleted = true;
       }
 
       // Perform merge of those events

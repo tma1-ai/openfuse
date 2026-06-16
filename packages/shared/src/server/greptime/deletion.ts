@@ -1,4 +1,6 @@
-import { greptimeQuery } from "./client";
+import { DataType, Precision, Table } from "@greptime/ingester";
+
+import { getGreptimeIngestClient, greptimeQuery } from "./client";
 import { TOMBSTONE_EVENT_TYPE } from "./converters";
 import { RawEventInput, writeRawEvents } from "./rawEvents";
 import {
@@ -167,15 +169,49 @@ export const deleteTracesFromGreptime = async (params: {
 };
 
 /**
- * Delete every projection + EAV row for a project. raw_events is left to TTL and NOT tombstoned
- * per-entity (the entity id list isn't enumerated here), so a bulk reprocess-all during the TTL
- * window could resurrect a deleted project's projections. Acceptable because a deleted project is
- * removed from Postgres and not normally reprocessed; a project-level deleted-set guard is a
- * follow-up if reprocess-all over deleted projects becomes a real workflow.
+ * Project-level deletion guard (unified deletion predicate, project scope). `writeProjectTombstone`
+ * records that a project was deleted at an ingestion time; `getProjectDeletedAt` reads the latest
+ * marker. The rebuild/reconciliation path soft-deletes every entity for a tombstoned project, so a
+ * TTL-window reprocess-all or late append during deletion cannot resurrect it. See
+ * 0005_project_tombstones.sql.
+ */
+const PROJECT_TOMBSTONES_TABLE = "project_tombstones";
+
+const writeProjectTombstone = async (
+  projectId: string,
+  deletedAt: number,
+): Promise<void> => {
+  const table = Table.new(PROJECT_TOMBSTONES_TABLE)
+    .addTimestampColumn("deleted_at", Precision.Millisecond)
+    .addTagColumn("project_id", DataType.String);
+  table.addRowObject({ deleted_at: deletedAt, project_id: projectId });
+  await getGreptimeIngestClient().write(table);
+};
+
+export const getProjectDeletedAt = async (
+  projectId: string,
+): Promise<number | null> => {
+  const rows = await greptimeQuery<{ deleted_at: Date | string | null }>({
+    query: `SELECT MAX(${quoteIdent("deleted_at")}) AS ${quoteIdent("deleted_at")} FROM ${quoteIdent(PROJECT_TOMBSTONES_TABLE)} WHERE ${quoteIdent("project_id")} = ?`,
+    params: [projectId],
+    readOnly: true,
+  });
+  const value = rows[0]?.deleted_at;
+  if (value == null) return null;
+  return value instanceof Date ? value.getTime() : new Date(value).getTime();
+};
+
+/**
+ * Delete every projection + EAV row for a project, and append a project-level tombstone so a
+ * reprocess-all during the raw_events TTL window rebuilds the project's entities soft-deleted
+ * instead of resurrecting them. raw_events itself is append-only (left to TTL); the project
+ * tombstone is the project-scope counterpart of the per-entity tombstone.
  */
 export const deleteProjectFromGreptime = async (
   projectId: string,
 ): Promise<void> => {
+  await writeProjectTombstone(projectId, Date.now());
+
   const entityTypes: GreptimeEntityType[] = ["trace", "observation", "score"];
   for (const entityType of entityTypes) {
     for (const table of projectionDeletableTables(entityType)) {
