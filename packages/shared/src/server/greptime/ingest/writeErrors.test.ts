@@ -134,19 +134,21 @@ describe("bisectGroups", () => {
 });
 
 describe("truncateOversizedRow", () => {
-  const cap = 16;
+  // Cap must exceed the marker length so there is room left for truncated content.
+  const cap = 64;
 
   it("truncates an oversized string field with a visible marker, copy-on-write", () => {
-    const row = { id: "t1", input: "x".repeat(100), output: "small" };
+    const row = { id: "t1", input: "x".repeat(200), output: "small" };
     const result = truncateOversizedRow("traces", row, cap);
 
     expect(result.truncated).toBe(true);
     expect(result.fields).toEqual(["input"]);
     expect(result.row).not.toBe(row); // original untouched
-    expect(row.input).toHaveLength(100);
-    expect(result.row.input).toMatch(/…\[truncated 100 bytes\]$/);
+    expect(row.input).toHaveLength(200);
+    expect(result.row.input).toMatch(/…\[truncated; original 200 bytes\]$/);
+    // The whole field — content plus marker — stays within the cap.
     expect(
-      Buffer.byteLength((result.row.input as string).split("…")[0], "utf8"),
+      Buffer.byteLength(result.row.input as string, "utf8"),
     ).toBeLessThanOrEqual(cap);
     expect(result.row.output).toBe("small");
   });

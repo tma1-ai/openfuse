@@ -144,10 +144,12 @@ const truncateUtf8 = (value: string, maxBytes: number): string => {
 };
 
 /**
- * Shrink a row's whitelisted oversized fields to at most `maxBytes` each. Called reactively only on a
- * single row the server already refused as oversized, so it never silently truncates a writable row.
- * Copy-on-write: returns the original row untouched (and `truncated: false`) when nothing exceeded the
- * cap. `fields` lists the columns actually truncated so the caller can emit per-table metrics.
+ * Shrink a row's whitelisted oversized fields. String fields are truncated so the result *including*
+ * its marker stays within `maxBytes`; JSON fields, which can't be cut mid-document, are replaced by a
+ * compact valid-JSON sentinel. Called reactively only on a single row the server already refused as
+ * oversized, so it never silently truncates a writable row. Copy-on-write: returns the original row
+ * untouched (and `truncated: false`) when nothing exceeded the cap. `fields` lists the columns
+ * actually truncated so the caller can emit per-table metrics.
  */
 export const truncateOversizedRow = <T extends Record<string, unknown>>(
   table: string,
@@ -165,10 +167,20 @@ export const truncateOversizedRow = <T extends Record<string, unknown>>(
     if (Buffer.byteLength(value, "utf8") <= maxBytes) continue;
 
     const originalBytes = Buffer.byteLength(value, "utf8");
-    const next =
-      kind === "json"
-        ? JSON.stringify({ __truncated__: true, original_bytes: originalBytes })
-        : `${truncateUtf8(value, maxBytes)}…[truncated ${originalBytes} bytes]`;
+    let next: string;
+    if (kind === "json") {
+      // Can't cut JSON mid-document; replace the whole value with a compact valid-JSON sentinel.
+      next = JSON.stringify({
+        __truncated__: true,
+        original_bytes: originalBytes,
+      });
+    } else {
+      // Reserve room for the marker so content + marker is guaranteed <= maxBytes (not maxBytes plus
+      // the marker). The marker states the original size, not the number of bytes removed.
+      const marker = `…[truncated; original ${originalBytes} bytes]`;
+      const budget = Math.max(0, maxBytes - Buffer.byteLength(marker, "utf8"));
+      next = `${truncateUtf8(value, budget)}${marker}`;
+    }
     out ??= { ...row };
     (out as Record<string, unknown>)[field] = next;
     fields.push(field);
