@@ -273,6 +273,8 @@ export const eventTypes = {
   GUARDRAIL_CREATE: "guardrail-create",
   SDK_LOG: "sdk-log",
   DATASET_RUN_ITEM_CREATE: "dataset-run-item-create",
+  // Internal-only synthetic event: a replayable snapshot of a UI score mutation (see ScoreSnapshotBody).
+  SCORE_SNAPSHOT: "score-snapshot",
   // LEGACY, only required for backwards compatibility
   OBSERVATION_CREATE: "observation-create",
   OBSERVATION_UPDATE: "observation-update",
@@ -593,6 +595,41 @@ const createAllIngestionSchemas = ({
     datasetVersion: stringDateTime.optional(),
   });
 
+  /**
+   * Internal-only synthetic score event body. Carries an already-inflated score projection row
+   * verbatim so a tRPC UI score mutation (annotation / correction / in-app feedback) is replayable
+   * from raw_events. Replay maps it straight to a ScoreRecordInsertType, bypassing
+   * validateAndInflateScore (which rejects an ANNOTATION score without a configId). `event_ts` is
+   * intentionally absent — the merge always rewrites it to the rebuild time; `createdAt` is the only
+   * timestamp the snapshot must preserve.
+   */
+  const ScoreSnapshotBody = z.object({
+    id: z.string(),
+    name: z.string(),
+    value: z.number(),
+    source: z.string(),
+    dataType: z.string(),
+    stringValue: z.string().nullish(),
+    longStringValue: z.string(),
+    comment: z.string().nullish(),
+    metadata: z.record(z.string(), z.string()),
+    traceId: z.string().nullish(),
+    observationId: z.string().nullish(),
+    sessionId: z.string().nullish(),
+    datasetRunId: z.string().nullish(),
+    executionTraceId: z.string().nullish(),
+    configId: z.string().nullish(),
+    queueId: z.string().nullish(),
+    authorUserId: z.string().nullish(),
+    environment: z.string(),
+    // Required (non-nullish): a snapshot body always carries these (set in upsertScoreToGreptime via
+    // .toISOString()), and the replay maps createdAt/updatedAt straight through `new Date(...)`. Using
+    // the shared `stringDateTime` here would type them as nullish and break that mapping.
+    timestamp: z.iso.datetime({ offset: true }),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  });
+
   // Event schemas
   const base = z.object({
     id: idSchema,
@@ -681,6 +718,19 @@ const createAllIngestionSchemas = ({
       })
     : baseDatasetRunItemCreateEvent;
 
+  const baseScoreSnapshotEvent = base.extend({
+    type: z.literal(eventTypes.SCORE_SNAPSHOT),
+    body: ScoreSnapshotBody,
+  });
+
+  // Internal-only: a public POST must never inject a pre-inflated projection row — it would bypass
+  // validateAndInflateScore (arbitrary author_user_id, config-unchecked values).
+  const scoreSnapshotEvent = isPublic
+    ? baseScoreSnapshotEvent.refine(() => false, {
+        message: "Score snapshot events are only allowed for internal usage",
+      })
+    : baseScoreSnapshotEvent;
+
   const sdkLogEvent = base.extend({
     type: z.literal(eventTypes.SDK_LOG),
     body: SdkLogEvent,
@@ -713,6 +763,7 @@ const createAllIngestionSchemas = ({
     guardrailCreateEvent,
     sdkLogEvent,
     datasetRunItemCreateEvent,
+    scoreSnapshotEvent,
     // LEGACY, only required for backwards compatibility
     legacyObservationCreateEvent,
     legacyObservationUpdateEvent,
@@ -745,6 +796,7 @@ const createAllIngestionSchemas = ({
     embeddingCreateEvent,
     guardrailCreateEvent,
     scoreEvent,
+    scoreSnapshotEvent,
     datasetRunItemCreateEvent,
     sdkLogEvent,
     legacyObservationCreateEvent,
@@ -792,6 +844,8 @@ export const scoreEvent = publicSchemas.scoreEvent;
 export const sdkLogEvent = publicSchemas.sdkLogEvent;
 export const datasetRunItemCreateEvent =
   publicSchemas.datasetRunItemCreateEvent;
+// Internal variant (no public refine) so this is a usable ZodObject for replay typing/validation.
+export const scoreSnapshotEvent = internalSchemas.scoreSnapshotEvent;
 export const legacyObservationCreateEvent =
   publicSchemas.legacyObservationCreateEvent;
 export const legacyObservationUpdateEvent =
@@ -810,6 +864,7 @@ export const ingestionEvent = publicSchemas.ingestionEvent;
 export type IngestionEventType = z.infer<typeof ingestionEvent>;
 export type TraceEventType = z.infer<typeof traceEvent>;
 export type ScoreEventType = z.infer<typeof scoreEvent>;
+export type ScoreSnapshotEventType = z.infer<typeof scoreSnapshotEvent>;
 export type DatasetRunItemEventType = z.infer<typeof datasetRunItemCreateEvent>;
 
 /**
