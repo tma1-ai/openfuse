@@ -178,6 +178,11 @@ export class IngestionService {
         });
       }
       case "dataset_run_item": {
+        // dataset_run_items are hard-deleted (no soft-delete column in the read path, no per-entity
+        // tombstone/replay — see deletion.ts). A rebuild of a deleted entity (entity tombstone) or a
+        // deleted project (project tombstone) must therefore write nothing, otherwise the replay would
+        // re-insert a live row and resurrect what a project delete hard-removed.
+        if (deleted) return;
         return await this.processDatasetRunItemEventList({
           projectId,
           entityId: eventBodyId,

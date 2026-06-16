@@ -214,4 +214,34 @@ describe("IngestionService unit tests", () => {
       expect(record.is_deleted).toBe(1);
     });
   });
+
+  describe("dataset_run_item deletion guard (D3)", () => {
+    it("writes nothing when rebuilding a deleted dataset_run_item (hard-delete, no resurrection)", async () => {
+      const addToQueue = vi.fn();
+      const svc = new IngestionService(
+        {} as any,
+        {} as any,
+        { addToQueue } as any,
+      );
+
+      await svc.mergeAndWrite(
+        "dataset_run_item",
+        "project-id",
+        "dri-1",
+        new Date("2024-01-01T00:00:00.000Z"),
+        [
+          {
+            id: "evt-1",
+            timestamp: "2024-01-01T00:00:00.000Z",
+            type: "dataset_run_item-create",
+            body: { id: "dri-1" },
+          } as any,
+        ],
+        // Deleted entity / project: a hard-deleted dataset_run_item must not be re-inserted live.
+        true,
+      );
+
+      expect(addToQueue).not.toHaveBeenCalled();
+    });
+  });
 });
