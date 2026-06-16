@@ -112,6 +112,15 @@ const EnvSchema = z.object({
   GREPTIME_PASSWORD: z.string().default(""),
   GREPTIME_SQL_MAX_OPEN_CONNECTIONS: z.coerce.number().int().default(25),
   GREPTIME_RAW_EVENTS_TABLE: z.string().default("raw_events"),
+  // Per-field byte cap applied only reactively: when a single isolated row still fails the write as
+  // oversized (gRPC RESOURCE_EXHAUSTED), its large string/JSON fields are truncated to this size and
+  // the row is retried once before being dropped. Generous default — it only ever bites rows the
+  // server already refused, so it never silently truncates a row that would have written.
+  LANGFUSE_GREPTIME_WRITE_MAX_FIELD_BYTES: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(1_000_000),
   LANGFUSE_EVAL_CREATOR_LIMITER_DURATION: z.coerce
     .number()
     .positive()
