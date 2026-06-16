@@ -1,4 +1,3 @@
-import { upsertClickhouse } from "./clickhouse";
 import { prisma } from "../../db";
 import { ObservationRecordReadType } from "./definitions";
 import { FilterState } from "../../types";
@@ -6,10 +5,7 @@ import { FilterList, FullObservations } from "../queries";
 import { OrderByState } from "../../interfaces/orderBy";
 import { getTracesByIds } from "./traces";
 import { PreferredClickhouseService } from "../clickhouse/client";
-import {
-  convertObservation,
-  enrichObservationWithModelData,
-} from "./observations_converters";
+import { enrichObservationWithModelData } from "./observations_converters";
 import { env } from "../../env";
 import { TracingSearchType } from "../../interfaces/search";
 import { ClickHouseClientConfigOptions } from "@clickhouse/client";
@@ -53,31 +49,6 @@ export const checkObservationExists = (
  * Accepts a trace in a Clickhouse-ready format.
  * id, project_id, and timestamp must always be provided.
  */
-export const upsertObservation = async (
-  observation: Partial<ObservationRecordReadType>,
-) => {
-  if (
-    !["id", "project_id", "start_time", "type"].every(
-      (key) => key in observation,
-    )
-  ) {
-    throw new Error(
-      "Identifier fields must be provided to upsert Observation.",
-    );
-  }
-  await upsertClickhouse({
-    table: "observations",
-    records: [observation as ObservationRecordReadType],
-    eventBodyMapper: convertObservation,
-    tags: {
-      feature: "tracing",
-      type: "observation",
-      kind: "upsert",
-      projectId: observation.project_id ?? "",
-    },
-  });
-};
-
 export type GetObservationsForTraceOpts<IncludeIO extends boolean> = {
   traceId: string;
   projectId: string;
