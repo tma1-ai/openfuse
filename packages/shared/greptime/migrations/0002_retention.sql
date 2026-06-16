@@ -1,38 +1,35 @@
 -- GreptimeDB retention / TTL (02-write-path.md, invariant 6).
 --
--- RETENTION MODEL: analytics retention is a GLOBAL table-level TTL, not per-project.
--- GreptimeDB only supports table-/database-level TTL (no per-row / per-tag TTL), so a single
--- table TTL expresses one deployment-wide horizon. Per-project analytics retention is
--- intentionally NOT supported on this backend — TTL at the retention boundary is sufficient
--- and avoids criteria-based DELETEs that would resurrect on the next raw_events replay.
--- (deletion.ts still hard-deletes projection + EAV rows for EXPLICIT project / entity deletion;
--- that is a different concern from time-based retention and is not driven from here.)
+-- OPTIONAL, OPT-IN. The base schema (0001_init.sql) sets no TTL, so a fresh install keeps data
+-- forever and projection rebuilds are always complete. A self-hosted operator who wants to cap
+-- disk usage can enable a GLOBAL table-level TTL here (GreptimeDB has no per-project / per-row TTL).
 --
--- INVARIANT 6 (hard): raw_events TTL MUST be >= the projection retention horizon. The worker
--- rebuilds each projection snapshot by replaying the entity's FULL raw_events history. If a
--- `create` event expires from raw_events while the entity can still receive an update (or be
--- reprocessed), the rebuild loses immutable fields / metadata / tags and silently corrupts the
--- projection. TTL is therefore NOT a cost-control knob on raw_events — size it from the maximum
--- entity-update / reprocess window you need to support. Because raw_events is append-only and
--- cannot be DELETEd, it relies solely on the TTL set here.
+-- Prefer the helper over editing this file: set LANGFUSE_GREPTIME_RAW_EVENTS_TTL +
+-- LANGFUSE_GREPTIME_PROJECTION_TTL and run `applyGreptimeRetention`
+-- (packages/shared/src/server/greptime/retention.ts), which validates invariant 6 before applying.
+-- The statements below mirror what that helper emits, for manual / out-of-band application.
 --
--- Default posture: NO TTL (the base schema in 0001_init.sql sets none) so a fresh install keeps
--- data indefinitely and rebuilds are always complete. The statements below are OPT-IN: uncomment
--- and adjust the durations to enforce a global retention horizon, only after confirming
--- raw_events TTL >= max(projection TTL, reprocess window).
+-- INVARIANT 6 (hard): raw_events TTL MUST be >= the projection TTL. The worker rebuilds each
+-- projection snapshot by replaying the entity's FULL raw_events history; if a `create` event
+-- expires from raw_events while its projection survives, the rebuild loses immutable fields /
+-- metadata / tags and silently corrupts the projection. raw_events is append-only (no DELETE), so
+-- it relies solely on this TTL — size it from the maximum entity-update / reprocess window, not as
+-- a cost knob. (deletion.ts still hard-deletes projection + EAV rows for EXPLICIT project / entity
+-- deletion; that is a separate concern from time-based retention and is not driven from here.)
 --
+-- Syntax (GreptimeDB 1.x): `ALTER TABLE t SET 'ttl'='<duration>'`; clear with `SET 'ttl'=NULL`.
 -- Apply: mysql -h127.0.0.1 -P4002 -uroot openfuse < 0002_retention.sql
 
--- Backstop: keep raw_events (source of truth) longer than any projection horizon.
--- ALTER TABLE raw_events MODIFY TTL '400d';
+-- Backstop: keep raw_events (source of truth) at least as long as any projection horizon.
+-- ALTER TABLE raw_events SET 'ttl'='400d';
 
 -- Projection + EAV retention (each MUST be <= the raw_events TTL above).
--- ALTER TABLE traces                MODIFY TTL '365d';
--- ALTER TABLE observations          MODIFY TTL '365d';
--- ALTER TABLE scores                MODIFY TTL '365d';
--- ALTER TABLE traces_metadata       MODIFY TTL '365d';
--- ALTER TABLE observations_metadata MODIFY TTL '365d';
--- ALTER TABLE scores_metadata       MODIFY TTL '365d';
--- ALTER TABLE traces_tags           MODIFY TTL '365d';
--- ALTER TABLE observations_tags     MODIFY TTL '365d';
--- ALTER TABLE scores_tags           MODIFY TTL '365d';
+-- ALTER TABLE traces                SET 'ttl'='365d';
+-- ALTER TABLE observations          SET 'ttl'='365d';
+-- ALTER TABLE scores                SET 'ttl'='365d';
+-- ALTER TABLE traces_metadata       SET 'ttl'='365d';
+-- ALTER TABLE observations_metadata SET 'ttl'='365d';
+-- ALTER TABLE scores_metadata       SET 'ttl'='365d';
+-- ALTER TABLE traces_tags           SET 'ttl'='365d';
+-- ALTER TABLE observations_tags     SET 'ttl'='365d';
+-- ALTER TABLE scores_tags           SET 'ttl'='365d';
