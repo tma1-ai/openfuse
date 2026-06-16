@@ -81,43 +81,6 @@ const EnvSchema = z.object({
     .default(20_000),
   LANGFUSE_CACHE_PROMPT_ENABLED: z.enum(["true", "false"]).default("true"),
   LANGFUSE_CACHE_PROMPT_TTL_SECONDS: z.coerce.number().default(3600), // 1h
-  CLICKHOUSE_URL: z.url(),
-  CLICKHOUSE_READ_ONLY_URL: z.url().optional(),
-  CLICKHOUSE_EVENTS_READ_ONLY_URL: z.url().optional(),
-  CLICKHOUSE_CLUSTER_ENABLED: z.enum(["true", "false"]).default("true"),
-  CLICKHOUSE_CLUSTER_NAME: z.string().default("default"),
-  CLICKHOUSE_DB: z.string().default("default"),
-  CLICKHOUSE_USER: z.string(),
-  CLICKHOUSE_PASSWORD: z.string(),
-  CLICKHOUSE_KEEP_ALIVE_IDLE_SOCKET_TTL: z.coerce.number().int().default(9000),
-  CLICKHOUSE_MAX_OPEN_CONNECTIONS: z.coerce.number().int().default(25),
-  // Optional to allow for server-setting fallbacks
-  CLICKHOUSE_ASYNC_INSERT_MAX_DATA_SIZE: z.string().optional(),
-  CLICKHOUSE_ASYNC_INSERT_BUSY_TIMEOUT_MS: z.coerce.number().int().optional(),
-  CLICKHOUSE_ASYNC_INSERT_BUSY_TIMEOUT_MIN_MS: z.coerce
-    .number()
-    .int()
-    .min(50)
-    .optional(),
-  CLICKHOUSE_LIGHTWEIGHT_DELETE_MODE: z
-    .enum(["alter_update", "lightweight_update", "lightweight_update_force"])
-    .default("alter_update"),
-  CLICKHOUSE_USE_LIGHTWEIGHT_UPDATE: z.enum(["true", "false"]).default("false"),
-  CLICKHOUSE_UPDATE_PARALLEL_MODE: z
-    .enum(["sync", "async", "auto"])
-    .default("auto"),
-  // Workaround for ClickHouse analyzer/lazy materialization bugs. In "auto",
-  // Langfuse detects the ClickHouse version on startup and applies known
-  // compatibility settings for affected version bands.
-  CLICKHOUSE_DISABLE_LAZY_MATERIALIZATION: z
-    .enum(["auto", "true", "false"])
-    .default("auto"),
-  CLICKHOUSE_MAX_BYTES_BEFORE_EXTERNAL_GROUP_BY: z.coerce
-    .number()
-    .default(32_000_000_000), // ~32GB
-  CLICKHOUSE_USE_QUERY_CONDITION_CACHE: z
-    .enum(["true", "false"])
-    .default("false"),
   // GreptimeDB write path (02-write-path.md). gRPC endpoint for the ingester (writes);
   // MySQL-wire endpoint for the full-history read + read path. Local dev defaults match a
   // single-node GreptimeDB (gRPC 4001, MySQL 4002, no auth).

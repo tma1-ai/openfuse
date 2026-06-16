@@ -67,10 +67,6 @@ export * from "./greptime/converters";
 export * from "./greptime/deletion";
 export * from "./greptime/ingest/tableSchemas";
 export * from "./greptime/ingest/rowBuilders";
-export {
-  getClickHouseCompatibilitySettings,
-  initializeClickhouseCompatibility,
-} from "./clickhouse/compatibility";
 export * from "./clickhouse/schemaUtils";
 export * from "./clickhouse/schema";
 export * from "./repositories/definitions";

@@ -13,9 +13,6 @@ const chatAnthropicConstructorMock = vi.fn().mockImplementation(function () {
   };
 });
 
-process.env.CLICKHOUSE_URL ??= "http://localhost:8123";
-process.env.CLICKHOUSE_USER ??= "default";
-process.env.CLICKHOUSE_PASSWORD ??= "password";
 process.env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET ??= "test-bucket";
 process.env.ENCRYPTION_KEY ??=
   "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";

@@ -102,12 +102,6 @@ const EnvSchema = z.object({
 
   LANGFUSE_USE_AZURE_BLOB: z.enum(["true", "false"]).default("false"),
 
-  CLICKHOUSE_URL: z.url(),
-  CLICKHOUSE_USER: z.string(),
-  CLICKHOUSE_CLUSTER_NAME: z.string().default("default"),
-  CLICKHOUSE_DB: z.string().default("default"),
-  CLICKHOUSE_PASSWORD: z.string(),
-  CLICKHOUSE_CLUSTER_ENABLED: z.enum(["true", "false"]).default("true"),
   // GreptimeDB write path (02-write-path.md). See packages/shared/src/env.ts for semantics.
   GREPTIME_GRPC_URL: z.string().default("localhost:4001"),
   GREPTIME_SQL_HOST: z.string().default("localhost"),

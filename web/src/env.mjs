@@ -278,12 +278,6 @@ export const env = createEnv({
       ),
 
     // clickhouse
-    CLICKHOUSE_URL: z.url(),
-    CLICKHOUSE_CLUSTER_NAME: z.string().default("default"),
-    CLICKHOUSE_DB: z.string().default("default"),
-    CLICKHOUSE_USER: z.string(),
-    CLICKHOUSE_PASSWORD: z.string(),
-    CLICKHOUSE_CLUSTER_ENABLED: z.enum(["true", "false"]).default("true"),
 
     // EE ui customization
     LANGFUSE_UI_API_HOST: z.string().optional(),
@@ -729,12 +723,6 @@ export const env = createEnv({
     PLAIN_CARDS_API_TOKEN: process.env.PLAIN_CARDS_API_TOKEN,
     PYLON_API_KEY: process.env.PYLON_API_KEY,
     // clickhouse
-    CLICKHOUSE_URL: process.env.CLICKHOUSE_URL,
-    CLICKHOUSE_CLUSTER_NAME: process.env.CLICKHOUSE_CLUSTER_NAME,
-    CLICKHOUSE_DB: process.env.CLICKHOUSE_DB,
-    CLICKHOUSE_USER: process.env.CLICKHOUSE_USER,
-    CLICKHOUSE_PASSWORD: process.env.CLICKHOUSE_PASSWORD,
-    CLICKHOUSE_CLUSTER_ENABLED: process.env.CLICKHOUSE_CLUSTER_ENABLED,
     // EE ui customization
     LANGFUSE_UI_API_HOST: process.env.LANGFUSE_UI_API_HOST,
     LANGFUSE_UI_DOCUMENTATION_HREF: process.env.LANGFUSE_UI_DOCUMENTATION_HREF,
