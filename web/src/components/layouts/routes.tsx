@@ -28,7 +28,6 @@ import { type OrganizationScope } from "@/src/features/rbac/constants/organizati
 import { SupportButton } from "@/src/components/nav/support-button";
 import { InAppAiAgentButton } from "@/src/components/nav/in-app-ai-agent-button";
 import { BookACallButton } from "@/src/components/nav/book-a-call-button";
-import { V4SidebarToggle } from "@/src/features/events/components/V4SidebarToggle";
 import { SidebarMenuButton } from "@/src/components/ui/sidebar";
 import { KeyboardShortcut } from "@/src/components/ui/keyboard-shortcut";
 import { useCommandMenu } from "@/src/features/command-k-menu/CommandMenuProvider";
@@ -217,13 +216,6 @@ export const ROUTES: Route[] = [
     section: RouteSection.Secondary,
     pathname: "",
     menuNode: <CloudStatusMenu />,
-  },
-  {
-    title: "Preview (fast)",
-    pathname: "",
-    section: RouteSection.Secondary,
-    featureFlag: "v4BetaToggleVisible",
-    menuNode: <V4SidebarToggle />,
   },
   {
     title: "Settings",

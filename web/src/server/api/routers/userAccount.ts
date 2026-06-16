@@ -170,18 +170,4 @@ export const userAccountRouter = createTRPCRouter({
       success: true,
     };
   }),
-
-  setV4BetaEnabled: authenticatedProcedure
-    .input(z.object({ enabled: z.boolean() }))
-    .mutation(async () => {
-      // The V4 events-table preview no longer exists — GreptimeDB is the sole
-      // backend, so there is nothing to toggle. The endpoint stays for client
-      // compatibility but is inert: it never writes User.v4BetaEnabled and
-      // always reports the preview as off and non-toggleable (mirrors the
-      // auth.ts session callback).
-      return {
-        success: true,
-        v4BetaEnabled: false,
-      };
-    }),
 });

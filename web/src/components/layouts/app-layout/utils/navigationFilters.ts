@@ -76,11 +76,6 @@ export const filters = {
       return ctx.session?.user?.v4BetaEnabled === true ? route : null;
     }
 
-    if (route.featureFlag === "v4BetaToggleVisible") {
-      // v4 beta is removed; the toggle is never shown.
-      return null;
-    }
-
     const hasFlag =
       ctx.enableExperimentalFeatures ||
       ctx.cloudAdmin ||
