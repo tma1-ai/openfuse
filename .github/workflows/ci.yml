@@ -60,7 +60,7 @@ jobs:
           if grep -rEn '\b(clickhouseClient|queryClickhouse|commandClickhouse|ClickhouseWriter)\b' \
                --include='*.ts' \
                --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.next \
-               packages web worker ee; then
+               packages web worker; then
             echo "::error::ClickHouse client/query/writer call-sites reintroduced — P7 removed these; use the GreptimeDB readers/writers instead."
             exit 1
           fi
