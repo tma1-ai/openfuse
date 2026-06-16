@@ -6,9 +6,8 @@ import {
 } from "@langfuse/shared";
 import {
   getScoresAndCorrectionsForTraces,
-  getObservationsCountFromEventsTable,
-  getObservationsForTraceFromEventsTable,
-  getTraceByIdFromEventsTable,
+  getObservationsForTrace,
+  getTraceById,
 } from "@langfuse/shared/src/server";
 import { env } from "@langfuse/shared/src/env";
 import { prisma } from "@langfuse/shared/src/db";
@@ -62,12 +61,11 @@ const getObservationRecordsForTrace = async (params: {
 }) => {
   const { traceId, projectId, timestamp, omitLargeFields } = params;
 
-  return getObservationsForTraceFromEventsTable({
+  return getObservationsForTrace({
     traceId,
     projectId,
     timestamp,
-    selectIOAndMetadata: !omitLargeFields,
-    selectToolData: !omitLargeFields,
+    includeIO: !omitLargeFields,
   });
 };
 
@@ -78,18 +76,16 @@ const getObservationRecordCountForTrace = async (params: {
 }) => {
   const { traceId, projectId, timestamp } = params;
 
-  return getObservationsCountFromEventsTable({
+  // Lightweight count: fetch the trace's observations without IO/metadata and
+  // measure the result size. Mirrors the trace-to-observations lookback window.
+  const observations = await getObservationsForTrace({
+    traceId,
     projectId,
-    filter: [
-      { type: "string", operator: "=", column: "traceId", value: traceId },
-      {
-        type: "datetime",
-        operator: ">=",
-        column: "startTime",
-        value: new Date(timestamp.getTime() - 60 * 60 * 1000),
-      },
-    ],
+    timestamp,
+    includeIO: false,
   });
+
+  return observations.length;
 };
 
 async function getAuthorizedTrace(params: {
@@ -99,7 +95,7 @@ async function getAuthorizedTrace(params: {
 }) {
   const { traceId, projectId, session } = params;
 
-  const clickhouseTrace = await getTraceByIdFromEventsTable({
+  const clickhouseTrace = await getTraceById({
     traceId,
     projectId,
     renderingProps: {
@@ -181,7 +177,7 @@ export async function buildTraceExport({
     projectId,
     timestamp: trace.timestamp,
     omitLargeFields,
-  }).then((result) => result.observations);
+  });
 
   if (!omitLargeFields) {
     // Same size validation as in getObservationsForTrace in observations.ts
@@ -248,8 +244,10 @@ export async function buildTraceExport({
     return {
       id: record.id,
       traceId: record.traceId ?? traceId,
-      userId: record.userId ?? null,
-      sessionId: record.sessionId ?? null,
+      // userId/sessionId/traceName/release are trace-level fields shared by all
+      // observations in the trace; source them from the trace record.
+      userId: trace.userId ?? null,
+      sessionId: trace.sessionId ?? null,
       projectId: record.projectId,
       startTime: record.startTime.toISOString(),
       endTime: record.endTime?.toISOString() ?? null,
@@ -258,9 +256,9 @@ export async function buildTraceExport({
       environment: record.environment,
       name: record.name ?? null,
       level: record.level ?? null,
-      traceName: record.traceName ?? trace.name ?? "",
+      traceName: trace.name ?? "",
       statusMessage: record.statusMessage ?? null,
-      release: record.release ?? null,
+      release: trace.release ?? null,
       version: record.version ?? null,
       createdAt: record.createdAt.toISOString(),
       updatedAt: record.updatedAt.toISOString(),

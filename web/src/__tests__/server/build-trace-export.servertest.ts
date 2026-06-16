@@ -8,17 +8,15 @@ import {
 } from "@/src/features/traces/server/buildTraceExport";
 
 const {
-  mockGetTraceByIdFromEventsTable,
-  mockGetObservationsCountFromEventsTable,
-  mockGetObservationsForTraceFromEventsTable,
+  mockGetTraceById,
+  mockGetObservationsForTrace,
   mockGetScoresAndCorrectionsForTraces,
   mockTraceSessionFindFirst,
   mockProjectFindFirst,
   mockSendAdminAccessWebhook,
 } = vi.hoisted(() => ({
-  mockGetTraceByIdFromEventsTable: vi.fn(),
-  mockGetObservationsCountFromEventsTable: vi.fn(),
-  mockGetObservationsForTraceFromEventsTable: vi.fn(),
+  mockGetTraceById: vi.fn(),
+  mockGetObservationsForTrace: vi.fn(),
   mockGetScoresAndCorrectionsForTraces: vi.fn(),
   mockTraceSessionFindFirst: vi.fn(),
   mockProjectFindFirst: vi.fn(),
@@ -27,12 +25,9 @@ const {
 
 vi.mock("@langfuse/shared/src/server", async () => ({
   ...(await vi.importActual("@langfuse/shared/src/server")),
-  getTraceByIdFromEventsTable: (...args: unknown[]) =>
-    mockGetTraceByIdFromEventsTable(...args),
-  getObservationsCountFromEventsTable: (...args: unknown[]) =>
-    mockGetObservationsCountFromEventsTable(...args),
-  getObservationsForTraceFromEventsTable: (...args: unknown[]) =>
-    mockGetObservationsForTraceFromEventsTable(...args),
+  getTraceById: (...args: unknown[]) => mockGetTraceById(...args),
+  getObservationsForTrace: (...args: unknown[]) =>
+    mockGetObservationsForTrace(...args),
   getScoresAndCorrectionsForTraces: (...args: unknown[]) =>
     mockGetScoresAndCorrectionsForTraces(...args),
 }));
@@ -56,9 +51,6 @@ vi.mock("../../server/adminAccessWebhook", () => ({
 const projectId = "project-1";
 const traceId = "trace-1";
 const traceTimestamp = new Date("2024-01-01T00:00:00.000Z");
-const observationStartTimeFilter = new Date(
-  traceTimestamp.getTime() - 60 * 60 * 1000,
-);
 
 const makeSession = (overrides?: {
   admin?: boolean;
@@ -170,12 +162,8 @@ describe("buildTraceExport", () => {
     vi.clearAllMocks();
     env.LANGFUSE_API_TRACE_OBSERVATIONS_SIZE_LIMIT_BYTES =
       originalObservationLimit;
-    mockGetTraceByIdFromEventsTable.mockResolvedValue(makeTrace());
-    mockGetObservationsCountFromEventsTable.mockResolvedValue(1);
-    mockGetObservationsForTraceFromEventsTable.mockResolvedValue({
-      observations: [makeObservation()],
-      totalCount: 1,
-    });
+    mockGetTraceById.mockResolvedValue(makeTrace());
+    mockGetObservationsForTrace.mockResolvedValue([makeObservation()]);
     mockGetScoresAndCorrectionsForTraces.mockResolvedValue([makeScore()]);
     mockTraceSessionFindFirst.mockResolvedValue(null);
     mockProjectFindFirst.mockResolvedValue({ orgId: "org-1" });
@@ -193,7 +181,7 @@ describe("buildTraceExport", () => {
       session: makeSession(),
     });
 
-    expect(mockGetTraceByIdFromEventsTable).toHaveBeenCalledWith({
+    expect(mockGetTraceById).toHaveBeenCalledWith({
       traceId,
       projectId,
       renderingProps: {
@@ -201,26 +189,21 @@ describe("buildTraceExport", () => {
         shouldJsonParse: false,
       },
     });
-    expect(mockGetObservationsCountFromEventsTable).toHaveBeenCalledWith({
-      projectId,
-      filter: [
-        { type: "string", operator: "=", column: "traceId", value: traceId },
-        {
-          type: "datetime",
-          operator: ">=",
-          column: "startTime",
-          value: observationStartTimeFilter,
-        },
-      ],
-    });
-    expect(mockGetObservationsForTraceFromEventsTable).toHaveBeenCalledWith({
+    // First call derives the observation count without IO/metadata.
+    expect(mockGetObservationsForTrace).toHaveBeenNthCalledWith(1, {
       traceId,
       projectId,
       timestamp: traceTimestamp,
-      selectIOAndMetadata: true,
-      selectToolData: true,
+      includeIO: false,
     });
-    expect(mockGetObservationsForTraceFromEventsTable).toHaveBeenCalledTimes(1);
+    // Second call fetches the records with full IO/metadata for small traces.
+    expect(mockGetObservationsForTrace).toHaveBeenNthCalledWith(2, {
+      traceId,
+      projectId,
+      timestamp: traceTimestamp,
+      includeIO: true,
+    });
+    expect(mockGetObservationsForTrace).toHaveBeenCalledTimes(2);
     expect(mockGetScoresAndCorrectionsForTraces).toHaveBeenCalledWith({
       projectId,
       traceIds: [traceId],
@@ -311,15 +294,13 @@ describe("buildTraceExport", () => {
   });
 
   it("omits IO, metadata, toolDefinitions, and toolCalls for large trace exports", async () => {
-    mockGetObservationsCountFromEventsTable.mockResolvedValue(350);
-    mockGetObservationsForTraceFromEventsTable.mockResolvedValue({
-      observations: Array.from({ length: 350 }, (_, idx) => ({
+    mockGetObservationsForTrace.mockResolvedValue(
+      Array.from({ length: 350 }, (_, idx) => ({
         ...makeObservation(),
         id: `obs-${idx + 1}`,
         toolCallNames: ["read_file", "write_file"],
       })),
-      totalCount: 350,
-    });
+    );
 
     const result = await buildTraceExport({
       traceId,
@@ -327,12 +308,12 @@ describe("buildTraceExport", () => {
       session: makeSession(),
     });
 
-    expect(mockGetObservationsForTraceFromEventsTable).toHaveBeenCalledWith({
+    // Large traces fetch records without IO/metadata.
+    expect(mockGetObservationsForTrace).toHaveBeenLastCalledWith({
       traceId,
       projectId,
       timestamp: traceTimestamp,
-      selectIOAndMetadata: false,
-      selectToolData: false,
+      includeIO: false,
     });
     expect(result.observations).toHaveLength(350);
     expect(result.observations[0]).not.toHaveProperty("input");
@@ -347,18 +328,14 @@ describe("buildTraceExport", () => {
   });
 
   it("reemits the observation payload limit error as a download-safe error", async () => {
-    mockGetObservationsCountFromEventsTable.mockResolvedValue(10);
     env.LANGFUSE_API_TRACE_OBSERVATIONS_SIZE_LIMIT_BYTES = 100;
-    mockGetObservationsForTraceFromEventsTable.mockResolvedValue({
-      observations: [
-        makeObservation({
-          input: "x".repeat(60),
-          output: "y".repeat(60),
-          metadata: { key: "z".repeat(60) },
-        }),
-      ],
-      totalCount: 1,
-    });
+    mockGetObservationsForTrace.mockResolvedValue([
+      makeObservation({
+        input: "x".repeat(60),
+        output: "y".repeat(60),
+        metadata: { key: "z".repeat(60) },
+      }),
+    ]);
 
     await expect(
       buildTraceExport({
@@ -370,7 +347,7 @@ describe("buildTraceExport", () => {
   });
 
   it("throws a not-found error when the trace is missing", async () => {
-    mockGetTraceByIdFromEventsTable.mockResolvedValue(null);
+    mockGetTraceById.mockResolvedValue(null);
 
     await expect(
       buildTraceExport({
@@ -392,9 +369,7 @@ describe("buildTraceExport", () => {
   });
 
   it("allows unauthenticated access to public traces", async () => {
-    mockGetTraceByIdFromEventsTable.mockResolvedValue(
-      makeTrace({ public: true }),
-    );
+    mockGetTraceById.mockResolvedValue(makeTrace({ public: true }));
 
     const result = await buildTraceExport({
       traceId,
@@ -414,7 +389,7 @@ describe("buildTraceExport", () => {
   });
 
   it("allows unauthenticated access to traces in public sessions", async () => {
-    mockGetTraceByIdFromEventsTable.mockResolvedValue(
+    mockGetTraceById.mockResolvedValue(
       makeTrace({ public: false, sessionId: "trace-session-1" }),
     );
     mockTraceSessionFindFirst.mockResolvedValue({ public: true });
