@@ -1,6 +1,5 @@
 import { useRouter } from "next/router";
 import { api } from "@/src/utils/api";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { useDashboardFilterOptions } from "@/src/hooks/useDashboardFilterOptions";
 import Page from "@/src/components/layouts/page";
 import { NoDataOrLoading } from "@/src/components/NoDataOrLoading";
@@ -56,7 +55,6 @@ export default function DashboardDetail() {
   };
 
   const lookbackLimit = useEntitlementLimit("data-access-days");
-  const { isBetaEnabled } = useV4Beta();
 
   // Fetch dashboard data
   const dashboard = api.dashboard.getDashboard.useQuery({
@@ -200,7 +198,7 @@ export default function DashboardDetail() {
 
   const { nameOptions, tagsOptions } = useDashboardFilterOptions({
     projectId,
-    isBetaEnabled,
+    isBetaEnabled: false,
     timeRange,
   });
 

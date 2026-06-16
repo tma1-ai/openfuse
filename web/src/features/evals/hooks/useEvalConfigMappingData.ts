@@ -7,7 +7,6 @@ import {
   usePreviewData,
 } from "@/src/features/evals/hooks/usePreviewData";
 import { useEffect, useRef } from "react";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import {
   type EvalPreviewPointer,
   getEvalPreviewPointerFromUrlQuery,
@@ -27,12 +26,11 @@ export function useEvalConfigMappingData(
   selectedPreviewPointer?: EvalPreviewPointer,
 ): EvalConfigMappingData {
   const router = useRouter();
-  const { isBetaEnabled } = useV4Beta();
 
   const targetValue = useWatch({ control: form.control, name: "target" });
   const firstPreviewPointer = useFirstEvalPreviewPointer({
     target: targetValue,
-    useEventsTable: isBetaEnabled,
+    useEventsTable: false,
   });
   const urlPreviewPointer = getEvalPreviewPointerFromUrlQuery(
     router.query,

@@ -108,7 +108,6 @@ import {
 } from "@/src/features/evals/utils/evaluator-constants";
 import { useEvalConfigFilterOptions } from "@/src/features/evals/hooks/useEvalConfigFilterOptions";
 import { VariableMappingCard } from "@/src/features/evals/components/variable-mapping-card";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { useIsCodeEvalEnabled } from "@/src/features/evals/hooks/useIsCodeEvalEnabled";
 import {
   getCodeEvalVariableMapping,
@@ -164,10 +163,6 @@ const TracesTable = lazy(
 );
 const ObservationsTable = lazy(
   () => import("@/src/components/table/use-cases/observations"),
-);
-
-const EventsTable = lazy(
-  () => import("@/src/features/events/components/EventsTable"),
 );
 
 const TracesPreview = memo(
@@ -227,8 +222,6 @@ const ObservationsPreview = memo(
     isNewCompatible: boolean;
     compatibilityCheckWasPerformed: boolean;
   }) => {
-    const { isBetaEnabled } = useV4Beta();
-
     const dateRange = useMemo(() => {
       return {
         from: getDateFromOption({
@@ -276,14 +269,6 @@ const ObservationsPreview = memo(
                   </span>
                 </div>
               </div>
-            ) : isBetaEnabled ? (
-              <EventsTable
-                projectId={projectId}
-                hideControls
-                externalFilterState={filterState}
-                externalDateRange={dateRange}
-                limitRows={10}
-              />
             ) : (
               <ObservationsTable
                 projectId={projectId}
@@ -382,7 +367,6 @@ export const InnerEvaluatorForm = (props: {
   const capture = usePostHogClientCapture();
   const router = useRouter();
   const [showTraceConfirmDialog, setShowTraceConfirmDialog] = useState(false);
-  const { isBetaEnabled } = useV4Beta();
   const { enabled: isCodeEvalEnabled } = useIsCodeEvalEnabled();
   const isCodeEvalConfig =
     isCodeEvalEnabled && isCodeEvalTemplate(props.evalTemplate);
@@ -582,10 +566,8 @@ export const InnerEvaluatorForm = (props: {
   const watchedTarget = form.watch("target");
   const watchedScoreName = form.watch("scoreName");
   const watchedFilter = form.watch("filter") ?? EMPTY_FILTER_STATE;
-  const shouldShowExperimentEventsPreview =
-    isExperimentTarget(watchedTarget) && isBetaEnabled;
-  const shouldShowEventsPreview =
-    isEventTarget(watchedTarget) || shouldShowExperimentEventsPreview;
+  const shouldShowExperimentEventsPreview = false;
+  const shouldShowEventsPreview = isEventTarget(watchedTarget);
   const previewTableVisible = !props.disabled && !props.hidePreviewTable;
   const previewAlreadyShowsSdkWarning =
     previewTableVisible && shouldShowEventsPreview;
@@ -818,15 +800,9 @@ export const InnerEvaluatorForm = (props: {
   }
 
   const shouldShowCodeEvalTestPanel =
-    isCodeEvalConfig &&
-    !props.disabled &&
-    (isEventTarget(watchedTarget) ||
-      (isExperimentTarget(watchedTarget) && isBetaEnabled));
+    isCodeEvalConfig && !props.disabled && isEventTarget(watchedTarget);
   const shouldShowCodeEvalSourceLinkInSettingsCard =
-    isCodeEvalConfig &&
-    !props.disabled &&
-    isExperimentTarget(watchedTarget) &&
-    !isBetaEnabled;
+    isCodeEvalConfig && !props.disabled && isExperimentTarget(watchedTarget);
 
   const formBody = (
     <div

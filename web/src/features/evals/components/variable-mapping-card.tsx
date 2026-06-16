@@ -53,7 +53,6 @@ import { useVariableMappingSync } from "@/src/features/evals/hooks/useVariableMa
 import { Button } from "@/src/components/ui/button";
 import Link from "next/link";
 import { useRouter } from "next/router";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import {
   type EvalPreviewPointer,
   buildEvalPreviewNavigationPath,
@@ -90,15 +89,12 @@ export const VariableMappingCard = ({
   const [selectedPreviewPointer, setSelectedPreviewPointer] =
     useState<EvalPreviewPointer>();
   const router = useRouter();
-  const { isBetaEnabled } = useV4Beta();
   const peekId =
     typeof router.query.peek === "string" ? router.query.peek : undefined;
   const isPeekView = Boolean(peekId);
   const target = form.watch("target");
   const shouldShowPreviewForTarget =
-    isTraceTarget(target) ||
-    isEventTarget(target) ||
-    (isExperimentTarget(target) && isBetaEnabled);
+    isTraceTarget(target) || isEventTarget(target);
 
   const { fields } = useFieldArray({
     control: form.control,
@@ -153,7 +149,7 @@ export const VariableMappingCard = ({
     shouldShowPreviewForTarget && !disabled && !shouldDisablePreviewForNonOtel;
   const previewNavigationListKey = getEvalPreviewDetailPageListKey(
     target,
-    isBetaEnabled,
+    false,
   );
   const evalPreviewBasePath = hideAdvancedSettings
     ? `/project/${projectId}/evals/remap?evaluator=${oldConfigId}`

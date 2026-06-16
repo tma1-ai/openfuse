@@ -17,7 +17,6 @@ import TableLink from "@/src/components/table/table-link";
 import { type LangfuseColumnDef } from "@/src/components/table/types";
 import { useQueryFilterState } from "@/src/features/filters/hooks/useFilterState";
 import { useDetailPageLists } from "@/src/features/navigate-detail-pages/context";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { api } from "@/src/utils/api";
 import { compactNumberFormatter, usdFormatter } from "@/src/utils/numbers";
 import { type RouterOutput } from "@/src/utils/types";
@@ -47,27 +46,13 @@ type RowData = {
 export default function UsersPage() {
   const router = useRouter();
   const projectId = router.query.projectId as string;
-  const { isBetaEnabled } = useV4Beta();
 
   // Check if the user has any users
-  const { data: hasAnyUser, isLoading } = api.users.hasAny.useQuery(
-    { projectId },
-    {
-      enabled: !!projectId && !isBetaEnabled,
-      trpc: {
-        context: {
-          skipBatch: true,
-        },
-      },
-      refetchInterval: 10_000,
-    },
-  );
-
-  const { data: hasAnyUserFromEvents, isLoading: isLoadingFromEvents } =
-    api.users.hasAnyFromEvents.useQuery(
+  const { data: hasUsers, isLoading: isLoadingUsers } =
+    api.users.hasAny.useQuery(
       { projectId },
       {
-        enabled: !!projectId && isBetaEnabled,
+        enabled: !!projectId,
         trpc: {
           context: {
             skipBatch: true,
@@ -77,8 +62,6 @@ export default function UsersPage() {
       },
     );
 
-  const hasUsers = isBetaEnabled ? hasAnyUserFromEvents : hasAnyUser;
-  const isLoadingUsers = isBetaEnabled ? isLoadingFromEvents : isLoading;
   const showOnboarding = !isLoadingUsers && !hasUsers;
 
   return (
@@ -108,16 +91,12 @@ export default function UsersPage() {
       scrollable={showOnboarding}
     >
       {/* Show onboarding screen if user has no users */}
-      {showOnboarding ? (
-        <UsersOnboarding />
-      ) : (
-        <UsersTable isBetaEnabled={isBetaEnabled} />
-      )}
+      {showOnboarding ? <UsersOnboarding /> : <UsersTable />}
     </Page>
   );
 }
 
-const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
+const UsersTable = () => {
   const router = useRouter();
   const projectId = router.query.projectId as string;
 
@@ -194,25 +173,22 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
     withDefault(StringParam, null),
   );
 
-  const usersV3 = api.users.all.useQuery(
-    {
-      filter: filterState,
-      page: paginationState.pageIndex,
-      limit: paginationState.pageSize,
-      projectId,
-      searchQuery: searchQuery ?? undefined,
-    },
-    { enabled: !isBetaEnabled },
-  );
+  const users = api.users.all.useQuery({
+    filter: filterState,
+    page: paginationState.pageIndex,
+    limit: paginationState.pageSize,
+    projectId,
+    searchQuery: searchQuery ?? undefined,
+  });
 
-  const userMetricsV3 = api.users.metrics.useQuery(
+  const userMetrics = api.users.metrics.useQuery(
     {
       projectId,
-      userIds: usersV3.data?.users.map((u) => u.userId) ?? [],
+      userIds: users.data?.users.map((u) => u.userId) ?? [],
       filter: filterState,
     },
     {
-      enabled: usersV3.isSuccess && !isBetaEnabled,
+      enabled: users.isSuccess,
       trpc: {
         context: {
           skipBatch: true,
@@ -220,37 +196,6 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
       },
     },
   );
-
-  const usersV4 = api.users.allFromEvents.useQuery(
-    {
-      filter: filterState,
-      page: paginationState.pageIndex,
-      limit: paginationState.pageSize,
-      projectId,
-      searchQuery: searchQuery ?? undefined,
-    },
-    { enabled: isBetaEnabled },
-  );
-
-  const userMetricsV4 = api.users.metricsFromEvents.useQuery(
-    {
-      projectId,
-      userIds: usersV4.data?.users.map((u) => u.userId) ?? [],
-      filter: filterState,
-    },
-    {
-      enabled: usersV4.isSuccess && isBetaEnabled,
-      trpc: {
-        context: {
-          skipBatch: true,
-        },
-      },
-    },
-  );
-
-  // Select the active query based on beta state
-  const users = isBetaEnabled ? usersV4 : usersV3;
-  const userMetrics = isBetaEnabled ? userMetricsV4 : userMetricsV3;
 
   type UserCoreOutput = RouterOutput["users"]["all"]["users"][number];
   type UserMetricsOutput = RouterOutput["users"]["metrics"][number];
@@ -459,10 +404,8 @@ const UsersTable = ({ isBetaEnabled }: { isBetaEnabled: boolean }) => {
                       lastEvent:
                         t.lastTrace?.toLocaleString() ?? "No event yet",
                       totalEvents: compactNumberFormatter(
-                        isBetaEnabled
-                          ? Number(t.totalObservations ?? 0)
-                          : Number(t.totalTraces ?? 0) +
-                              Number(t.totalObservations ?? 0),
+                        Number(t.totalTraces ?? 0) +
+                          Number(t.totalObservations ?? 0),
                       ),
                       totalTokens: compactNumberFormatter(t.totalTokens ?? 0),
                       totalCost: usdFormatter(

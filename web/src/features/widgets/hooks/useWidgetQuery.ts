@@ -16,7 +16,6 @@ import {
 } from "@langfuse/shared/query";
 import { mapLegacyUiTableFilterToView } from "@/src/features/dashboard/lib/dashboardUiTableToViewMapping";
 import { isTimeSeriesChart } from "@/src/features/widgets/chart-library/utils";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 
 // ============================================================================
 // Types
@@ -113,9 +112,7 @@ export function useWidgetQuery({
   filterState = [],
   sortState = null,
 }: UseWidgetQueryParams): UseWidgetQueryResult {
-  const { isBetaEnabled } = useV4Beta();
-
-  // Compute version based on widget requirements and beta toggle
+  // Compute version based on widget requirements
   const version: ViewVersion = useMemo(() => {
     const widgetRequiresV2 = requiresV2({
       view: widgetConfig.view,
@@ -125,17 +122,12 @@ export function useWidgetQuery({
     });
 
     // If widget requires v2 features (minVersion >= 2), must use v2.
-    // Otherwise follow the beta toggle (except for traces view which has no v2).
     if (widgetRequiresV2 || (widgetConfig.minVersion ?? 1) >= 2) {
       return "v2";
     }
 
-    if (isBetaEnabled && widgetConfig.view !== "traces") {
-      return "v2";
-    }
-
     return "v1";
-  }, [widgetConfig, isBetaEnabled]);
+  }, [widgetConfig]);
 
   // Build the query
   const query: QueryType = useMemo(() => {

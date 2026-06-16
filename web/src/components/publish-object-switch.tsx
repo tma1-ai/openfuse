@@ -5,7 +5,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/src/components/ui/popover";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { api } from "@/src/utils/api";
@@ -22,7 +21,6 @@ export const PublishTraceSwitch = (props: {
   isPublic: boolean;
   size?: "icon" | "icon-xs";
 }) => {
-  const { isBetaEnabled } = useV4Beta();
   const capture = usePostHogClientCapture();
   const hasAccess = useHasProjectAccess({
     projectId: props.projectId,
@@ -35,36 +33,8 @@ export const PublishTraceSwitch = (props: {
       traceId: props.traceId,
       timestamp: props.timestamp,
     };
-  const eventsTraceQueryInput: RouterInput["events"]["byTraceId"] = {
-    projectId: props.projectId,
-    traceId: props.traceId,
-    timestamp: props.timestamp,
-  };
   const mut = api.traces.publish.useMutation({
     onMutate: async (input) => {
-      if (isBetaEnabled) {
-        await utils.events.byTraceId.cancel(eventsTraceQueryInput);
-
-        const previousEvents = utils.events.byTraceId.getData(
-          eventsTraceQueryInput,
-        );
-
-        utils.events.byTraceId.setData(eventsTraceQueryInput, (old) => {
-          if (!old) return old;
-
-          return {
-            ...old,
-            observations: old.observations.map((observation) =>
-              !observation.parentObservationId
-                ? { ...observation, public: input.public }
-                : observation,
-            ),
-          };
-        });
-
-        return { previousEvents };
-      }
-
       await utils.traces.byIdWithObservationsAndScores.cancel(traceQueryInput);
 
       const previousTrace =
@@ -78,23 +48,14 @@ export const PublishTraceSwitch = (props: {
       return { previousTrace };
     },
     onError: (err, _input, context) => {
-      if (isBetaEnabled) {
-        utils.events.byTraceId.setData(
-          eventsTraceQueryInput,
-          context?.previousEvents,
-        );
-      } else {
-        utils.traces.byIdWithObservationsAndScores.setData(
-          traceQueryInput,
-          context?.previousTrace,
-        );
-      }
+      utils.traces.byIdWithObservationsAndScores.setData(
+        traceQueryInput,
+        context?.previousTrace,
+      );
       trpcErrorToast(err);
     },
     onSuccess: async () => {
-      if (!isBetaEnabled) {
-        await utils.traces.all.invalidate();
-      }
+      await utils.traces.all.invalidate();
     },
   });
 

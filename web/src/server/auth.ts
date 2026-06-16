@@ -813,7 +813,6 @@ export async function getAuthOptions(): Promise<NextAuthOptions> {
               // Enables features that are only available under an enterprise license when self-hosting Langfuse
               // If you edit this line, you risk executing code that is not MIT licensed (self-contained in /ee folders otherwise)
               selfHostedInstancePlan: getSelfHostedInstancePlanServerSide(),
-              v4WriteMode: "legacy",
             },
             user:
               dbUser !== null
@@ -828,7 +827,6 @@ export async function getAuthOptions(): Promise<NextAuthOptions> {
                     image: dbUser.image,
                     admin: dbUser.admin,
                     v4BetaEnabled: false,
-                    canToggleV4: false,
                     canCreateOrganizations: canCreateOrganizations(
                       dbUser.email,
                     ),

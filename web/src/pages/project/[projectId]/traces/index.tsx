@@ -8,14 +8,11 @@ import {
   getTracingTabs,
   TRACING_TABS,
 } from "@/src/features/navigation/utils/tracing-tabs";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
-import ObservationsEventsTable from "@/src/features/events/components/EventsTable";
 import { useQueryProject } from "@/src/features/projects/hooks";
 
 export default function Traces() {
   const router = useRouter();
   const projectId = router.query.projectId as string;
-  const { isBetaEnabled, isInitializing } = useV4Beta();
   const { project } = useQueryProject();
 
   // Check if the user has tracing configured
@@ -79,27 +76,13 @@ export default function Traces() {
           ),
           href: "https://langfuse.com/docs/observability/data-model",
         },
-        tabsProps:
-          isBetaEnabled || isInitializing
-            ? undefined
-            : {
-                tabs: getTracingTabs(projectId),
-                activeTab: TRACING_TABS.TRACES,
-              },
+        tabsProps: {
+          tabs: getTracingTabs(projectId),
+          activeTab: TRACING_TABS.TRACES,
+        },
       }}
     >
-      {isInitializing ? (
-        <>
-          {/* Wait for the beta flag before mounting either table. Otherwise the
-              legacy table can briefly mount, restore a v3 saved view, and
-              promote its viewId into the URL before the correct mode
-              resolves. */}
-        </>
-      ) : isBetaEnabled ? (
-        <ObservationsEventsTable projectId={projectId} />
-      ) : (
-        <TracesTable projectId={projectId} />
-      )}
+      <TracesTable projectId={projectId} />
     </Page>
   );
 }

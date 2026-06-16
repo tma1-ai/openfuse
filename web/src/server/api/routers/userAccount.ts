@@ -182,7 +182,6 @@ export const userAccountRouter = createTRPCRouter({
       return {
         success: true,
         v4BetaEnabled: false,
-        canToggleV4: false,
       };
     }),
 });

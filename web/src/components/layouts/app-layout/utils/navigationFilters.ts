@@ -77,7 +77,8 @@ export const filters = {
     }
 
     if (route.featureFlag === "v4BetaToggleVisible") {
-      return ctx.session?.user?.canToggleV4 === true ? route : null;
+      // v4 beta is removed; the toggle is never shown.
+      return null;
     }
 
     const hasFlag =
