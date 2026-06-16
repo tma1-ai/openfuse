@@ -26,7 +26,7 @@ type ErrorType = keyof typeof ERROR_TYPE_CONFIG;
 
 // Compatibility error contract used by existing API/tRPC error formatting.
 // This does not reintroduce the retired ClickHouse client.
-export class ClickHouseResourceError extends Error {
+export class DbResourceError extends Error {
   static ERROR_ADVICE_MESSAGE = RESOURCE_LIMIT_ERROR_MESSAGE;
 
   public readonly errorType: ErrorType;
@@ -38,7 +38,7 @@ export class ClickHouseResourceError extends Error {
     tags?: Record<string, string>,
   ) {
     super(originalError.message, { cause: originalError });
-    this.name = "ClickHouseResourceError";
+    this.name = "DbResourceError";
     this.errorType = errType;
     this.tags = tags;
 
@@ -64,7 +64,7 @@ export class ClickHouseResourceError extends Error {
       );
 
       if (hasDiscriminator) {
-        return new ClickHouseResourceError(type, originalError, tags);
+        return new DbResourceError(type, originalError, tags);
       }
     }
 
@@ -72,11 +72,11 @@ export class ClickHouseResourceError extends Error {
   }
 }
 
-export function parseClickhouseUTCDateTimeFormat(dateStr: string): Date {
+export function parseDbUtcDateTimeFormat(dateStr: string): Date {
   return new Date(`${dateStr.replace(" ", "T")}Z`);
 }
 
-export function clickhouseCompliantRandomCharacters() {
+export function sqlSafeRandomCharacters() {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
   let result = "";
   const randomArray = new Uint8Array(5);

@@ -12,7 +12,7 @@ import {
   PHYSICAL_TABLES,
 } from "../../greptime/ingest/tableSchemas";
 import { recordIncrement } from "../../instrumentation";
-import { parseClickhouseUTCDateTimeFormat } from "../clickhouse";
+import { parseDbUtcDateTimeFormat } from "../dbUtils";
 import {
   type ScoreRecordInsertType,
   type ScoreRecordReadType,
@@ -39,11 +39,11 @@ import {
  * the per-call gRPC write is acceptable here and must not be reused as a bulk write path.
  */
 
-/** Parse a ClickHouse-format datetime string (`YYYY-MM-DD HH:mm:ss.SSS`, UTC) to epoch ms. */
-const chToMs = (value: string): number =>
-  parseClickhouseUTCDateTimeFormat(value).getTime();
+/** Parse a DB datetime string (`YYYY-MM-DD HH:mm:ss.SSS`, UTC) to epoch ms. */
+const dbDateTimeToMs = (value: string): number =>
+  parseDbUtcDateTimeFormat(value).getTime();
 
-const nowAsClickHouseDateTime = (): string =>
+const nowAsDbDateTime = (): string =>
   new Date().toISOString().replace("T", " ").replace("Z", "");
 
 const normalizeTraceRecord = (
@@ -60,7 +60,7 @@ const normalizeTraceRecord = (
     timestamp,
     created_at: createdAt,
     updated_at: updatedAt,
-    event_ts: record.event_ts ?? nowAsClickHouseDateTime(),
+    event_ts: record.event_ts ?? nowAsDbDateTime(),
     name: record.name ?? null,
     user_id: record.user_id ?? null,
     metadata: record.metadata ?? {},
@@ -91,7 +91,7 @@ const normalizeScoreRecord = (
     timestamp,
     created_at: createdAt,
     updated_at: updatedAt,
-    event_ts: record.event_ts ?? nowAsClickHouseDateTime(),
+    event_ts: record.event_ts ?? nowAsDbDateTime(),
     trace_id: record.trace_id ?? null,
     session_id: record.session_id ?? null,
     observation_id: record.observation_id ?? null,
@@ -143,7 +143,7 @@ export const upsertTraceToGreptime = async (
   //    (project comes from the envelope, timestamps from ingestion, IO from the real ingestion events).
   const body = {
     id: full.id,
-    timestamp: parseClickhouseUTCDateTimeFormat(full.timestamp).toISOString(),
+    timestamp: parseDbUtcDateTimeFormat(full.timestamp).toISOString(),
     name: full.name ?? undefined,
     userId: full.user_id ?? undefined,
     metadata: full.metadata ?? undefined,
@@ -167,10 +167,10 @@ export const upsertTraceToGreptime = async (
   // 2. Direct projection+EAV write for immediate read-after-write visibility.
   const insert: TraceRecordInsertType = {
     ...full,
-    timestamp: chToMs(full.timestamp),
-    created_at: chToMs(full.created_at),
-    updated_at: chToMs(full.updated_at),
-    event_ts: full.event_ts ? chToMs(full.event_ts) : Date.now(),
+    timestamp: dbDateTimeToMs(full.timestamp),
+    created_at: dbDateTimeToMs(full.created_at),
+    updated_at: dbDateTimeToMs(full.updated_at),
+    event_ts: full.event_ts ? dbDateTimeToMs(full.event_ts) : Date.now(),
   };
   await writeProjection(GreptimeTable.Traces, insert);
 
@@ -206,9 +206,9 @@ export const upsertScoreToGreptime = async (
     queueId: full.queue_id,
     authorUserId: full.author_user_id,
     environment: full.environment,
-    timestamp: parseClickhouseUTCDateTimeFormat(full.timestamp).toISOString(),
-    createdAt: parseClickhouseUTCDateTimeFormat(full.created_at).toISOString(),
-    updatedAt: parseClickhouseUTCDateTimeFormat(full.updated_at).toISOString(),
+    timestamp: parseDbUtcDateTimeFormat(full.timestamp).toISOString(),
+    createdAt: parseDbUtcDateTimeFormat(full.created_at).toISOString(),
+    updatedAt: parseDbUtcDateTimeFormat(full.updated_at).toISOString(),
   };
   const event = {
     id: randomUUID(),
@@ -222,10 +222,10 @@ export const upsertScoreToGreptime = async (
   // 2. Direct projection+EAV write for immediate read-after-write visibility.
   const insert: ScoreRecordInsertType = {
     ...full,
-    timestamp: chToMs(full.timestamp),
-    created_at: chToMs(full.created_at),
-    updated_at: chToMs(full.updated_at),
-    event_ts: full.event_ts ? chToMs(full.event_ts) : Date.now(),
+    timestamp: dbDateTimeToMs(full.timestamp),
+    created_at: dbDateTimeToMs(full.created_at),
+    updated_at: dbDateTimeToMs(full.updated_at),
+    event_ts: full.event_ts ? dbDateTimeToMs(full.event_ts) : Date.now(),
   };
   await writeProjection(GreptimeTable.Scores, insert);
 

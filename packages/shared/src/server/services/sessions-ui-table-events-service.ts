@@ -1,4 +1,3 @@
-import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import { OrderByState } from "../../interfaces/orderBy";
 import { FilterState } from "../../types";
 import { type SessionEventsMetricsRow } from "../queries";
@@ -15,8 +14,7 @@ import { getTracesIdentifierForSessionFromTracesTable } from "../repositories/gr
  * so these `*FromEvents` variants collapse onto the same GreptimeDB projection read used by the
  * legacy path (`repositories/greptime/sessionsUiTable.ts`, P2). Signatures/return shapes are
  * preserved; the only adaptation is the session-row `environment` field, which the GreptimeDB read
- * exposes as `trace_environment`. `clickhouseConfigs` is retained for source compatibility and
- * ignored.
+ * exposes as `trace_environment`.
  */
 
 type SessionEventsBaseReturnType = {
@@ -96,7 +94,6 @@ export const getSessionsWithMetricsFromEvents = async (props: {
   orderBy?: OrderByState;
   limit?: number;
   page?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions | undefined;
 }): Promise<SessionEventsMetricsRow[]> => {
   const rows = await getSessionsWithMetricsGreptime(props);
   return rows.map((row) => ({

@@ -7,7 +7,7 @@ import {
 import { tracesTableCols } from "../../../tableDefinitions/tracesTable";
 import { tracesTableUiColumnDefinitions } from "../../tableMappings/mapTracesTable";
 import { greptimeQuery } from "../../greptime/client";
-import { measureAndReturn } from "../../clickhouse/measureAndReturn";
+import { measureAndReturn } from "../../storage/measureAndReturn";
 import { recordDistribution, traceException } from "../../instrumentation";
 import { logger } from "../../logger";
 import {
@@ -930,7 +930,7 @@ const ALL_TRACE_FIELDS = [
  * `latency` / `totalCost` metrics; rollup-score advanced filters route to a correlated score-grain
  * EXISTS (TRACE_SCORE_GRAIN). Observation-aggregate advanced filtering (CH `observation_stats` column
  * filters) has no per-row projection column and is a documented narrow gap — it throws loud rather
- * than silently mis-filter. Returns the same domain shape as `convertClickhouseTracesListToDomain`.
+ * than silently mis-filter. Returns the same domain shape as `convertDbRecordTracesListToDomain`.
  */
 export const generateTracesForPublicApi = async ({
   projectId,

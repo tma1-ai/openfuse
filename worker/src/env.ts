@@ -87,15 +87,15 @@ const EnvSchema = z.object({
     .positive()
     .default(5),
   LANGFUSE_SECONDARY_INGESTION_QUEUE_ENABLED_PROJECT_IDS: z.string().optional(),
-  LANGFUSE_INGESTION_CLICKHOUSE_WRITE_BATCH_SIZE: z.coerce
+  LANGFUSE_INGESTION_WRITE_BATCH_SIZE: z.coerce
     .number()
     .positive()
     .default(1000),
-  LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS: z.coerce
+  LANGFUSE_INGESTION_WRITE_INTERVAL_MS: z.coerce
     .number()
     .positive()
     .default(1000),
-  LANGFUSE_INGESTION_CLICKHOUSE_MAX_ATTEMPTS: z.coerce
+  LANGFUSE_INGESTION_WRITE_MAX_ATTEMPTS: z.coerce
     .number()
     .positive()
     .default(3),
@@ -175,13 +175,13 @@ const EnvSchema = z.object({
     .positive()
     .default(5),
 
-  // Skip the read from ClickHouse within the Ingestion pipeline for the given
-  // project ids. Applicable for projects that were created after the S3 write
-  // was activated and which don't rely on historic updates.
-  LANGFUSE_SKIP_INGESTION_CLICKHOUSE_READ_PROJECT_IDS: z.string().default(""),
+  // Skip the baseline read within the Ingestion pipeline for the given project
+  // ids. Applicable for projects that were created after the S3 write was
+  // activated and which don't rely on historic updates.
+  LANGFUSE_SKIP_INGESTION_READ_PROJECT_IDS: z.string().default(""),
   // Set a date after which S3 was active. Projects created after this date do
-  // perform a ClickHouse read as part of the ingestion pipeline.
-  LANGFUSE_SKIP_INGESTION_CLICKHOUSE_READ_MIN_PROJECT_CREATE_DATE: z.iso
+  // perform a baseline read as part of the ingestion pipeline.
+  LANGFUSE_SKIP_INGESTION_READ_MIN_PROJECT_CREATE_DATE: z.iso
     .date()
     .optional(),
 
@@ -343,15 +343,15 @@ const EnvSchema = z.object({
     .default("false"),
 
   LANGFUSE_S3_CONCURRENT_READS: z.coerce.number().positive().default(50),
-  LANGFUSE_CLICKHOUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS: z.coerce
+  LANGFUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS: z.coerce
     .number()
     .positive()
     .default(600_000), // 10 minutes
-  LANGFUSE_CLICKHOUSE_TRACE_DELETION_CONCURRENCY_DURATION_MS: z.coerce
+  LANGFUSE_TRACE_DELETION_CONCURRENCY_DURATION_MS: z.coerce
     .number()
     .positive()
     .default(120_000), // 2 minutes
-  LANGFUSE_CLICKHOUSE_DATASET_DELETION_CONCURRENCY_DURATION_MS: z.coerce
+  LANGFUSE_DATASET_DELETION_CONCURRENCY_DURATION_MS: z.coerce
     .number()
     .positive()
     .default(120_000), // 2 minutes

@@ -1,12 +1,10 @@
 import { OrderByState } from "../../interfaces/orderBy";
 import { FilterState } from "../../types";
-import { FilterList } from "../queries/clickhouse-sql/clickhouse-filter";
+import { FilterList } from "../queries/sql/clickhouse-filter";
 import { TraceRecordReadType } from "./definitions";
 import { tracesTableUiColumnDefinitions } from "../tableMappings/mapTracesTable";
 import { UiColumnMappings, ColumnDefinition } from "../../tableDefinitions";
-import { PreferredClickhouseService } from "../clickhouse/client";
 import { env } from "../../env";
-import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import type { AnalyticsTraceEvent } from "../analytics-integrations/types";
 import { DEFAULT_RENDERING_PROPS, RenderingProps } from "../utils/rendering";
 import * as greptimeTraceReads from "./greptime/traces";
@@ -57,7 +55,6 @@ export const getTracesByIds = async (
   traceIds: string[],
   projectId: string,
   timestamp?: Date,
-  _clickhouseConfigs?: ClickHouseClientConfigOptions | undefined,
 ) => greptimeTraceReads.getTracesByIds(traceIds, projectId, timestamp);
 
 export const getTracesBySessionId = (
@@ -102,8 +99,6 @@ export const getTraceByIdFromTracesTable = async ({
   timestamp?: Date;
   fromTimestamp?: Date;
   renderingProps?: RenderingProps;
-  clickhouseFeatureTag?: string;
-  preferredClickhouseService?: PreferredClickhouseService;
   /** When true, sets input/output columns to empty in the query to reduce database load */
   excludeInputOutput?: boolean;
   /** When true, sets metadata column to empty in the query to reduce database load */

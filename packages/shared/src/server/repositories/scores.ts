@@ -15,12 +15,10 @@ import { filterAndValidateV3GetScoreList } from "../../features/scores/interface
 import { FilterList } from "../queries";
 import { FilterCondition, FilterState, TimeFilter } from "../../types";
 import { OrderByState } from "../../interfaces/orderBy";
-import { PreferredClickhouseService } from "../clickhouse/client";
 import { ScoreRecordReadType } from "./definitions";
 import { env } from "../../env";
 import { _handleGetScoreById, _handleGetScoresByIds } from "./scores-utils";
 import type { AnalyticsScoreEvent } from "../analytics-integrations/types";
-import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import { logger } from "../logger";
 import * as greptimeScoreReads from "./greptime/scores";
 import { upsertScoreToGreptime } from "./greptime/mutations";
@@ -100,10 +98,8 @@ export type GetScoresForTracesProps<
   timestamp?: Date;
   limit?: number;
   offset?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions;
   excludeMetadata?: ExcludeMetadata;
   includeHasMetadata?: IncludeHasMetadata;
-  preferredClickhouseService?: PreferredClickhouseService;
 };
 
 type GetScoresForSessionsProps<
@@ -114,7 +110,6 @@ type GetScoresForSessionsProps<
   sessionIds: string[];
   limit?: number;
   offset?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions;
   excludeMetadata?: ExcludeMetadata;
   includeHasMetadata?: IncludeHasMetadata;
 };
@@ -127,7 +122,6 @@ type GetScoresForExperimentsProps<
   runIds: string[];
   limit?: number;
   offset?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions;
   excludeMetadata?: ExcludeMetadata;
   includeHasMetadata?: IncludeHasMetadata;
 };
@@ -207,7 +201,6 @@ export type GetScoresForObservationsProps<
   minTimestamp?: Date;
   limit?: number;
   offset?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions;
   excludeMetadata?: ExcludeMetadata;
   includeHasMetadata?: IncludeHasMetadata;
 };
@@ -267,7 +260,6 @@ export function getScoresUiTable<
   orderBy: OrderByState;
   limit?: number;
   offset?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions;
   excludeMetadata?: ExcludeMetadata;
   includeHasMetadataFlag?: IncludeHasMetadata;
 }) {
@@ -360,7 +352,6 @@ export const getDistinctScoreNames = (p: {
   cutoffCreatedAt: Date;
   filter: FilterState;
   isTimestampFilter: (filter: FilterCondition) => filter is TimeFilter;
-  clickhouseConfigs?: ClickHouseClientConfigOptions | undefined;
 }) =>
   greptimeScoreReads.getDistinctScoreNames({
     projectId: p.projectId,

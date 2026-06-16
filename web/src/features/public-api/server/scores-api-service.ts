@@ -238,7 +238,6 @@ export class ScoresApiService {
           scoreScope: this.apiVersion === "v1" ? "traces_only" : "all",
           scoreDataTypes:
             this.apiVersion === "v1" ? LISTABLE_SCORE_TYPES : undefined,
-          preferredClickhouseService: "ReadOnly",
         })
       : undefined;
 
@@ -335,7 +334,6 @@ export class ScoresApiService {
       scoreScope: this.apiVersion === "v1" ? "traces_only" : "all",
       scoreDataTypes:
         this.apiVersion === "v1" ? LISTABLE_SCORE_TYPES : undefined,
-      preferredClickhouseService: "ReadOnly",
     });
 
     if (!score) {

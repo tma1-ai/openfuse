@@ -5,7 +5,7 @@ import {
 } from "@langfuse/shared";
 import { JobConfiguration, prisma } from "@langfuse/shared/src/db";
 import {
-  convertDateToClickhouseDateTime,
+  convertDateToDbDateTime,
   createObservation,
   createObservationsGreptime,
   createOrgProjectAndApiKey,
@@ -93,7 +93,7 @@ const test = baseTest.extend<{
   upsertTrace: async ({ projectId }, use) => {
     await use(async (trace) => {
       const now = new Date();
-      const clickhouseNow = convertDateToClickhouseDateTime(now);
+      const clickhouseNow = convertDateToDbDateTime(now);
       await upsertTrace({
         id: trace.id,
         project_id: projectId,
@@ -295,14 +295,14 @@ describe("test eval filtering", () => {
     // Create two traces with different timestamps
     await upsertTwoTraces([
       {
-        timestamp: convertDateToClickhouseDateTime(now),
-        created_at: convertDateToClickhouseDateTime(now),
-        updated_at: convertDateToClickhouseDateTime(now),
+        timestamp: convertDateToDbDateTime(now),
+        created_at: convertDateToDbDateTime(now),
+        updated_at: convertDateToDbDateTime(now),
       },
       {
-        timestamp: convertDateToClickhouseDateTime(futureDate),
-        created_at: convertDateToClickhouseDateTime(futureDate),
-        updated_at: convertDateToClickhouseDateTime(futureDate),
+        timestamp: convertDateToDbDateTime(futureDate),
+        created_at: convertDateToDbDateTime(futureDate),
+        updated_at: convertDateToDbDateTime(futureDate),
       },
     ]);
 

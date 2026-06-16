@@ -9,7 +9,7 @@ import { type GreptimeColumnMappings } from "./columnMappings";
 
 /**
  * ORDER BY for the GreptimeDB read path (04-read-path.md, P0b/P1) — mirrors
- * `clickhouse-sql/orderby-factory.ts` but:
+ * `sql/orderby-factory.ts` but:
  *   - resolves columns against a `GreptimeColumnMappings` and emits `greptimeSelect` (a GreptimeDB
  *     column ref / expression), NOT the CH-dialect `clickhouseSelect` (which carries CH functions and
  *     old physical table names and would leak into GreptimeDB SQL — the original P1 caution).

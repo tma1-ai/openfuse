@@ -8,14 +8,14 @@ import {
   StringFilter,
   NumberFilter,
   type ClickhouseOperator,
-} from "./clickhouse-sql/clickhouse-filter";
+} from "./sql/clickhouse-filter";
 import { z } from "zod";
 import type { EventsTableFilterState } from "../../types";
 import type {
   UiColumnMappings,
   ColumnDefinition,
 } from "../../tableDefinitions";
-import { createFilterFromFilterState } from "./clickhouse-sql/factory";
+import { createFilterFromFilterState } from "./sql/factory";
 
 export type ApiColumnMapping = {
   id: string;

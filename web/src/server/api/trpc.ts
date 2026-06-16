@@ -88,7 +88,7 @@ import {
   logger,
   addUserToSpan,
   contextWithLangfuseProps,
-  ClickHouseResourceError,
+  DbResourceError,
 } from "@langfuse/shared/src/server";
 
 import { AdminApiAuthService } from "@/src/ee/features/admin-api/server/adminApiAuth";
@@ -110,12 +110,12 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
         zodError:
           error.cause instanceof ZodError ? z.flattenError(error.cause) : null,
         errorName:
-          error.cause instanceof ClickHouseResourceError
-            ? "ClickHouseResourceError"
+          error.cause instanceof DbResourceError
+            ? "DbResourceError"
             : null,
-        // do not expose stack traces for CH errors as they may contain sensitive info
+        // do not expose stack traces for DB resource errors as they may contain sensitive info
         stack:
-          error.cause instanceof ClickHouseResourceError
+          error.cause instanceof DbResourceError
             ? null
             : shape.data.stack,
       },
@@ -168,10 +168,10 @@ const withErrorHandling = t.middleware(async ({ ctx, next }) => {
   const res = await next({ ctx }); // pass the context to the next middleware
 
   if (!res.ok) {
-    if (res.error.cause instanceof ClickHouseResourceError) {
-      // Surface ClickHouse errors using an advice message
+    if (res.error.cause instanceof DbResourceError) {
+      // Surface DB resource errors using an advice message
       // which is supposed to provide a bit of guidance to the user.
-      logger.warn("ClickHouse resource limit exceeded", {
+      logger.warn("DB resource limit exceeded", {
         errorType: res.error.cause.errorType,
         message: res.error.cause.message,
         tags: res.error.cause.tags,
@@ -179,7 +179,7 @@ const withErrorHandling = t.middleware(async ({ ctx, next }) => {
       logErrorByCode("UNPROCESSABLE_CONTENT", res.error);
       res.error = new TRPCError({
         code: "UNPROCESSABLE_CONTENT",
-        message: ClickHouseResourceError.ERROR_ADVICE_MESSAGE,
+        message: DbResourceError.ERROR_ADVICE_MESSAGE,
         // Keep the original error, it will be removed by `errorFormatter`
         cause: res.error.cause,
       });
@@ -497,7 +497,6 @@ const enforceTraceAccess = t.middleware(async (opts) => {
       truncated: verbosity === "truncated",
       shouldJsonParse: false, // we do not want to parse the input/output for tRPC
     },
-    clickhouseFeatureTag: "tracing-trpc",
   });
 
   if (!clickhouseTrace) {

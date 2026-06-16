@@ -10,7 +10,7 @@ import {
   UnauthorizedError,
   type RateLimitResult,
 } from "@langfuse/shared";
-import { ClickHouseResourceError } from "@langfuse/shared/src/server";
+import { DbResourceError } from "@langfuse/shared/src/server";
 import type {
   UnstablePublicApiErrorCodeType,
   UnstablePublicApiErrorDetailsType,
@@ -208,12 +208,12 @@ export function toUnstablePublicApiError(
     });
   }
 
-  if (error instanceof ClickHouseResourceError) {
+  if (error instanceof DbResourceError) {
     return createUnstablePublicApiError({
       httpCode: 422,
       code: "unprocessable_content",
       message: [
-        ClickHouseResourceError.ERROR_ADVICE_MESSAGE,
+        DbResourceError.ERROR_ADVICE_MESSAGE,
         "See https://langfuse.com/docs/api-and-data-platform/features/public-api for more details.",
       ].join("\n"),
     });

@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
 import {
-  LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE,
+  LEGACY_PUBLIC_API_METRICS_RESOURCE_ERROR_MESSAGE,
   withMiddlewares,
 } from "@/src/features/public-api/server/withMiddlewares";
 import {
@@ -10,7 +10,7 @@ import {
   ServiceUnavailableError,
 } from "@langfuse/shared";
 import {
-  ClickHouseResourceError,
+  DbResourceError,
   logger,
   traceException,
 } from "@langfuse/shared/src/server";
@@ -183,10 +183,10 @@ describe("withMiddlewares error handling", () => {
     });
   });
 
-  describe("ClickHouseResourceError handling", () => {
-    it("should handle ClickHouseResourceError with 422 status", async () => {
+  describe("DbResourceError handling", () => {
+    it("should handle DbResourceError with 422 status", async () => {
       const originalError = new Error("Memory limit exceeded: maximum: 10GB");
-      const resourceError = new ClickHouseResourceError(
+      const resourceError = new DbResourceError(
         "MEMORY_LIMIT",
         originalError,
       );
@@ -210,14 +210,14 @@ describe("withMiddlewares error handling", () => {
       const jsonData = JSON.parse(res._getData());
       expect(jsonData["message"]).toBeDefined();
       expect(jsonData["message"]).toContain(
-        ClickHouseResourceError.ERROR_ADVICE_MESSAGE,
+        DbResourceError.ERROR_ADVICE_MESSAGE,
       );
       expect(jsonData["error"]).toBe("Request timed out");
     });
 
     it("should include tags from the error in the warn log", async () => {
       const originalError = new Error("Memory limit exceeded");
-      const resourceError = new ClickHouseResourceError(
+      const resourceError = new DbResourceError(
         "MEMORY_LIMIT",
         originalError,
         { type: "events", kind: "publicApiRows" },
@@ -248,9 +248,9 @@ describe("withMiddlewares error handling", () => {
       );
     });
 
-    it("should handle ClickHouseResourceError with custom advice", async () => {
+    it("should handle DbResourceError with custom advice", async () => {
       const originalError = new Error("Timeout exceeded");
-      const resourceError = new ClickHouseResourceError(
+      const resourceError = new DbResourceError(
         "TIMEOUT",
         originalError,
       );
@@ -262,8 +262,8 @@ describe("withMiddlewares error handling", () => {
           },
         },
         {
-          clickHouseResourceErrorMessage:
-            LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE,
+          resourceErrorMessage:
+            LEGACY_PUBLIC_API_METRICS_RESOURCE_ERROR_MESSAGE,
         },
       );
 
@@ -279,7 +279,7 @@ describe("withMiddlewares error handling", () => {
       expect(res._getStatusCode()).toBe(422);
       const jsonData = JSON.parse(res._getData());
       expect(jsonData["message"]).toBe(
-        LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE,
+        LEGACY_PUBLIC_API_METRICS_RESOURCE_ERROR_MESSAGE,
       );
       expect(jsonData["message"]).toContain(
         "https://langfuse.com/docs/metrics/features/metrics-api",

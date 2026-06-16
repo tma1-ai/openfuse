@@ -1,11 +1,11 @@
 import { LangfuseNotFoundError } from "../../errors";
 import { eventTypes } from "../ingestion/types";
-import { ClickhouseTableName, ClickhouseTableNames } from "./schema";
+import { IngestionTableName, IngestionTableNames } from "./schema";
 
 export const isValidTableName = (
   tableName: string,
-): tableName is ClickhouseTableName =>
-  Object.keys(ClickhouseTableNames).includes(tableName);
+): tableName is IngestionTableName =>
+  Object.keys(IngestionTableNames).includes(tableName);
 
 export type IngestionEntityTypes =
   | "trace"
@@ -14,7 +14,7 @@ export type IngestionEntityTypes =
   | "sdk_log"
   | "dataset_run_item";
 
-export const getClickhouseEntityType = (
+export const getIngestionEntityType = (
   eventType: string,
 ): IngestionEntityTypes => {
   switch (eventType) {

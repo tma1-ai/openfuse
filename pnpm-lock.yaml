@@ -50,55 +50,6 @@ importers:
         specifier: 2.9.14
         version: 2.9.14
 
-  ee:
-    dependencies:
-      '@langfuse/shared':
-        specifier: workspace:*
-        version: link:../packages/shared
-      '@opentelemetry/api':
-        specifier: '>=1.0.0 <1.10.0'
-        version: 1.9.0
-      https-proxy-agent:
-        specifier: ^7.0.6
-        version: 7.0.6
-      next:
-        specifier: 16.2.6
-        version: 16.2.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      next-auth:
-        specifier: ^4.24.13
-        version: 4.24.13(patch_hash=7b301d2607ee3cd8bba4f6978ba8cdd7a616b59d6e414191da3b38950ce08e66)(next@16.2.6(@babel/core@7.29.0)(@opentelemetry/api@1.9.0)(@playwright/test@1.57.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4))(nodemailer@7.0.11)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
-      zod:
-        specifier: 4.3.6
-        version: 4.3.6
-    devDependencies:
-      '@repo/eslint-config':
-        specifier: workspace:*
-        version: link:../packages/config-eslint
-      '@repo/typescript-config':
-        specifier: workspace:*
-        version: link:../packages/config-typescript
-      '@types/node':
-        specifier: ^24.3.0
-        version: 24.3.0
-      '@typescript/native-preview':
-        specifier: 7.0.0-dev.20260122.3
-        version: 7.0.0-dev.20260122.3
-      eslint:
-        specifier: ^9.39.2
-        version: 9.39.4(jiti@2.7.0)
-      prettier:
-        specifier: ^3.8.3
-        version: 3.8.3
-      ts-node:
-        specifier: ^10.9.2
-        version: 10.9.2(@types/node@24.3.0)(typescript@5.9.2)
-      tsc-watch:
-        specifier: ^6.2.0
-        version: 6.2.0(typescript@5.9.2)
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.2
-
   packages/config-eslint:
     dependencies:
       '@eslint/js':
@@ -184,9 +135,6 @@ importers:
       '@azure/storage-blob':
         specifier: ^12.26.0
         version: 12.26.0
-      '@clickhouse/client':
-        specifier: ^1.18.5
-        version: 1.18.5
       '@google-cloud/storage':
         specifier: ^7.19.0
         version: 7.19.0
@@ -437,9 +385,6 @@ importers:
       '@langchain/core':
         specifier: ^1.1.48
         version: 1.1.48(@opentelemetry/api@1.9.0)(@opentelemetry/exporter-trace-otlp-proto@0.218.0(@opentelemetry/api@1.9.0))(@opentelemetry/sdk-trace-base@2.7.1(@opentelemetry/api@1.9.0))(openai@6.33.0(ws@8.20.1)(zod@4.3.6))(ws@8.20.1)
-      '@langfuse/ee':
-        specifier: workspace:*
-        version: link:../ee
       '@langfuse/shared':
         specifier: workspace:*
         version: link:../packages/shared
@@ -1808,13 +1753,6 @@ packages:
 
   '@chevrotain/types@11.1.2':
     resolution: {integrity: sha512-U+HFai5+zmJCkK86QsaJtoITlboZHBqrVketcO2ROv865xfCMSFpELQoz1GkX5GzME8pTa+3kbKrZHQtI0gdbw==}
-
-  '@clickhouse/client-common@1.18.5':
-    resolution: {integrity: sha512-g9LwcS1dvkatKDsIjT1PwUHldsiYzwdKAB0nXfd9APLd+t4PrNJa+my+dXcqJdmcWyhWjKLP/2/ztBwgxp+sbQ==}
-
-  '@clickhouse/client@1.18.5':
-    resolution: {integrity: sha512-4FfoyMkFWhsdNMuXsoEL6l3c12svA63BBJBtDo9SrxRZ14RdmN6jLr/rF3f84BK8cFoxETZCSeKlsbk6NNYebw==}
-    engines: {node: '>=16'}
 
   '@codemirror/autocomplete@6.17.0':
     resolution: {integrity: sha512-fdfj6e6ZxZf8yrkMHUSJJir7OJkHkZKaOZGzLWIYp2PZ3jd+d+UjG8zVPqJF6d3bKxkhvXTPan/UZ1t7Bqm0gA==}
@@ -13249,12 +13187,6 @@ snapshots:
   '@cfworker/json-schema@4.1.1': {}
 
   '@chevrotain/types@11.1.2': {}
-
-  '@clickhouse/client-common@1.18.5': {}
-
-  '@clickhouse/client@1.18.5':
-    dependencies:
-      '@clickhouse/client-common': 1.18.5
 
   '@codemirror/autocomplete@6.17.0(@codemirror/language@6.12.3)(@codemirror/state@6.6.0)(@codemirror/view@6.42.0)(@lezer/common@1.5.1)':
     dependencies:

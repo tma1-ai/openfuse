@@ -11,7 +11,7 @@ seeder/
 ├── clickhouse-builder.ts    # ClickHouse query building
 ├── seeder-orchestrator.ts   # Main orchestration logic
 ├── postgres-seed-constants.ts  # PostgreSQL data constants
-├── clickhouse-seed-constants.ts  # ClickHouse data constants
+├── seed-constants.ts  # Realistic test-data constants
 └── seed-helpers.ts          # Utility functions
 ```
 
@@ -112,7 +112,7 @@ interface SeederConfig {
 #### Changing Data Distribution
 
 1. Modify generator methods in `DataGenerator`
-2. Update constants in `clickhouse-seed-constants.ts`
+2. Update constants in `seed-constants.ts`
 3. Test with small datasets first
 
 #### Changing ID Generation
@@ -157,4 +157,4 @@ packages/shared/clickhouse/
 ### Constants Files
 
 - `postgres-seed-constants.ts` - Datasets, prompts, and PostgreSQL data
-- `clickhouse-seed-constants.ts` - ClickHouse-specific constants (models, names)
+- `seed-constants.ts` - Realistic test-data constants (models, names)

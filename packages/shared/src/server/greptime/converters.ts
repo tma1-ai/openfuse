@@ -1,4 +1,4 @@
-import { getClickhouseEntityType } from "../clickhouse/schemaUtils";
+import { getIngestionEntityType } from "../storage/schemaUtils";
 import { IngestionEventType } from "../ingestion/types";
 import { RawEventInput, RawEventRow } from "./rawEvents";
 
@@ -36,7 +36,7 @@ export const ingestionEventToRawEvent = (
   if (!entityId) return null;
   return {
     projectId,
-    entityType: getClickhouseEntityType(event.type),
+    entityType: getIngestionEntityType(event.type),
     entityId,
     eventId: event.id,
     eventType: event.type,

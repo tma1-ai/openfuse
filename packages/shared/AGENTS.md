@@ -46,8 +46,8 @@ Use root [AGENTS.md](../../AGENTS.md) for monorepo-level rules.
   helpers, eval/model-pricing helpers, and other frontend-safe utilities.
 - `@langfuse/shared/src/server` via `src/server/index.ts`: server-only barrel
   for shared backend services, repositories, queue helpers/contracts, Redis and
-  ClickHouse helpers, auth helpers, logger/instrumentation, ingestion helpers,
-  LLM execution helpers, and server test utilities.
+  storage helpers, auth helpers, logger/instrumentation, ingestion helpers, LLM
+  execution helpers, and server test utilities.
 - `@langfuse/shared/src/db` via `src/db.ts`: Prisma client singleton plus
   Prisma namespace/types for direct database access. Never route this into
   frontend-safe code.
@@ -99,8 +99,8 @@ the same PR.
 ### ClickHouse schema change
 
 1. Add migration under `clickhouse/migrations/*`.
-2. Update ClickHouse query/mapping logic in `src/server/clickhouse/*` and
-   related repositories.
+2. Update query/mapping logic in `src/server/storage/*`,
+   `src/server/queries/sql/*`, and related repositories.
 3. Validate ingestion/read path impact in both `web` and `worker`.
 4. If the change affects columns, types, or nullability of tables read by blob
    storage export queries (`getTracesForBlobStorageExport`,
@@ -132,8 +132,7 @@ the same PR.
    `src/env.ts`, or another explicit subpath).
 3. Update `package.json#exports` if the public import path changed or a new
    subpath is required.
-4. Update import sites in `web`, `worker`, and `ee` to use the intended
-   entrypoint.
+4. Update import sites in `web` and `worker` to use the intended entrypoint.
 5. Update this file and any consuming package `AGENTS.md` guidance when the
    recommended import path changes.
 

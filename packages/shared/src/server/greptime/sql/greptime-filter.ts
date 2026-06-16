@@ -3,13 +3,13 @@ import {
   FTS_MATCH_OPERATOR,
   type FtsMatchOperator,
 } from "../../../interfaces/filters";
-import { clickhouseCompliantRandomCharacters } from "../../repositories/clickhouse";
+import { sqlSafeRandomCharacters } from "../../repositories/dbUtils";
 import { escapeSqlLikePattern } from "../../utils/sqlLike";
 import { quoteIdent } from "../schemaUtils";
 
 /**
  * GreptimeDB filter -> SQL translator (04-read-path.md, P0b). Mirrors the `Filter`/`FilterList`
- * contract of `queries/clickhouse-sql/clickhouse-filter.ts` so the read path can swap the dialect
+ * contract of `queries/sql/clickhouse-filter.ts` so the read path can swap the dialect
  * while keeping the same factory + repository call sites, but emits GreptimeDB (MySQL-wire) SQL:
  *
  *   - `:named` placeholders (the read pool sets `namedPlaceholders: true`), not CH `{v: Type}`.
@@ -44,7 +44,7 @@ export interface GreptimeFilter {
 // helpers
 // ---------------------------------------------------------------------------
 
-const uid = () => clickhouseCompliantRandomCharacters();
+const uid = () => sqlSafeRandomCharacters();
 
 const isBareIdentifier = (s: string) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(s);
 

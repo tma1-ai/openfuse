@@ -1,6 +1,6 @@
 import { createAuthedProjectAPIRoute } from "@/src/features/public-api/server/createAuthedProjectAPIRoute";
 import {
-  LEGACY_PUBLIC_API_OBSERVATIONS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE,
+  LEGACY_PUBLIC_API_OBSERVATIONS_RESOURCE_ERROR_MESSAGE,
   withMiddlewares,
 } from "@/src/features/public-api/server/withMiddlewares";
 import { transformDbToApiObservation } from "@/src/features/public-api/types/observations";
@@ -58,8 +58,6 @@ export default withMiddlewares(
         const trace = await getTraceById({
           traceId,
           projectId: auth.scope.projectId,
-          clickhouseFeatureTag: "tracing-public-api",
-          preferredClickhouseService: "ReadOnly",
           excludeInputOutput: !includeIO,
           excludeMetadata: !includeIO,
         });
@@ -77,7 +75,6 @@ export default withMiddlewares(
                 projectId: auth.scope.projectId,
                 timestamp: trace?.timestamp,
                 includeIO: includeObservations,
-                preferredClickhouseService: "ReadOnly",
               })
             : Promise.resolve([]),
           includeScores
@@ -85,7 +82,6 @@ export default withMiddlewares(
                 projectId: auth.scope.projectId,
                 traceIds: [traceId],
                 timestamp: trace?.timestamp,
-                preferredClickhouseService: "ReadOnly",
               })
             : Promise.resolve([]),
         ]);
@@ -212,7 +208,7 @@ export default withMiddlewares(
     }),
   },
   {
-    clickHouseResourceErrorMessage:
-      LEGACY_PUBLIC_API_OBSERVATIONS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE,
+    resourceErrorMessage:
+      LEGACY_PUBLIC_API_OBSERVATIONS_RESOURCE_ERROR_MESSAGE,
   },
 );

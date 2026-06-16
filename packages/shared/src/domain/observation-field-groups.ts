@@ -27,7 +27,7 @@
  *   - packages/shared/src/server/repositories/events.ts:
  *     `enrichObservationsWithModelData` (v2 read path) and the export
  *     streaming path that gates `model_export`.
- *   - packages/shared/src/server/queries/clickhouse-sql/event-query-builder.ts:
+ *   - packages/shared/src/server/queries/sql/event-query-builder.ts:
  *     `FIELD_SETS` and `EVENTS_FIELDS` for the underlying column projections.
  */
 

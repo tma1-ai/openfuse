@@ -3,7 +3,7 @@ import {
   type FtsMatchOperator,
   filterOperators,
 } from "../../../interfaces/filters";
-import { clickhouseCompliantRandomCharacters } from "../../repositories/clickhouse";
+import { sqlSafeRandomCharacters } from "../../repositories/dbUtils";
 import { escapeSqlLikePattern } from "../../utils/sqlLike";
 import {
   assertValidFtsMatchFilter,
@@ -60,7 +60,7 @@ export class StringFilter implements Filter {
   }
 
   apply(): ClickhouseFilter {
-    const varName = `stringFilter${clickhouseCompliantRandomCharacters()}`;
+    const varName = `stringFilter${sqlSafeRandomCharacters()}`;
 
     const fieldWithPrefix = `${this.tablePrefix ? this.tablePrefix + "." : ""}${this.field}`;
 
@@ -161,7 +161,7 @@ export class NumberFilter implements Filter {
   }
 
   apply(): ClickhouseFilter {
-    const uid = clickhouseCompliantRandomCharacters();
+    const uid = sqlSafeRandomCharacters();
     const varName = `numberFilter${uid}`;
     const type = this.clickhouseTypeOverwrite ?? "Decimal64(12)";
     return {
@@ -193,7 +193,7 @@ export class DateTimeFilter implements Filter {
   }
 
   apply(): ClickhouseFilter {
-    const uid = clickhouseCompliantRandomCharacters();
+    const uid = sqlSafeRandomCharacters();
     const varName = `dateTimeFilter${uid}`;
     return {
       query: `${this.tablePrefix ? this.tablePrefix + "." : ""}${this.field} ${this.operator} {${varName}: DateTime64(3)}`,
@@ -227,7 +227,7 @@ export class StringOptionsFilter implements Filter {
   }
 
   apply(): ClickhouseFilter {
-    const uid = clickhouseCompliantRandomCharacters();
+    const uid = sqlSafeRandomCharacters();
     const varName = `stringOptionsFilter${uid}`;
     const fieldWithPrefix = `${this.tablePrefix ? this.tablePrefix + "." : ""}${this.field}`;
     const hasEmpty = this.emptyEqualsNull && this.values.includes("");
@@ -280,7 +280,7 @@ export class CategoryOptionsFilter implements Filter {
   }
 
   apply(): ClickhouseFilter {
-    const uid = clickhouseCompliantRandomCharacters();
+    const uid = sqlSafeRandomCharacters();
     const varName = `categoryOptionsFilter${uid}`;
 
     // Flatten the hierarchical structure into array of "parent:child" strings for improved query performance
@@ -341,8 +341,8 @@ export class StringObjectFilter implements Filter {
   }
 
   apply(): ClickhouseFilter {
-    const varKeyName = `stringObjectKeyFilter${clickhouseCompliantRandomCharacters()}`;
-    const varValueName = `stringObjectValueFilter${clickhouseCompliantRandomCharacters()}`;
+    const varKeyName = `stringObjectKeyFilter${sqlSafeRandomCharacters()}`;
+    const varValueName = `stringObjectValueFilter${sqlSafeRandomCharacters()}`;
     const prefix = this.tablePrefix ? this.tablePrefix + "." : "";
 
     // Events tables use array columns (metadata_names/metadata_values);
@@ -361,7 +361,7 @@ export class StringObjectFilter implements Filter {
       const valueAccessor = `${valuesColumn}[indexOf(${namesColumn}, {${varKeyName}: String})]`;
       const hasKey = `has(${namesColumn}, {${varKeyName}: String})`;
       const valueParam = `{${varValueName}: String}`;
-      const ngramPrefilterParamName = `stringObjectNgramFilter${clickhouseCompliantRandomCharacters()}`;
+      const ngramPrefilterParamName = `stringObjectNgramFilter${sqlSafeRandomCharacters()}`;
       const shouldUseNgramPrefilter =
         this.operator !== FTS_MATCH_OPERATOR &&
         isFtsMetadataField(this.field) &&
@@ -478,7 +478,7 @@ export class ArrayOptionsFilter implements Filter {
   }
 
   apply(): ClickhouseFilter {
-    const uid = clickhouseCompliantRandomCharacters();
+    const uid = sqlSafeRandomCharacters();
     const varName = `arrayOptionsFilter${uid}`;
     let query: string;
 
@@ -570,8 +570,8 @@ export class NumberObjectFilter implements Filter {
   }
 
   apply(): ClickhouseFilter {
-    const varKeyName = `numberObjectKeyFilter${clickhouseCompliantRandomCharacters()}`;
-    const varValueName = `numberObjectValueFilter${clickhouseCompliantRandomCharacters()}`;
+    const varKeyName = `numberObjectKeyFilter${sqlSafeRandomCharacters()}`;
+    const varValueName = `numberObjectValueFilter${sqlSafeRandomCharacters()}`;
     const column = `${this.tablePrefix ? this.tablePrefix + "." : ""}${this.field}`;
     return {
       query: `empty(arrayFilter(x -> (((x.1) = {${varKeyName}: String}) AND ((x.2) ${this.operator} {${varValueName}: Decimal64(12)})), ${column})) = 0`,
@@ -602,7 +602,7 @@ export class BooleanFilter implements Filter {
   }
 
   apply(): ClickhouseFilter {
-    const uid = clickhouseCompliantRandomCharacters();
+    const uid = sqlSafeRandomCharacters();
     const varName = `booleanFilter${uid}`;
     return {
       query: `${this.tablePrefix ? this.tablePrefix + "." : ""}${this.field} ${this.operator} {${varName}: Boolean}`,

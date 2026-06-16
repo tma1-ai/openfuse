@@ -1,4 +1,4 @@
-import { QueryBuilder, executeQuery } from "@langfuse/shared/query/server";
+import { executeQuery } from "@langfuse/shared/query/server";
 import {
   getValidAggregationsForMeasureType,
   metricAggregations,
@@ -976,16 +976,6 @@ describe("queryBuilder", () => {
         };
 
         // Execute query
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify ORDER BY clause is present in the query
-        expect(compiledQuery).toContain("ORDER BY name asc");
-
-        // Execute query
         const result: { data: Array<any> } = { data: [] };
         result.data = await executeQuery(projectId, query);
 
@@ -1022,16 +1012,6 @@ describe("queryBuilder", () => {
           ).toISOString(),
           orderBy: [{ field: "sum_observationsCount", direction: "desc" }],
         };
-
-        // Execute query
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify ORDER BY clause is present in the query
-        expect(compiledQuery).toContain("ORDER BY sum_observationsCount desc");
 
         // Execute query
         const result: { data: Array<any> } = { data: [] };
@@ -1074,17 +1054,6 @@ describe("queryBuilder", () => {
             { field: "sum_observationsCount", direction: "desc" },
           ],
         };
-
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify ORDER BY clause is present in the query with both fields
-        expect(compiledQuery).toContain(
-          "ORDER BY environment asc, sum_observationsCount desc",
-        );
 
         // Execute query
         const result: { data: Array<any> } = { data: [] };
@@ -1146,15 +1115,6 @@ describe("queryBuilder", () => {
           orderBy: null,
         };
 
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify ORDER BY clause includes default time dimension ordering
-        expect(compiledQuery).toContain("ORDER BY time_dimension asc");
-
         // Execute query
         const result: { data: Array<any> } = { data: [] };
         result.data = await executeQuery(projectId, query);
@@ -1202,15 +1162,6 @@ describe("queryBuilder", () => {
           orderBy: null,
         };
 
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify ORDER BY clause includes default metric ordering (descending)
-        expect(compiledQuery).toContain("ORDER BY sum_observationsCount desc");
-
         // Execute query
         const result: { data: Array<any> } = { data: [] };
         result.data = await executeQuery(projectId, query);
@@ -1248,15 +1199,6 @@ describe("queryBuilder", () => {
           ).toISOString(),
           orderBy: null,
         };
-
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify ORDER BY clause includes default dimension ordering (ascending)
-        expect(compiledQuery).toContain("ORDER BY name asc");
 
         // Execute query
         const result: { data: Array<any> } = { data: [] };
@@ -1412,16 +1354,6 @@ describe("queryBuilder", () => {
           toTimestamp: toDate.toISOString(),
           orderBy: null,
         };
-
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify WITH FILL clause is present in the query
-        expect(compiledQuery).toContain("WITH FILL");
-        expect(compiledQuery).toContain("STEP INTERVAL 1 DAY");
 
         // Execute query
         const result: { data: Array<any> } = { data: [] };
@@ -1913,22 +1845,6 @@ describe("queryBuilder", () => {
           orderBy: null,
         };
 
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery, parameters } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify SQL restricts scores-numeric to the NUMERIC/BOOLEAN allow-list
-        expect(compiledQuery).toContain(
-          "scores_numeric.data_type IN ({stringOptionsFilter",
-        );
-        expect(compiledQuery).toContain(": Array(String)})");
-        expect(Object.values(parameters)).toContainEqual([
-          "NUMERIC",
-          "BOOLEAN",
-        ]);
-
         // Execute query
         const result: { data: Array<any> } = { data: [] };
         result.data = await executeQuery(projectId, query);
@@ -2147,16 +2063,6 @@ describe("queryBuilder", () => {
           ).toISOString(),
           orderBy: null,
         };
-
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify joins included
-        expect(compiledQuery).toContain("INNER JOIN traces");
-        expect(compiledQuery).toContain("INNER JOIN observations");
 
         // Execute query
         const result: { data: Array<any> } = { data: [] };
@@ -2429,15 +2335,6 @@ describe("queryBuilder", () => {
           orderBy: null,
         };
 
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify the compiled query contains filtering on name
-        expect(compiledQuery).toContain("scores_numeric.name");
-
         // Execute query
         const result: { data: Array<any> } = { data: [] };
         result.data = await executeQuery(projectId, query);
@@ -2561,16 +2458,6 @@ describe("queryBuilder", () => {
           ).toISOString(),
           orderBy: null,
         };
-
-        const queryBuilder = new QueryBuilder();
-        const { query: compiledQuery, parameters } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-
-        // Verify SQL includes segment filter for CATEGORICAL type
-        expect(compiledQuery).toContain("data_type = {");
-        expect(Object.values(parameters)).toContain("CATEGORICAL");
 
         // Execute query
         const result: { data: Array<any> } = { data: [] };
@@ -3233,19 +3120,6 @@ describe("queryBuilder", () => {
           chartConfig: { type: "HISTOGRAM", bins: 20 }, // Custom bin count
         };
 
-        // Execute histogram query with custom bins
-        const queryBuilder = new QueryBuilder(
-          customBinHistogramQuery.chartConfig,
-        );
-        const { query: compiledQuery } = await queryBuilder.build(
-          customBinHistogramQuery,
-          projectId,
-        );
-
-        // Verify the generated SQL contains histogram function with custom bins
-        expect(compiledQuery).toContain("histogram(20)");
-        expect(compiledQuery).toContain("total_cost");
-
         // Execute query
         const result: { data: Array<any> } = { data: [] };
         result.data = await executeQuery(projectId, customBinHistogramQuery);
@@ -3325,14 +3199,6 @@ describe("queryBuilder", () => {
           orderBy: [{ field: "name", direction: "asc" }],
           chartConfig: { type: "TABLE", row_limit: 5 },
         };
-
-        // Verify the generated SQL contains LIMIT clause
-        const queryBuilder = new QueryBuilder(query.chartConfig);
-        const { query: compiledQuery } = await queryBuilder.build(
-          query,
-          projectId,
-        );
-        expect(compiledQuery).toContain("LIMIT 5");
 
         // Execute query and verify row limit is applied
         const result = await executeQuery(projectId, query);
@@ -3455,39 +3321,6 @@ describe("queryBuilder", () => {
       expect(resultWithOpt).toEqual(resultWithoutOpt);
     });
 
-    it("should NOT optimize when measure without aggs is included (countScores)", async () => {
-      const projectId = randomUUID();
-
-      const query: QueryType = {
-        view: "observations",
-        dimensions: [{ field: "name" }],
-        metrics: [
-          { measure: "latency", aggregation: "avg" }, // Has aggs
-          { measure: "countScores", aggregation: "sum" }, // NO aggs - relation table measure
-        ],
-        filters: [],
-        timeDimension: null,
-        fromTimestamp: new Date(Date.now() - 86400000).toISOString(),
-        toTimestamp: new Date(Date.now() + 86400000).toISOString(),
-        orderBy: null,
-      };
-
-      // Build query with optimization enabled
-      const builder = new QueryBuilder(undefined, "v1");
-      const { query: compiledQuery } = await builder.build(
-        query,
-        projectId,
-        true,
-      );
-
-      // Should use two-level query (because countScores doesn't have aggs)
-      expect(compiledQuery).toContain("FROM (");
-      expect(compiledQuery.match(/GROUP BY/g)?.length).toBe(2); // Two GROUP BY clauses
-
-      // Should have the JOIN
-      expect(compiledQuery).toContain("INNER JOIN scores");
-    });
-
     // TODO(P7): GreptimeDB executor does not implement the `tokensPerSecond` measure for the observations view. Surfaced when the seed swap let this run on
     // GreptimeDB for the first time; tracked for the GreptimeDB dashboard-query
     // executor completeness follow-up (issue #7).
@@ -3520,16 +3353,6 @@ describe("queryBuilder", () => {
         orderBy: null,
       };
 
-      const builder = new QueryBuilder(undefined, "v1");
-      const { query: compiledQuery } = await builder.build(
-        query,
-        projectId,
-        true,
-      );
-
-      // Verify template substitution for multiple aggs was stripped
-      expect(compiledQuery).not.toContain("${agg"); // No templates left
-
       // Verify results match
       const resultWithOpt = await executeQuery(projectId, query, "v1", true);
       const resultWithoutOpt = await executeQuery(
@@ -3539,38 +3362,6 @@ describe("queryBuilder", () => {
         false,
       );
       expect(resultWithOpt).toEqual(resultWithoutOpt);
-    });
-
-    it("should verify SQL query structure with optimization enabled", async () => {
-      const projectId = randomUUID();
-
-      const query: QueryType = {
-        view: "observations",
-        dimensions: [{ field: "name" }],
-        metrics: [{ measure: "latency", aggregation: "avg" }],
-        filters: [],
-        timeDimension: null,
-        fromTimestamp: new Date(Date.now() - 86400000).toISOString(),
-        toTimestamp: new Date(Date.now() + 86400000).toISOString(),
-        orderBy: null,
-      };
-
-      const builder = new QueryBuilder(undefined, "v1");
-      const { query: compiledQuery } = await builder.build(
-        query,
-        projectId,
-        true,
-      );
-
-      // Verify single-level structure
-      expect(compiledQuery).not.toContain("FROM ("); // No subquery
-      expect(compiledQuery.match(/GROUP BY/g)?.length).toBe(1); // Only one GROUP BY
-
-      // Verify @@AGG1@@, @@AGG2@@, etc. templates were substituted or removed
-      expect(compiledQuery).not.toContain("@@AGG");
-
-      // Verify direct aggregation (should have date_diff without template wrappers)
-      expect(compiledQuery).toContain("date_diff");
     });
 
     it("should handle totalCost measure correctly in both modes", async () => {
@@ -4121,354 +3912,5 @@ describe("getValidAggregationsForMeasureType", () => {
 
   it("restricted set contains only count and uniq for string measures", () => {
     expect(getValidAggregationsForMeasureType("string")).toEqual(restricted);
-  });
-});
-
-describe("query builder measure-aggregation validation", () => {
-  it("should build base-table entity dimension queries without time-series SQL", async () => {
-    const query: QueryType = {
-      view: "observations",
-      dimensions: [],
-      metrics: [{ measure: "totalCost", aggregation: "sum" }],
-      filters: [
-        {
-          column: "experimentName",
-          operator: "any of",
-          value: ["experiment-a"],
-          type: "stringOptions",
-        },
-        {
-          column: "experimentId",
-          operator: "any of",
-          value: ["experiment-id-a"],
-          type: "stringOptions",
-        },
-      ],
-      timeDimension: null,
-      entityDimension: { field: "experimentName" },
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-03-01T00:00:00.000Z",
-      orderBy: [{ field: "sum_totalCost", direction: "asc" }],
-    };
-
-    const queryBuilder = new QueryBuilder(undefined, "v2");
-    const result = await queryBuilder.build(query, randomUUID());
-
-    expect(result.query).toContain("as entity_dimension");
-    expect(result.query).toContain("GROUP BY entity_dimension");
-    expect(result.query).not.toContain("time_dimension");
-    expect(result.query).not.toContain("WITH FILL");
-  });
-
-  it("should include declared relation for relation-backed entity dimensions", async () => {
-    const query: QueryType = {
-      view: "scores-numeric",
-      dimensions: [],
-      metrics: [{ measure: "value", aggregation: "avg" }],
-      filters: [],
-      timeDimension: null,
-      entityDimension: { field: "experimentName" },
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-03-01T00:00:00.000Z",
-      orderBy: [{ field: "avg_value", direction: "desc" }],
-    };
-
-    const queryBuilder = new QueryBuilder(undefined, "v2");
-    const result = await queryBuilder.build(query, randomUUID());
-
-    expect(result.query).toContain(
-      "INNER JOIN events_core AS events_observations",
-    );
-    expect(result.query).toContain("events_observations.experiment_name");
-    expect(result.query).toContain("as entity_dimension");
-    expect(result.query).toContain("GROUP BY entity_dimension");
-  });
-
-  it("should build run-level score entity queries without joining events", async () => {
-    const query: QueryType = {
-      view: "scores-numeric",
-      dimensions: [],
-      metrics: [{ measure: "value", aggregation: "avg" }],
-      filters: [
-        {
-          column: "datasetRunId",
-          operator: "is not null",
-          value: "",
-          type: "null",
-        },
-        {
-          column: "name",
-          operator: "=",
-          value: "run_accuracy",
-          type: "string",
-        },
-        {
-          column: "datasetRunId",
-          operator: "any of",
-          value: ["experiment-1", "experiment-2"],
-          type: "stringOptions",
-        },
-      ],
-      timeDimension: null,
-      entityDimension: { field: "datasetRunId" },
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-03-01T00:00:00.000Z",
-      orderBy: [{ field: "avg_value", direction: "desc" }],
-    };
-
-    const queryBuilder = new QueryBuilder(undefined, "v2");
-    const result = await queryBuilder.build(query, randomUUID());
-
-    expect(result.query).toContain("scores.dataset_run_id");
-    expect(result.query).toContain("entity_dimension");
-    expect(result.query).not.toContain("JOIN events_core");
-  });
-
-  it("should reject queries with both timeDimension and entityDimension", async () => {
-    const query: QueryType = {
-      view: "observations",
-      dimensions: [],
-      metrics: [{ measure: "totalCost", aggregation: "sum" }],
-      filters: [],
-      timeDimension: { granularity: "day" },
-      entityDimension: { field: "experimentName" },
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-03-01T00:00:00.000Z",
-      orderBy: null,
-    };
-
-    const queryBuilder = new QueryBuilder(undefined, "v2");
-    await expect(queryBuilder.build(query, randomUUID())).rejects.toThrow(
-      "timeDimension and entityDimension are mutually exclusive",
-    );
-  });
-
-  it("should reject v1 entityDimension queries at query-builder runtime", async () => {
-    const query: QueryType = {
-      view: "observations",
-      dimensions: [],
-      metrics: [{ measure: "totalCost", aggregation: "sum" }],
-      filters: [],
-      timeDimension: null,
-      entityDimension: { field: "name" },
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-03-01T00:00:00.000Z",
-      orderBy: null,
-    };
-
-    const queryBuilder = new QueryBuilder(undefined, "v1");
-    await expect(queryBuilder.build(query, randomUUID())).rejects.toThrow(
-      "entityDimension is only supported for v2 queries",
-    );
-  });
-
-  it("should reject invalid aggregation for string measure", async () => {
-    const query: QueryType = {
-      view: "observations",
-      dimensions: [],
-      metrics: [{ measure: "traceId", aggregation: "histogram" }],
-      filters: [],
-      timeDimension: null,
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-03-01T00:00:00.000Z",
-      orderBy: null,
-    };
-
-    const queryBuilder = new QueryBuilder(undefined, "v2");
-    await expect(queryBuilder.build(query, randomUUID())).rejects.toThrow(
-      /not valid for measure/,
-    );
-  });
-
-  it("should accept uniq aggregation for string measure", async () => {
-    const query: QueryType = {
-      view: "observations",
-      dimensions: [],
-      metrics: [{ measure: "traceId", aggregation: "uniq" }],
-      filters: [],
-      timeDimension: null,
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-03-01T00:00:00.000Z",
-      orderBy: null,
-    };
-
-    const queryBuilder = new QueryBuilder(undefined, "v2");
-    const result = await queryBuilder.build(query, randomUUID());
-    expect(result.query).toBeDefined();
-  });
-
-  it("should reject sum aggregation for uniqueUserIds on traces view", async () => {
-    const query: QueryType = {
-      view: "traces",
-      dimensions: [],
-      metrics: [{ measure: "uniqueUserIds", aggregation: "sum" }],
-      filters: [],
-      timeDimension: null,
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-03-01T00:00:00.000Z",
-      orderBy: null,
-    };
-
-    const queryBuilder = new QueryBuilder(undefined, "v2");
-    await expect(queryBuilder.build(query, randomUUID())).rejects.toThrow(
-      /not valid for measure/,
-    );
-  });
-
-  it("should accept uniq aggregation for uniqueUserIds on traces view", async () => {
-    const query: QueryType = {
-      view: "traces",
-      dimensions: [],
-      metrics: [{ measure: "uniqueUserIds", aggregation: "uniq" }],
-      filters: [],
-      timeDimension: null,
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-03-01T00:00:00.000Z",
-      orderBy: null,
-    };
-
-    const queryBuilder = new QueryBuilder(undefined, "v2");
-    const result = await queryBuilder.build(query, randomUUID());
-    expect(result.query).toBeDefined();
-  });
-
-  it("should accept histogram aggregation for numeric measure", async () => {
-    const query: QueryType = {
-      view: "observations",
-      dimensions: [],
-      metrics: [{ measure: "latency", aggregation: "histogram" }],
-      filters: [],
-      timeDimension: null,
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-03-01T00:00:00.000Z",
-      orderBy: null,
-    };
-
-    const queryBuilder = new QueryBuilder(undefined, "v2");
-    const result = await queryBuilder.build(query, randomUUID());
-    expect(result.query).toBeDefined();
-  });
-
-  describe("useFinal flag on events_core joins", () => {
-    it("should omit FINAL for events_core joins in v2 scores-numeric view", async () => {
-      const projectId = randomUUID();
-      const builder = new QueryBuilder(undefined, "v2");
-      const { query: compiledQuery } = await builder.build(
-        {
-          view: "scores-numeric",
-          dimensions: [{ field: "traceName" }],
-          metrics: [{ measure: "count", aggregation: "count" }],
-          filters: [],
-          timeDimension: null,
-          fromTimestamp: new Date(
-            Date.now() - 7 * 24 * 60 * 60 * 1000,
-          ).toISOString(),
-          toTimestamp: new Date(Date.now()).toISOString(),
-          orderBy: null,
-        },
-        projectId,
-      );
-
-      // events_core should be joined without FINAL (useFinal: false)
-      expect(compiledQuery).toContain("JOIN events_core");
-      expect(compiledQuery).not.toContain(
-        "JOIN events_core AS events_traces FINAL",
-      );
-      // scores base CTE should still use FINAL
-      expect(compiledQuery).toContain("scores scores_numeric FINAL");
-    });
-
-    it("should omit FINAL for events_observations join in v2 scores-categorical view", async () => {
-      const projectId = randomUUID();
-      const builder = new QueryBuilder(undefined, "v2");
-      const { query: compiledQuery } = await builder.build(
-        {
-          view: "scores-categorical",
-          dimensions: [{ field: "observationName" }],
-          metrics: [{ measure: "count", aggregation: "count" }],
-          filters: [],
-          timeDimension: null,
-          fromTimestamp: new Date(
-            Date.now() - 7 * 24 * 60 * 60 * 1000,
-          ).toISOString(),
-          toTimestamp: new Date(Date.now()).toISOString(),
-          orderBy: null,
-        },
-        projectId,
-      );
-
-      // events_core should be joined without FINAL (useFinal: false)
-      expect(compiledQuery).toContain("JOIN events_core");
-      expect(compiledQuery).not.toContain(
-        "JOIN events_core AS events_observations FINAL",
-      );
-    });
-
-    it("should keep FINAL for non-events_core joins in v1 scores view", async () => {
-      const projectId = randomUUID();
-      const builder = new QueryBuilder(undefined, "v1");
-      const { query: compiledQuery } = await builder.build(
-        {
-          view: "scores-numeric",
-          dimensions: [{ field: "traceName" }],
-          metrics: [{ measure: "count", aggregation: "count" }],
-          filters: [],
-          timeDimension: null,
-          fromTimestamp: new Date(
-            Date.now() - 7 * 24 * 60 * 60 * 1000,
-          ).toISOString(),
-          toTimestamp: new Date(Date.now()).toISOString(),
-          orderBy: null,
-        },
-        projectId,
-      );
-
-      // v1 traces join should still use FINAL (useFinal defaults to true)
-      expect(compiledQuery).toContain("JOIN traces FINAL");
-    });
-  });
-
-  describe("rootEventCondition threshold gating", () => {
-    const tracesV2Query: QueryType = {
-      view: "traces",
-      dimensions: [{ field: "name" }],
-      metrics: [{ measure: "count", aggregation: "count" }],
-      filters: [],
-      timeDimension: null,
-      fromTimestamp: "2025-01-01T00:00:00.000Z",
-      toTimestamp: "2025-01-04T00:00:00.000Z", // 3-day window (72 hours)
-      orderBy: null,
-    };
-
-    it("should include rootEventCondition subquery when window is within threshold", async () => {
-      // 168 hours (7 days) threshold, 72-hour window → should include subquery
-      const builder = new QueryBuilder(undefined, "v2");
-      builder.setRootEventConditionMaxWindowHours(168);
-      const { query: sql } = await builder.build(tracesV2Query, randomUUID());
-      expect(sql).toContain("IN (SELECT trace_id");
-    });
-
-    it("should skip rootEventCondition subquery when window exceeds threshold", async () => {
-      // 24-hour threshold, 72-hour window → should skip subquery
-      const builder = new QueryBuilder(undefined, "v2");
-      builder.setRootEventConditionMaxWindowHours(24);
-      const { query: sql } = await builder.build(tracesV2Query, randomUUID());
-      expect(sql).not.toContain("IN (SELECT trace_id");
-    });
-
-    it("should always include rootEventCondition subquery when threshold is 0", async () => {
-      // 0 = always apply, even for a very wide window
-      const builder = new QueryBuilder(undefined, "v2");
-      builder.setRootEventConditionMaxWindowHours(0);
-      const { query: sql } = await builder.build(
-        {
-          ...tracesV2Query,
-          fromTimestamp: "2024-01-01T00:00:00.000Z",
-          toTimestamp: "2025-01-01T00:00:00.000Z", // 1-year window
-        },
-        randomUUID(),
-      );
-      expect(sql).toContain("IN (SELECT trace_id");
-    });
   });
 });

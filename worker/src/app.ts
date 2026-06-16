@@ -48,7 +48,7 @@ import { env } from "./env";
 import { ingestionQueueProcessorBuilder } from "./queues/ingestionQueue";
 import { BackgroundMigrationManager } from "./backgroundMigrations/backgroundMigrationManager";
 import { prisma } from "@langfuse/shared/src/db";
-import { ClickhouseReadSkipCache } from "./utils/clickhouseReadSkipCache";
+import { IngestionReadSkipCache } from "./utils/ingestionReadSkipCache";
 import { experimentCreateQueueProcessor } from "./queues/experimentQueue";
 import { traceDeleteProcessor } from "./queues/traceDelete";
 import { projectDeleteProcessor } from "./queues/projectDelete";
@@ -105,11 +105,11 @@ if (env.LANGFUSE_ENABLE_BACKGROUND_MIGRATIONS === "true") {
   });
 }
 
-// Initialize ClickhouseReadSkipCache on container start
-ClickhouseReadSkipCache.getInstance(prisma)
+// Initialize IngestionReadSkipCache on container start
+IngestionReadSkipCache.getInstance(prisma)
   .initialize()
   .catch((err) => {
-    logger.error("Error initializing ClickhouseReadSkipCache", err);
+    logger.error("Error initializing IngestionReadSkipCache", err);
   });
 
 if (env.QUEUE_CONSUMER_TRACE_UPSERT_QUEUE_IS_ENABLED === "true") {
@@ -177,7 +177,7 @@ if (env.QUEUE_CONSUMER_TRACE_DELETE_QUEUE_IS_ENABLED === "true") {
     limiter: {
       // Process at most `max` delete jobs per 2 min
       max: env.LANGFUSE_TRACE_DELETE_CONCURRENCY,
-      duration: env.LANGFUSE_CLICKHOUSE_TRACE_DELETION_CONCURRENCY_DURATION_MS,
+      duration: env.LANGFUSE_TRACE_DELETION_CONCURRENCY_DURATION_MS,
     },
   });
 }
@@ -188,7 +188,7 @@ if (env.QUEUE_CONSUMER_SCORE_DELETE_QUEUE_IS_ENABLED === "true") {
     limiter: {
       // Process at most `max` delete jobs per 15 seconds
       max: env.LANGFUSE_SCORE_DELETE_CONCURRENCY,
-      duration: env.LANGFUSE_CLICKHOUSE_TRACE_DELETION_CONCURRENCY_DURATION_MS,
+      duration: env.LANGFUSE_TRACE_DELETION_CONCURRENCY_DURATION_MS,
     },
   });
 }
@@ -209,7 +209,7 @@ if (env.QUEUE_CONSUMER_DATASET_DELETE_QUEUE_IS_ENABLED === "true") {
     limiter: {
       max: env.LANGFUSE_DATASET_DELETE_CONCURRENCY,
       duration:
-        env.LANGFUSE_CLICKHOUSE_DATASET_DELETION_CONCURRENCY_DURATION_MS,
+        env.LANGFUSE_DATASET_DELETION_CONCURRENCY_DURATION_MS,
     },
   });
 }
@@ -218,10 +218,10 @@ if (env.QUEUE_CONSUMER_PROJECT_DELETE_QUEUE_IS_ENABLED === "true") {
   WorkerManager.register(QueueName.ProjectDelete, projectDeleteProcessor, {
     concurrency: env.LANGFUSE_PROJECT_DELETE_CONCURRENCY,
     limiter: {
-      // Process at most `max` delete jobs per LANGFUSE_CLICKHOUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS (default 10 min)
+      // Process at most `max` delete jobs per LANGFUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS (default 10 min)
       max: env.LANGFUSE_PROJECT_DELETE_CONCURRENCY,
       duration:
-        env.LANGFUSE_CLICKHOUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS,
+        env.LANGFUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS,
     },
   });
 }

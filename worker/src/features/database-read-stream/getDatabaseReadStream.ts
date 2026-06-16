@@ -129,16 +129,6 @@ export const getDatabaseReadStreamPaginated = async ({
     type: "datetime" as const,
   };
 
-  const clickhouseConfigs = {
-    request_timeout: 180_000,
-    clickhouse_settings: {
-      // Increase HTTP timeouts to prevent Code 209 errors during slow blob storage uploads
-      // See: https://github.com/ClickHouse/ClickHouse/issues/64731
-      http_send_timeout: 300,
-      http_receive_timeout: 300,
-    },
-  };
-
   switch (tableName) {
     case "scores": {
       return new DatabaseReadStream<unknown>(
@@ -151,7 +141,6 @@ export const getDatabaseReadStreamPaginated = async ({
             orderBy,
             limit: pageSize,
             offset,
-            clickhouseConfigs,
           });
 
           // Get author user info for scores
@@ -213,8 +202,8 @@ export const getDatabaseReadStreamPaginated = async ({
           );
           // v4-enabled users (snapshotted as useEventsTable at dispatch) read
           // sessions from the ClickHouse events table. Both readers apply the
-          // same filter (incl. the createdAt cutoff) and clickhouseConfigs, and
-          // expose the same field names, so the row mapping below is shared.
+          // same filter (incl. the createdAt cutoff) and expose the same field
+          // names, so the row mapping below is shared.
           const sessions = useEventsTable
             ? await getSessionsWithMetricsFromEvents({
                 projectId: projectId,
@@ -222,7 +211,6 @@ export const getDatabaseReadStreamPaginated = async ({
                 orderBy: orderBy,
                 limit: pageSize,
                 page: Math.floor(offset / pageSize),
-                clickhouseConfigs,
               })
             : await getSessionsWithMetrics({
                 projectId: projectId,
@@ -230,7 +218,6 @@ export const getDatabaseReadStreamPaginated = async ({
                 orderBy: orderBy,
                 limit: pageSize,
                 page: Math.floor(offset / pageSize),
-                clickhouseConfigs,
               });
 
           const prismaSessionInfo = await prisma.traceSession.findMany({
@@ -297,7 +284,6 @@ export const getDatabaseReadStreamPaginated = async ({
               ? [...filter, createdAtCutoffFilterCh]
               : [createdAtCutoffFilterCh],
             isTimestampFilter: isGenerationTimestampFilter,
-            clickhouseConfigs,
           });
 
           emptyScoreColumns = distinctScoreNames.reduce(
@@ -316,12 +302,10 @@ export const getDatabaseReadStreamPaginated = async ({
             searchType: searchType ?? ["id" as const],
             orderBy,
             selectIOAndMetadata: true,
-            clickhouseConfigs,
           });
           const scores = await getScoresForObservations({
             projectId,
             observationIds: generations.map((gen) => gen.id),
-            clickhouseConfigs,
           });
 
           const chunk = generations.map((generation) => {
@@ -372,7 +356,6 @@ export const getDatabaseReadStreamPaginated = async ({
               ? [...filter, createdAtCutoffFilter]
               : [createdAtCutoffFilter],
             isTimestampFilter: isTraceTimestampFilter,
-            clickhouseConfigs,
           });
           emptyScoreColumns = distinctScoreNames.reduce(
             (acc, name) => ({ ...acc, [name]: null }),
@@ -389,7 +372,6 @@ export const getDatabaseReadStreamPaginated = async ({
             orderBy,
             limit: pageSize,
             page: Math.floor(offset / pageSize),
-            clickhouseConfigs,
           });
 
           const [metrics, fullTraces] = await Promise.all([
@@ -404,7 +386,6 @@ export const getDatabaseReadStreamPaginated = async ({
                   value: traces.map((t) => t.id),
                 },
               ],
-              clickhouseConfigs,
             }),
             getTracesByIds(
               traces.map((t) => t.id),
@@ -413,14 +394,12 @@ export const getDatabaseReadStreamPaginated = async ({
                 (min, t) => (!min || t.timestamp < min ? t.timestamp : min),
                 undefined as Date | undefined,
               ),
-              clickhouseConfigs,
             ),
           ]);
 
           const scores = await getScoresForTraces({
             projectId,
             traceIds: traces.map((t) => t.id),
-            clickhouseConfigs,
           });
 
           const chunk = traces.map((t) => {
@@ -498,7 +477,6 @@ export const getDatabaseReadStreamPaginated = async ({
               order: "DESC",
             },
             offset,
-            clickhouseConfigs,
           });
 
           // fetch all project dataset names
@@ -679,16 +657,6 @@ export const getTraceIdentifierStream = async (props: {
     type: "datetime",
   };
 
-  const clickhouseConfigs = {
-    request_timeout: 180_000,
-    clickhouse_settings: {
-      // Increase HTTP timeouts to prevent Code 209 errors during slow blob storage uploads
-      // See: https://github.com/ClickHouse/ClickHouse/issues/64731
-      http_send_timeout: 300,
-      http_receive_timeout: 300,
-    },
-  };
-
   return new DatabaseReadStream<TraceIdentifiers>(
     async (pageSize: number, offset: number) => {
       const identifiers = await getTraceIdentifiers({
@@ -701,7 +669,6 @@ export const getTraceIdentifierStream = async (props: {
         orderBy,
         limit: pageSize,
         page: Math.floor(offset / pageSize),
-        clickhouseConfigs,
       });
       return identifiers;
     },

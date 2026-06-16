@@ -1,5 +1,5 @@
 import {
-  LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE,
+  LEGACY_PUBLIC_API_METRICS_RESOURCE_ERROR_MESSAGE,
   withMiddlewares,
 } from "@/src/features/public-api/server/withMiddlewares";
 import { createAuthedProjectAPIRoute } from "@/src/features/public-api/server/createAuthedProjectAPIRoute";
@@ -48,7 +48,7 @@ export default withMiddlewares(
     }),
   },
   {
-    clickHouseResourceErrorMessage:
-      LEGACY_PUBLIC_API_METRICS_CLICKHOUSE_RESOURCE_ERROR_MESSAGE,
+    resourceErrorMessage:
+      LEGACY_PUBLIC_API_METRICS_RESOURCE_ERROR_MESSAGE,
   },
 );

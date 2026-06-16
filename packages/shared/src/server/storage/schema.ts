@@ -1,4 +1,4 @@
-export const ClickhouseTableNames = {
+export const IngestionTableNames = {
   traces: "traces",
   observations: "observations",
   scores: "scores",
@@ -19,15 +19,15 @@ export const ClickhouseTableNames = {
   events_observations: "events_observations",
 } as const;
 
-export type ClickhouseTableName = keyof typeof ClickhouseTableNames;
+export type IngestionTableName = keyof typeof IngestionTableNames;
 
 // Identifiers that map to the physical events_core/events_full tables at query
 // time. events_proto is the column-mapping placeholder; events_core and
 // events_full are the physical tables.
 export const EVENTS_TABLE_NAMES = [
-  ClickhouseTableNames.events_proto,
-  ClickhouseTableNames.events_core,
-  ClickhouseTableNames.events_full,
-] as const satisfies readonly ClickhouseTableName[];
+  IngestionTableNames.events_proto,
+  IngestionTableNames.events_core,
+  IngestionTableNames.events_full,
+] as const satisfies readonly IngestionTableName[];
 
 export type EventsTableName = (typeof EVENTS_TABLE_NAMES)[number];
