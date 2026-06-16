@@ -78,9 +78,9 @@ export class GreptimeWriter {
 
   private constructor(deps: { write: WriteFn; autoStart: boolean }) {
     this.write = deps.write;
-    this.batchSize = env.LANGFUSE_INGESTION_CLICKHOUSE_WRITE_BATCH_SIZE;
-    this.writeInterval = env.LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS;
-    this.maxAttempts = env.LANGFUSE_INGESTION_CLICKHOUSE_MAX_ATTEMPTS;
+    this.batchSize = env.LANGFUSE_INGESTION_WRITE_BATCH_SIZE;
+    this.writeInterval = env.LANGFUSE_INGESTION_WRITE_INTERVAL_MS;
+    this.maxAttempts = env.LANGFUSE_INGESTION_WRITE_MAX_ATTEMPTS;
     this.maxFieldBytes = env.LANGFUSE_GREPTIME_WRITE_MAX_FIELD_BYTES;
     this.autoFlush = deps.autoStart;
     this.queues = Object.fromEntries(

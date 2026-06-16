@@ -379,12 +379,6 @@ const EnvSchema = z.object({
     .positive()
     .default(1_000),
 
-  LANGFUSE_CLICKHOUSE_DATA_EXPORT_REQUEST_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(600_000), // 10 minutes
-
   LANGFUSE_FETCH_LLM_COMPLETION_TIMEOUT_MS: z.coerce
     .number()
     .int()

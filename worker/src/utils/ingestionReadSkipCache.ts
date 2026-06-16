@@ -2,8 +2,8 @@ import { PrismaClient, LangfuseNotFoundError } from "@langfuse/shared";
 import { logger } from "@langfuse/shared/src/server";
 import { env } from "../env";
 
-export class ClickhouseReadSkipCache {
-  private static instance: ClickhouseReadSkipCache | null = null;
+export class IngestionReadSkipCache {
+  private static instance: IngestionReadSkipCache | null = null;
   private projectSkipMap = new Map<string, boolean>();
   private initialized = false;
   private initializing = false;
@@ -14,14 +14,14 @@ export class ClickhouseReadSkipCache {
     this.prisma = prisma;
   }
 
-  public static getInstance(prisma?: PrismaClient): ClickhouseReadSkipCache {
-    if (!ClickhouseReadSkipCache.instance) {
+  public static getInstance(prisma?: PrismaClient): IngestionReadSkipCache {
+    if (!IngestionReadSkipCache.instance) {
       if (!prisma) {
         throw new Error("PrismaClient is required for first initialization");
       }
-      ClickhouseReadSkipCache.instance = new ClickhouseReadSkipCache(prisma);
+      IngestionReadSkipCache.instance = new IngestionReadSkipCache(prisma);
     }
-    return ClickhouseReadSkipCache.instance;
+    return IngestionReadSkipCache.instance;
   }
 
   public async initialize(): Promise<void> {
@@ -50,19 +50,19 @@ export class ClickhouseReadSkipCache {
   }
 
   private async performInitialization(): Promise<void> {
-    if (!env.LANGFUSE_SKIP_INGESTION_CLICKHOUSE_READ_MIN_PROJECT_CREATE_DATE) {
+    if (!env.LANGFUSE_SKIP_INGESTION_READ_MIN_PROJECT_CREATE_DATE) {
       logger.info(
-        "No min project create date set, ClickhouseReadSkipCache will not pre-populate",
+        "No min project create date set, IngestionReadSkipCache will not pre-populate",
       );
       return;
     }
 
     const cutoffDate = new Date(
-      env.LANGFUSE_SKIP_INGESTION_CLICKHOUSE_READ_MIN_PROJECT_CREATE_DATE,
+      env.LANGFUSE_SKIP_INGESTION_READ_MIN_PROJECT_CREATE_DATE,
     );
 
     logger.info(
-      `Initializing ClickhouseReadSkipCache with cutoff date: ${cutoffDate.toISOString()}`,
+      `Initializing IngestionReadSkipCache with cutoff date: ${cutoffDate.toISOString()}`,
     );
 
     try {
@@ -91,10 +91,10 @@ export class ClickhouseReadSkipCache {
       }
 
       logger.debug(
-        `ClickhouseReadSkipCache initialized with ${projects.length} projects (${skipCount} will skip, ${noSkipCount} will not skip)`,
+        `IngestionReadSkipCache initialized with ${projects.length} projects (${skipCount} will skip, ${noSkipCount} will not skip)`,
       );
     } catch (error) {
-      logger.error("Failed to initialize ClickhouseReadSkipCache", error);
+      logger.error("Failed to initialize IngestionReadSkipCache", error);
       throw error;
     }
   }
@@ -105,8 +105,8 @@ export class ClickhouseReadSkipCache {
   ): Promise<boolean> {
     // Check explicit project ID list first
     if (
-      env.LANGFUSE_SKIP_INGESTION_CLICKHOUSE_READ_PROJECT_IDS &&
-      env.LANGFUSE_SKIP_INGESTION_CLICKHOUSE_READ_PROJECT_IDS.split(
+      env.LANGFUSE_SKIP_INGESTION_READ_PROJECT_IDS &&
+      env.LANGFUSE_SKIP_INGESTION_READ_PROJECT_IDS.split(
         ",",
       ).includes(projectId)
     ) {
@@ -115,7 +115,7 @@ export class ClickhouseReadSkipCache {
 
     // If no cutoff date configuration, don't skip
     if (
-      !env.LANGFUSE_SKIP_INGESTION_CLICKHOUSE_READ_MIN_PROJECT_CREATE_DATE &&
+      !env.LANGFUSE_SKIP_INGESTION_READ_MIN_PROJECT_CREATE_DATE &&
       !minProjectCreateDate
     ) {
       return false;
@@ -151,7 +151,7 @@ export class ClickhouseReadSkipCache {
       }
 
       const cutoffDate = new Date(
-        env.LANGFUSE_SKIP_INGESTION_CLICKHOUSE_READ_MIN_PROJECT_CREATE_DATE ??
+        env.LANGFUSE_SKIP_INGESTION_READ_MIN_PROJECT_CREATE_DATE ??
           minProjectCreateDate ??
           new Date(), // Fallback to today. Should never apply.
       );

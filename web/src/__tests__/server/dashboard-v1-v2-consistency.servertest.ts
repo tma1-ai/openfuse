@@ -35,7 +35,7 @@ const maybe =
     ? describe
     : describe.skip;
 
-// ── Constants mirroring packages/shared/scripts/seeder/utils/clickhouse-seed-constants.ts ──
+// ── Constants mirroring packages/shared/scripts/seeder/utils/seed-constants.ts ──
 
 const TRACE_NAMES = [
   "LangGraph",
