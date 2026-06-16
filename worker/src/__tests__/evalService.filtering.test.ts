@@ -528,13 +528,10 @@ describe("test eval filtering", () => {
     expect(jobs[0].status.toString()).toBe("PENDING");
   }, 10_000);
 
-  // TODO(P7): surfaced once the seed moved to GreptimeDB. The eval trace-filter
-  // reader `checkTraceExistsAndGetTimestamp` emits only `EXISTS (any observation)`
-  // for observation-level filters (e.g. Level=DEFAULT) and drops the filter
-  // condition itself, so a trace whose only observation is ERROR-level still
-  // matches. Known GreptimeDB reader gap (greptime/traces.ts checkTraceExists);
-  // tracked for the trace observation-filter follow-up (issue #7).
-  test.skip("creates eval job only for matching level", async ({
+  // checkTraceExistsAndGetTimestamp now pushes observation-level filters (e.g. Level=DEFAULT) into the
+  // EXISTS subquery instead of gating on "any observation", so a trace whose only observation is
+  // ERROR-level no longer matches a DEFAULT filter.
+  test("creates eval job only for matching level", async ({
     expect,
     upsertTwoTraces,
     configureDefaultJobWithSingleFilter,
