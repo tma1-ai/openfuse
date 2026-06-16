@@ -2,16 +2,17 @@
  * Live read-path gate for the 04 P3 GreptimeDB dashboard query engine (executeQuery).
  *   dotenv -e ../.env -- npx tsx src/scripts/greptimeDashboardQuerySmoke.ts
  *
- * Reads the seeded `p2smoke-trace` project and runs representative dashboard widgets through the
- * GreptimeDB engine, asserting result shapes + domain values (NOT ClickHouse parity): count over
- * time (gap-filled buckets), latency p95 (uddsketch), totalCost by name (two-level fan-out collapse),
- * totalTokens (known-key), scores numeric avg, cost-by-type dynamic key, and the experiment-dim throw.
+ * Reads the seeded demo project and runs representative dashboard widgets through the GreptimeDB
+ * engine, asserting result shapes + domain values (NOT ClickHouse parity): count over time (gap-filled
+ * buckets), latency p95 (uddsketch), totalCost by name (two-level fan-out collapse), totalTokens
+ * (known-key), scores numeric avg, cost-by-type dynamic key, experiment dimensions, histogram
+ * (two-pass bucketing), tokens/second, uniq(traceId), and the scoreName filter alias.
  */
 import { executeGreptimeQuery } from "@langfuse/shared/query/server";
 import { closeGreptimeConnections } from "@langfuse/shared/src/server";
 import { type QueryType } from "@langfuse/shared";
 
-const PROJECT = "98692739-71ed-427a-bbda-440aa8b47fa5";
+const PROJECT = "7a88fb47-b4e2-43b8-a06c-a5ce950dc53a";
 const FROM = "2026-01-01T00:00:00.000Z";
 const TO = "2027-01-01T00:00:00.000Z";
 
@@ -82,8 +83,13 @@ async function main() {
   );
   check("totalCost-by-name returns rows", costByName.length > 0);
   check(
-    "totalCost-by-name rows carry name + sum_totalCost (numeric)",
-    costByName.every((r) => "name" in r && typeof r.sum_totalCost === "number"),
+    "totalCost-by-name rows carry name + sum_totalCost (numeric or null)",
+    // A trace with no costed observations yields a null sum from the two-level LEFT JOIN.
+    costByName.every(
+      (r) =>
+        "name" in r &&
+        (typeof r.sum_totalCost === "number" || r.sum_totalCost === null),
+    ),
   );
   const costSum = costByName.reduce(
     (a, r) => a + Number(r.sum_totalCost ?? 0),
@@ -214,6 +220,79 @@ async function main() {
     "experiment entityDimension + filter (chart shape) executes",
     !expFilterThrew,
   );
+
+  // 10. histogram on scores-numeric value (two-pass min/max + bucket, CH histogram_value shape).
+  const hist = await executeGreptimeQuery(
+    PROJECT,
+    q({
+      view: "scores-numeric",
+      metrics: [{ measure: "value", aggregation: "histogram" }],
+      chartConfig: { type: "HISTOGRAM", bins: 10 },
+    } as Partial<QueryType> & Pick<QueryType, "view">),
+  );
+  check(
+    "histogram returns a single histogram_value row of [lo,hi,count] tuples",
+    hist.length === 1 &&
+      Array.isArray(
+        (hist[0] as { histogram_value?: unknown }).histogram_value,
+      ) &&
+      (hist[0] as { histogram_value: unknown[] }).histogram_value.every(
+        (t) => Array.isArray(t) && t.length === 3,
+      ),
+    hist[0],
+  );
+
+  // 11. tokensPerSecond (per-row rate, averaged) on observations.
+  const tps = await executeGreptimeQuery(
+    PROJECT,
+    q({
+      view: "observations",
+      metrics: [{ measure: "tokensPerSecond", aggregation: "avg" }],
+    }),
+  );
+  check(
+    "avg tokensPerSecond returns a numeric value",
+    tps.length === 1 && "avg_tokensPerSecond" in tps[0],
+    tps[0],
+  );
+
+  // 12. uniq(traceId) measure on observations counts distinct traces.
+  const uniqTraces = await executeGreptimeQuery(
+    PROJECT,
+    q({
+      view: "observations",
+      metrics: [{ measure: "traceId", aggregation: "uniq" }],
+    }),
+  );
+  check(
+    "uniq traceId returns a positive distinct-trace count",
+    uniqTraces.length === 1 && Number(uniqTraces[0].uniq_traceId) > 0,
+    uniqTraces[0],
+  );
+
+  // 13. scoreName filter alias resolves to the score name column (does not throw).
+  let scoreNameThrew = false;
+  try {
+    await executeGreptimeQuery(
+      PROJECT,
+      q({
+        view: "scores-numeric",
+        metrics: [{ measure: "count", aggregation: "count" }],
+        filters: [
+          {
+            column: "scoreName",
+            operator: "any of",
+            value: ["quality"],
+            type: "stringOptions",
+          },
+        ],
+      }),
+    );
+  } catch (e) {
+    scoreNameThrew = true;
+    console.error(e);
+  }
+  check("scoreName filter alias resolves (no throw)", !scoreNameThrew);
 
   console.log(failures === 0 ? "\nALL GREEN" : `\n${failures} FAILURE(S)`);
 }

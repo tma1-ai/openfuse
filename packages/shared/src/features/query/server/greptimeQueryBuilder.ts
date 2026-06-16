@@ -95,6 +95,14 @@ export type PostProcess = {
     groupDimensionAliases: string[]; // non-by-type dimensions
     hasTime: boolean;
   };
+  // Histogram descriptor. GreptimeDB has no server-side `histogram()`, so the built `query` is a
+  // min/max probe (one row: `lo`, `hi`, `c`); the executor then runs `bucketSql` with the computed
+  // bin width to count rows per bucket and assembles `histogram_value` ([lower, upper, count][]),
+  // matching the ClickHouse histogram output column.
+  histogram?: {
+    bins: number;
+    bucketSql: string;
+  };
 };
 
 export type GreptimeBuildResult = {
@@ -192,6 +200,17 @@ const buildFilterMappings = (
       greptimeSelect: col,
       queryPrefix: prefix,
     });
+    // Fallback alias: a `scoreName` filter resolves to the `name` column (LFE-4838, mirrors the
+    // ClickHouse builder's *Name -> name fallback for filters).
+    if ((dim.alias ?? field) === "name") {
+      mappings.push({
+        uiTableName: "scoreName",
+        uiTableId: "scoreName",
+        greptimeTableName: PREFIX_TABLE[prefix] ?? view.baseCte,
+        greptimeSelect: col,
+        queryPrefix: prefix,
+      });
+    }
   }
 
   // time dimension + metadata (EAV) on the base table
@@ -230,7 +249,12 @@ const resolveDimension = (
   aliasOverride?: string,
 ): AppliedDimension => {
   assertGreptimeSupportedField(field);
-  const dim = view.dimensions[field];
+  // Fallback: scoreName/traceName etc. -> "name" dimension (LFE-4838, mirrors the ClickHouse builder).
+  const dim =
+    view.dimensions[field] ??
+    (field.endsWith("Name") && "name" in view.dimensions
+      ? view.dimensions["name"]
+      : undefined);
   if (!dim) {
     throw new InvalidRequestError(
       `Invalid dimension '${field}' for view '${viewName}'. Must be one of ${Object.keys(view.dimensions).join(", ")}`,
@@ -343,6 +367,11 @@ export class GreptimeQueryBuilder {
       }
     }
 
+    const histogramMetric = measures.find((m) => m.aggregation === "histogram");
+    if (histogramMetric) {
+      return this.buildHistogram(query, projectId, view, dims, measures);
+    }
+
     const bucket = timeBucketExpr(query, view);
 
     const byTypeMeasure = measures.find((m) => m.isByType);
@@ -351,6 +380,63 @@ export class GreptimeQueryBuilder {
     }
 
     return this.buildAggregate(query, projectId, view, dims, measures, bucket);
+  }
+
+  // -------------------------------------------------------------------------
+  // histogram (min/max probe + app-side bucketed count, executor runs both)
+  // -------------------------------------------------------------------------
+  private buildHistogram(
+    query: QueryType,
+    projectId: string,
+    view: ViewDeclarationType,
+    dims: AppliedDimension[],
+    measures: AppliedMeasure[],
+  ): GreptimeBuildResult {
+    // Scope: a single base numeric measure, no dimensions, no time bucket (matches scoreHistogram /
+    // the HISTOGRAM widget). Anything wider would need a per-group histogram shape we do not emit.
+    const metric = measures[0];
+    if (measures.length !== 1 || metric.aggregation !== "histogram") {
+      throw new InvalidRequestError(
+        "histogram requires exactly one metric with the histogram aggregation.",
+      );
+    }
+    if (dims.length > 0 || query.timeDimension) {
+      throw new InvalidRequestError(
+        "histogram does not support dimensions or a time dimension on GreptimeDB.",
+      );
+    }
+    if (metric.relationTable || metric.isByType || metric.sql === "*") {
+      throw new InvalidRequestError(
+        "histogram is only supported for a base (non-relation) numeric measure on GreptimeDB.",
+      );
+    }
+
+    const bins = Math.max(1, Math.floor(getChartConfig(query)?.bins ?? 10));
+    const valueExpr = metric.sql;
+    const relations = this.collectRelations(query, view, [], measures);
+    const { fromClause, parameters } = this.buildFromAndWhere(
+      query,
+      projectId,
+      view,
+      relations,
+    );
+
+    const nonNullValue = `(${valueExpr}) IS NOT NULL`;
+    const minMaxSql = `SELECT min(${valueExpr}) AS lo, max(${valueExpr}) AS hi, count(*) AS c ${fromClause} AND ${nonNullValue}`;
+    // `:hmin` / `:hbinwidth` / `:hmaxbucket` are supplied by the executor after the min/max probe.
+    const bucketSql =
+      `SELECT CAST(least(floor((${valueExpr} - :hmin) / :hbinwidth), :hmaxbucket) AS BIGINT) AS bucket, count(*) AS c ` +
+      `${fromClause} AND ${nonNullValue} GROUP BY bucket`;
+
+    return {
+      query: minMaxSql,
+      parameters,
+      postProcess: {
+        metricColumns: [],
+        hasTimeDimension: false,
+        histogram: { bins, bucketSql },
+      },
+    };
   }
 
   // -------------------------------------------------------------------------

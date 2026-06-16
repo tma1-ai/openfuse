@@ -415,15 +415,11 @@ maybe("evals.testRunCodeEval", () => {
     });
   });
 
-  // TODO(P7): EXPERIMENT-target evals read the observation via
-  // getEventsStreamForEvalGreptime, which hardcodes experiment_id /
-  // experiment_item_expected_output / experiment_item_metadata to null instead
-  // of LEFT JOINing the deduped dataset_run_items projection (the way the
-  // batch-IO reader does). So `ctx.experiment` is never populated and the eval
-  // throws "missing experiment context". The seed below is already correct
-  // (dataset_run_items); re-enable once the eval stream joins DRI for the
-  // experiment fields. Tracked for the GreptimeDB eval-stream follow-up (issue #7).
-  it.skip("passes experiment context to test runs", async () => {
+  // EXPERIMENT-target evals read the observation via getEventsStreamForEvalGreptime, which now LEFT
+  // JOINs the deduped dataset_run_items projection to populate experiment_id /
+  // experiment_item_expected_output / experiment_item_metadata (experiment_item_root_span_id ==
+  // dataset_run_items.observation_id). The seed below writes the run-item projection accordingly.
+  it("passes experiment context to test runs", async () => {
     const { project, caller } = await prepare();
     const observationId = randomUUID();
     const traceId = randomUUID();

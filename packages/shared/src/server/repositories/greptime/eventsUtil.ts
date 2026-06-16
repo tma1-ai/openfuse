@@ -408,8 +408,39 @@ type EvalEventRow = {
  * scores/comments columns are dropped exactly as the CH path does) is translated through
  * `createGreptimeFilterFromFilterState` against the observations column mappings; any column that does
  * not resolve to an observations/traces projection column is skipped (best-effort — the eval filter is
- * minimal). `experiment_*` fields are null: there is no events table denormalizing them here.
+ * minimal).
+ *
+ * Experiment context is reconstructed by LEFT JOINing the deduped `dataset_run_items` projection on
+ * `trace_id` (there is no events table denormalizing it). The CH events table carried a single-valued
+ * `experiment_id` / `experiment_item_root_span_id` per span (the last `enrichSpansWithExperiment`
+ * backfill wins), so we dedup DRI to one row per (project, trace) keeping the latest physical row —
+ * this both matches that last-write-wins semantics and prevents observation fanout in the stream.
+ * `experiment_item_root_span_id == dataset_run_items.observation_id`, `experiment_id == dataset_run_id`.
  */
+const EVAL_DRI_COLS = [
+  "trace_id",
+  "dataset_run_id",
+  "observation_id",
+  "dataset_item_expected_output",
+  "dataset_item_metadata",
+] as const;
+
+/**
+ * DRI deduped to one row per (project, trace), latest physical row wins. Keyed on `trace_id` (the
+ * join column) to give each observation a single experiment context and avoid stream fanout.
+ */
+const evalDriDedupCte = (): string => {
+  const cols = EVAL_DRI_COLS.map((c) => quoteIdent(c)).join(", ");
+  return (
+    `SELECT ${cols} FROM (` +
+    `SELECT ${cols}, ROW_NUMBER() OVER (` +
+    `PARTITION BY ${quoteIdent("project_id")}, ${quoteIdent("trace_id")} ` +
+    `ORDER BY ${quoteIdent("created_at")} DESC, ${quoteIdent("updated_at")} DESC, ${quoteIdent("id")} DESC) AS rn ` +
+    `FROM ${quoteIdent("dataset_run_items")} ` +
+    `WHERE ${quoteIdent("project_id")} = :projectId AND ${notDeleted()}) d WHERE d.rn = 1`
+  );
+};
+
 export const getEventsStreamForEvalGreptime = async (props: {
   projectId: string;
   cutoffCreatedAt?: Date;
@@ -470,8 +501,10 @@ export const getEventsStreamForEvalGreptime = async (props: {
       const pageLimit = Math.min(limit, Math.max(remaining, 0));
       return {
         query: `
+          WITH dri_dedup AS (${evalDriDedupCte()})
           SELECT
             o.id AS id, o.trace_id AS trace_id, o.project_id AS project_id,
+            o.start_time AS start_time,
             o.parent_observation_id AS parent_observation_id,
             o.type AS type, o.name AS name, o.environment AS environment,
             o.version AS version, o.level AS level, o.status_message AS status_message,
@@ -488,9 +521,14 @@ export const getEventsStreamForEvalGreptime = async (props: {
             o.input AS input, o.output AS output,
             ${selectJsonColumn("metadata", { tablePrefix: "o" })},
             t.name AS trace_name, t.user_id AS user_id, t.session_id AS session_id,
-            ${selectJsonColumn("tags", { tablePrefix: "t" })}, t.release AS release
+            ${selectJsonColumn("tags", { tablePrefix: "t" })}, t.release AS release,
+            dri.${quoteIdent("dataset_run_id")} AS experiment_id,
+            dri.${quoteIdent("observation_id")} AS experiment_item_root_span_id,
+            dri.${quoteIdent("dataset_item_expected_output")} AS experiment_item_expected_output,
+            ${selectJsonColumn("dataset_item_metadata", { tablePrefix: "dri", alias: "experiment_item_metadata" })}
           FROM observations o
           LEFT JOIN traces t ON t.id = o.trace_id AND t.project_id = o.project_id AND ${notDeleted("t")}
+          LEFT JOIN dri_dedup dri ON dri.${quoteIdent("trace_id")} = o.trace_id
           WHERE o.project_id = :projectId AND ${notDeleted("o")}
             ${cutoffCreatedAt ? "AND o.start_time < :cutoff" : ""}
             ${applied.query ? `AND ${applied.query}` : ""}
@@ -546,10 +584,20 @@ export const getEventsStreamForEvalGreptime = async (props: {
         metadata: parseMetadataCHRecordToDomain(
           greptimeJson<Record<string, string>>(row.metadata, {}),
         ) as Record<string, unknown>,
-        experiment_id: null,
-        experiment_item_root_span_id: null,
-        experiment_item_expected_output: null,
-        experiment_item_metadata: null,
+        experiment_id: (row.experiment_id as string | null) ?? null,
+        experiment_item_root_span_id:
+          (row.experiment_item_root_span_id as string | null) ?? null,
+        experiment_item_expected_output:
+          (row.experiment_item_expected_output as string | null) ?? null,
+        experiment_item_metadata:
+          row.experiment_item_metadata == null
+            ? null
+            : (parseMetadataCHRecordToDomain(
+                greptimeJson<Record<string, string>>(
+                  row.experiment_item_metadata,
+                  {},
+                ),
+              ) as Record<string, unknown>),
       };
     }
   }

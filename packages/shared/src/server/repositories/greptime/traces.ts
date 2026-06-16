@@ -21,8 +21,10 @@ import {
 } from "../../greptime/sql/factory";
 import {
   tracesTableGreptimeColumnDefinitions,
+  observationsTableGreptimeColumnDefinitions,
   type GreptimeColumnMappings,
 } from "../../greptime/sql/columnMappings";
+import { InvalidRequestError } from "../../../errors";
 import { greptimeSearchCondition } from "../../greptime/sql/search";
 import { greptimeOrderBySql } from "../../greptime/sql/orderby";
 import {
@@ -597,11 +599,13 @@ export const getTracesByIdsForAnyProject = async (
 // ---------------------------------------------------------------------------
 
 /**
- * Existence probe used by the eval/dataset trigger path. The CH version aggregated observation
- * levels in a CTE but never selected those columns — the observation side only gated the trace via
- * an INNER JOIN (a trace must have >=1 observation in the lookback window when the filter targets
- * observations). Here: apply the trace-level filter on the merged `traces` projection within the
- * timestamp window, and when the filter targets observations, require an EXISTS observation.
+ * Existence probe used by the eval/dataset trigger path. Eval trace filters (`evalTraceTableCols`)
+ * are trace-level except `Level`, which is an observation column. We classify each condition
+ * explicitly: trace-level columns are applied to the merged `traces` projection within the timestamp
+ * window; observation-level columns (those that resolve to the observations projection) are pushed as
+ * real predicates into an `EXISTS (observations ...)` subquery — not just an "any observation" gate;
+ * anything else throws (never silently widen). The CH version aggregated observation levels in a CTE
+ * but never selected those columns, so a Level filter used to match any trace with an observation.
  */
 export const checkTraceExistsAndGetTimestamp = async ({
   projectId,
@@ -618,12 +622,28 @@ export const checkTraceExistsAndGetTimestamp = async ({
   maxTimeStamp: Date | undefined;
   exactTimestamp?: Date;
 }): Promise<{ exists: boolean; timestamp?: Date }> => {
-  const isTraceLevel = (column: string): boolean => {
-    const mapping = findUiColumnMapping(tracesTableUiColumnDefinitions, column);
-    return !mapping || mapping.clickhouseTableName === "traces";
-  };
-  const traceLevelFilter = filter.filter((f) => isTraceLevel(f.column));
-  const requiresObservation = filter.some((f) => !isTraceLevel(f.column));
+  // Classify each condition: trace-level -> main WHERE; observation-level (resolves to the
+  // observations projection) -> EXISTS predicate; otherwise loud throw.
+  const traceLevelFilter: FilterState = [];
+  const obsLevelFilter: FilterState = [];
+  for (const f of filter) {
+    const traceMapping = findUiColumnMapping(
+      tracesTableUiColumnDefinitions,
+      f.column,
+    );
+    if (traceMapping && traceMapping.clickhouseTableName === "traces") {
+      traceLevelFilter.push(f);
+      continue;
+    }
+    if (findUiColumnMapping(observationsTableGreptimeColumnDefinitions, f.column)) {
+      obsLevelFilter.push(f);
+      continue;
+    }
+    throw new InvalidRequestError(
+      `checkTraceExistsAndGetTimestamp: unsupported eval filter column "${f.column}" (not a trace or observations projection column)`,
+    );
+  }
+  const requiresObservation = obsLevelFilter.length > 0;
 
   const filterRes = new FilterList(
     createGreptimeFilterFromFilterState(
@@ -665,11 +685,20 @@ export const checkTraceExistsAndGetTimestamp = async ({
   );
   let existsClause = "";
   if (requiresObservation) {
+    const obsFilterRes = new FilterList(
+      createGreptimeFilterFromFilterState(
+        obsLevelFilter,
+        observationsTableGreptimeColumnDefinitions,
+        tracesTableCols,
+      ),
+    ).apply();
     params.obsLookback = obsLookback;
+    Object.assign(params, obsFilterRes.params);
     existsClause = `AND EXISTS (
       SELECT 1 FROM observations o
       WHERE o.project_id = t.project_id AND o.trace_id = t.id
         AND o.start_time >= :obsLookback AND ${notDeleted("o")}
+        ${obsFilterRes.query ? `AND ${obsFilterRes.query}` : ""}
     )`;
   }
 

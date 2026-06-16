@@ -567,6 +567,67 @@ async function main() {
     filteredNone,
   );
 
+  // LIST numeric trace-score filter -> resolved against the preaggregated run_score_agg CTE.
+  // RUN1's traces avg(quality)=0.9 (only t1 has it); RUN2's avg(quality)=0.5 (t3).
+  const byQualityHigh = await getExperimentsFromEvents({
+    projectId: SMOKE_PROJECT,
+    filter: [
+      {
+        column: "trace_scores_avg",
+        key: "quality",
+        operator: ">=",
+        value: 0.85,
+        type: "numberObject",
+      },
+    ],
+  });
+  check(
+    "experiments LIST trace_scores_avg quality>=0.85: only RUN1 (avg 0.9)",
+    byQualityHigh.length === 1 && byQualityHigh[0].id === RUN1,
+    byQualityHigh.map((e) => e.id),
+  );
+  const byQualityLow = await getExperimentsFromEvents({
+    projectId: SMOKE_PROJECT,
+    filter: [
+      {
+        column: "trace_scores_avg",
+        key: "quality",
+        operator: ">=",
+        value: 0.4,
+        type: "numberObject",
+      },
+    ],
+  });
+  check(
+    "experiments LIST trace_scores_avg quality>=0.4: both runs",
+    byQualityLow.length === 2,
+    byQualityLow.map((e) => e.id),
+  );
+  const byQualityAndSentiment = await getExperimentsFromEvents({
+    projectId: SMOKE_PROJECT,
+    filter: [
+      {
+        column: "trace_scores_avg",
+        key: "quality",
+        operator: ">=",
+        value: 0.85,
+        type: "numberObject",
+      },
+      {
+        column: "trace_score_categories",
+        key: "sentiment",
+        operator: "any of",
+        value: ["positive"],
+        type: "categoryOptions",
+      },
+    ],
+  });
+  check(
+    "experiments LIST mixed numeric+categorical score filters: only RUN1",
+    byQualityAndSentiment.length === 1 && byQualityAndSentiment[0].id === RUN1,
+    byQualityAndSentiment.map((e) => e.id),
+  );
+
   // --- A2: experiment items (qualification + per-(item,experiment) data) ---
   const items = await getExperimentItemsFromEvents({
     projectId: SMOKE_PROJECT,
