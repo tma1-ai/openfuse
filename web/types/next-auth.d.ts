@@ -23,11 +23,6 @@ declare module "next-auth" {
       enableExperimentalFeatures: boolean;
       // Enables features that are only available under an enterprise/commercial license when self-hosting Langfuse
       selfHostedInstancePlan: Plan | null;
-      // V4 migration write mode. GreptimeDB is the sole backend, so the session
-      // callback always reports "legacy"; retained for the eval-capabilities UI,
-      // which still gates the legacy experience on it. The union is kept so that
-      // UI mode comparisons type-check.
-      v4WriteMode?: "legacy" | "dual" | "events_only";
     };
   }
 
@@ -38,8 +33,6 @@ declare module "next-auth" {
     emailSupportHash?: string | null;
     image?: PrismaUser["image"];
     admin?: PrismaUser["admin"];
-    v4BetaEnabled?: boolean;
-    canToggleV4?: boolean;
     emailVerified?: string | null; // iso datetime string, need to stringify as JWT & useSession do not support Date objects
     canCreateOrganizations: boolean; // default true, allowlist can be set via LANGFUSE_ALLOWED_ORGANIZATION_CREATORS
     organizations: {
