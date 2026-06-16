@@ -24,7 +24,12 @@ import {
   StringObjectFilter,
   StringOptionsFilter,
 } from "../../greptime/sql/greptime-filter";
-import { chFilterToGreptime, translateChFilterList } from "./translateChFilter";
+import {
+  chFilterToGreptime,
+  remapObsAggregateFilter,
+  translateChFilterList,
+} from "./translateChFilter";
+import { tracesTableUiColumnDefinitions } from "../../tableMappings/mapTracesTable";
 
 describe("chFilterToGreptime", () => {
   it("maps scalar/option/EAV classes 1:1", () => {
@@ -222,5 +227,80 @@ describe("chFilterToGreptime", () => {
     const applied = translateChFilterList(list).apply();
     expect(applied.query.split(" AND ")).toHaveLength(2);
     expect(Object.keys(applied.params)).toHaveLength(2);
+  });
+});
+
+describe("remapObsAggregateFilter", () => {
+  // Resolve the CH `clickhouseSelect` the public-API filter compiler bakes into `field`, so the test
+  // exercises the same identity a real compiled obs filter carries (not a hand-typed expression).
+  const chSelectFor = (uiTableId: string): string => {
+    const m = tracesTableUiColumnDefinitions.find(
+      (c) => c.uiTableId === uiTableId,
+    );
+    if (!m) throw new Error(`no CH mapping for ${uiTableId}`);
+    return m.clickhouseSelect;
+  };
+
+  it("COALESCEs a numeric obs aggregate so zero-observation traces participate in = 0 / !=", () => {
+    const out = remapObsAggregateFilter(
+      new ChNumberFilter({
+        clickhouseTable: "observations",
+        field: chSelectFor("errorCount"),
+        operator: "=",
+        value: 0,
+      }),
+    );
+    const q = out.apply().query;
+    expect(q).toContain("COALESCE(o.error_count, 0)");
+    expect(q).toMatch(/COALESCE\(o\.error_count, 0\) = :/);
+  });
+
+  it("remaps token / cost / latency aggregates onto their CTE aliases", () => {
+    const cases: Array<[string, string]> = [
+      ["inputTokens", "COALESCE(o.usage_input, 0)"],
+      ["outputTokens", "COALESCE(o.usage_output, 0)"],
+      ["totalTokens", "COALESCE(o.usage_total, 0)"],
+      ["inputCost", "COALESCE(o.cost_input, 0)"],
+      ["totalCost", "COALESCE(o.cost_total, 0)"],
+      ["latency", "COALESCE(o.latency_milliseconds / 1000, 0)"],
+    ];
+    for (const [uiTableId, expected] of cases) {
+      const out = remapObsAggregateFilter(
+        new ChNumberFilter({
+          clickhouseTable: "observations",
+          field: chSelectFor(uiTableId),
+          operator: ">=",
+          value: 1,
+        }),
+      );
+      expect(out.apply().query).toContain(expected);
+    }
+  });
+
+  it("leaves the level column un-COALESCEd (no observations -> no level match)", () => {
+    const out = remapObsAggregateFilter(
+      new ChStringOptionsFilter({
+        clickhouseTable: "observations",
+        field: chSelectFor("level"),
+        operator: "any of",
+        values: ["ERROR"],
+      }),
+    );
+    const q = out.apply().query;
+    expect(q).toContain("o.aggregated_level IN (");
+    expect(q).not.toContain("COALESCE");
+  });
+
+  it("throws InvalidRequestError on an unknown observation column", () => {
+    expect(() =>
+      remapObsAggregateFilter(
+        new ChNumberFilter({
+          clickhouseTable: "observations",
+          field: "nonsense_col",
+          operator: "=",
+          value: 1,
+        }),
+      ),
+    ).toThrow(/Unsupported observation filter column/);
   });
 });

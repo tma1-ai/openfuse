@@ -28,6 +28,9 @@ import {
   StringObjectFilter,
   StringOptionsFilter,
 } from "../../greptime/sql/greptime-filter";
+import { InvalidRequestError } from "../../../errors";
+import { tracesTableUiColumnDefinitions } from "../../tableMappings/mapTracesTable";
+import { tracesTableGreptimeColumnDefinitions } from "../../greptime/sql/columnMappings";
 
 /**
  * Translate a *compiled* ClickHouse `FilterList` (the kind the public-API web wrappers build via
@@ -206,4 +209,76 @@ export const translateChFilterList = (
   const out = new FilterList();
   list.forEach((f) => out.push(chFilterToGreptime(f, opts)));
   return out;
+};
+
+/**
+ * CH `clickhouseSelect` (the `field` a compiled observation-aggregate trace filter carries) ->
+ * the `observations_stats` CTE alias, joined by the shared `uiTableId` between the CH
+ * `tracesTableUiColumnDefinitions` and the GreptimeDB `tracesTableGreptimeColumnDefinitions`. Keeps
+ * both source-of-truth column tables authoritative: a new obs rollup column is picked up here once it
+ * exists in both.
+ */
+const OBS_AGG_FIELD_TO_GREPTIME: ReadonlyMap<string, string> = (() => {
+  const map = new Map<string, string>();
+  for (const ch of tracesTableUiColumnDefinitions) {
+    if (ch.clickhouseTableName !== "observations") continue;
+    const greptime = tracesTableGreptimeColumnDefinitions.find(
+      (g) =>
+        g.uiTableId === ch.uiTableId && g.greptimeTableName === "observations",
+    );
+    if (greptime) map.set(ch.clickhouseSelect, greptime.greptimeSelect);
+  }
+  return map;
+})();
+
+/**
+ * Remap one compiled observation-aggregate ClickHouse filter (`clickhouseTable === "observations"`
+ * on the traces surface) onto a GreptimeDB predicate over the `observations_stats` CTE (alias `o`).
+ *
+ * Why this is separate from `chFilterToGreptime`: the CH filter's `field` is the CH `clickhouseSelect`
+ * expression (e.g. `arraySum(mapValues(...))`), meaningless to GreptimeDB. `chFilterToGreptime`
+ * passes `field` through verbatim, which would leak CH SQL (Codex #3) — so we resolve the CTE alias
+ * and emit against that instead. Numeric aggregates are wrapped in `COALESCE(..., 0)` so a
+ * zero-observation trace (NULL after the LEFT JOIN to `observations_stats`) still participates in
+ * `= 0` / `!=` / `none of` (Codex #4); the only non-numeric column, `aggregated_level`, is left NULL
+ * so level filters never match a trace with no observations.
+ */
+export const remapObsAggregateFilter = (f: ChFilter): GreptimeFilter => {
+  const alias = OBS_AGG_FIELD_TO_GREPTIME.get(f.field);
+  if (!alias) {
+    throw new InvalidRequestError(
+      `Unsupported observation filter column on the traces API: ${f.field}`,
+    );
+  }
+  // `field` is a baked SQL expression, so tablePrefix stays undefined: the greptime emitter renders
+  // a non-bare field verbatim (see `col()` in greptime-filter.ts).
+  const field =
+    alias === "o.aggregated_level" ? alias : `COALESCE(${alias}, 0)`;
+  if (f instanceof ChNumberFilter) {
+    return new NumberFilter({
+      table: "observations",
+      field,
+      operator: f.operator,
+      value: f.value,
+    });
+  }
+  if (f instanceof ChStringFilter) {
+    return new StringFilter({
+      table: "observations",
+      field,
+      operator: f.operator,
+      value: f.value,
+    });
+  }
+  if (f instanceof ChStringOptionsFilter) {
+    return new StringOptionsFilter({
+      table: "observations",
+      field,
+      operator: f.operator,
+      values: f.values,
+    });
+  }
+  throw new InvalidRequestError(
+    `Unsupported observation filter type on the traces API: ${f.constructor.name}`,
+  );
 };
