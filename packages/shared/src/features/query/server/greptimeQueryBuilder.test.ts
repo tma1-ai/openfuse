@@ -220,4 +220,83 @@ describe("GreptimeQueryBuilder", () => {
     });
     expect(query).toMatch(/ORDER BY `sum_totalCost` DESC/);
   });
+
+  it("tokensPerSecond / outputTokensPerSecond are per-row rate measures", () => {
+    const tps = build({
+      view: "observations",
+      metrics: [{ measure: "tokensPerSecond", aggregation: "avg" }],
+    });
+    expect(tps.query).toMatch(/avg\(/);
+    expect(tps.query).toMatch(/usage_details/);
+    expect(tps.query).toMatch(/to_unixtime\(o\.end_time\) - to_unixtime\(o\.start_time\)/);
+    const otps = build({
+      view: "observations",
+      metrics: [{ measure: "outputTokensPerSecond", aggregation: "avg" }],
+    });
+    expect(otps.query).toMatch(
+      /to_unixtime\(o\.end_time\) - to_unixtime\(o\.completion_start_time\)/,
+    );
+  });
+
+  it("uniq on the traceId measure counts distinct traces", () => {
+    const { query } = build({
+      view: "observations",
+      metrics: [{ measure: "traceId", aggregation: "uniq" }],
+    });
+    expect(query).toMatch(/count\(distinct o\.trace_id\)/);
+    // string measure: only count/uniq are valid
+    expect(() =>
+      build({
+        view: "observations",
+        metrics: [{ measure: "traceId", aggregation: "sum" }],
+      }),
+    ).toThrow(/not valid for measure/i);
+  });
+
+  it("scoreName filter resolves to the score name column (LFE-4838 fallback)", () => {
+    const { query, parameters } = build({
+      view: "scores-numeric",
+      metrics: [{ measure: "count", aggregation: "count" }],
+      filters: [
+        {
+          column: "scoreName",
+          operator: "any of",
+          value: ["accuracy"],
+          type: "stringOptions",
+        },
+      ],
+    });
+    expect(query).toMatch(/s\.`?name`?/);
+    expect(Object.values(parameters)).toContain("accuracy");
+  });
+
+  it("histogram builds a min/max probe + bucket SQL and a histogram descriptor", () => {
+    const { query, postProcess } = build({
+      view: "scores-numeric",
+      metrics: [{ measure: "value", aggregation: "histogram" }],
+      chartConfig: { type: "HISTOGRAM", bins: 10 },
+    } as Partial<QueryType> & Pick<QueryType, "view">);
+    expect(query).toMatch(/min\(s\.value\).*max\(s\.value\)/);
+    expect(postProcess.histogram?.bins).toBe(10);
+    expect(postProcess.histogram?.bucketSql).toMatch(/floor\(/);
+    expect(postProcess.histogram?.bucketSql).toMatch(/GROUP BY bucket/);
+    expect(postProcess.metricColumns).toEqual([]);
+  });
+
+  it("histogram rejects dimensions / time / multiple metrics (scope guard)", () => {
+    expect(() =>
+      build({
+        view: "scores-numeric",
+        dimensions: [{ field: "name" }],
+        metrics: [{ measure: "value", aggregation: "histogram" }],
+      }),
+    ).toThrow(/histogram does not support dimensions/i);
+    expect(() =>
+      build({
+        view: "scores-numeric",
+        metrics: [{ measure: "value", aggregation: "histogram" }],
+        timeDimension: { granularity: "day" },
+      }),
+    ).toThrow(/histogram does not support dimensions or a time dimension/i);
+  });
 });

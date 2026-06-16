@@ -332,6 +332,20 @@ const observationsView: ViewDeclarationType = {
       type: "integer",
       unit: "tokens",
     },
+    // Per-row throughput: tokens / span duration (seconds). Guarded against a 0-second duration; the
+    // chosen aggregation (e.g. avg) is applied across rows by the builder.
+    tokensPerSecond: {
+      sql: `${knownKey("o", "usage_details", "total")} / nullif(to_unixtime(o.end_time) - to_unixtime(o.start_time), 0)`,
+      alias: "tokensPerSecond",
+      type: "decimal",
+      unit: "tokens/s",
+    },
+    outputTokensPerSecond: {
+      sql: `${knownKey("o", "usage_details", "output")} / nullif(to_unixtime(o.end_time) - to_unixtime(o.completion_start_time), 0)`,
+      alias: "outputTokensPerSecond",
+      type: "decimal",
+      unit: "tokens/s",
+    },
     inputCost: {
       sql: knownKey("o", "cost_details", "input"),
       alias: "inputCost",
@@ -349,6 +363,14 @@ const observationsView: ViewDeclarationType = {
       alias: "totalCost",
       type: "decimal",
       unit: "USD",
+    },
+    // String measure: apply `uniq` to count distinct traces (mirrors the CH events_observations
+    // `traceId` measure); `type: string` restricts it to count/uniq.
+    traceId: {
+      sql: "o.trace_id",
+      alias: "traceId",
+      type: "string",
+      unit: "traces",
     },
     countScores: {
       sql: "count(*)",
