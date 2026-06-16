@@ -67,6 +67,11 @@ const nextConfig = {
     "bullmq",
     "@opentelemetry/sdk-node",
     "@opentelemetry/instrumentation-winston",
+    // GreptimeDB ingester pulls in lz4-napi, a native .node addon that
+    // Turbopack cannot place in an ESM chunk. Keep it server-external so the
+    // server bundle requires it at runtime instead of bundling the binary.
+    "@greptime/ingester",
+    "lz4-napi",
   ],
   poweredByHeader: false,
   basePath: env.NEXT_PUBLIC_BASE_PATH,

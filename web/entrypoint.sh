@@ -36,26 +36,6 @@ check_unencoded_credentials() {
     esac
 }
 
-# Check whether CLICKHOUSE_PASSWORD contains characters that would break the
-# query-string interpolation used in the migration script (& = # ? % + @ space).
-# Strips %XX sequences first so partially-encoded values are caught.
-check_clickhouse_password() {
-    _pass="$1"
-    if [ -z "$_pass" ]; then
-        return
-    fi
-    # Strip valid percent-encoded sequences before checking so
-    # partially-encoded values are still caught.
-    _stripped=$(printf '%s' "$_pass" | sed 's/%[0-9A-Fa-f][0-9A-Fa-f]//g')
-    case "$_stripped" in
-        *'&'*|*'='*|*'#'*|*'?'*|*'%'*|*'+'*|*'@'*|*' '*)
-            echo "HINT: Your CLICKHOUSE_PASSWORD contains special characters (&, =, #, ?, %, +, @, space) that may break the migration URL."
-            echo "  These characters need to be percent-encoded when passed as query parameters."
-            echo "  Example: p@ss&word → p%40ss%26word"
-            ;;
-    esac
-}
-
 # Run cleanup script before running migrations
 # Check if DATABASE_URL is not set
 if [ -z "$DATABASE_URL" ]; then
@@ -73,12 +53,6 @@ if [ -z "$DATABASE_URL" ]; then
         DATABASE_URL="${DATABASE_URL}?$DATABASE_ARGS"
         export DATABASE_URL
     fi
-fi
-
-# Check if CLICKHOUSE_URL is not set
-if [ -z "$CLICKHOUSE_URL" ]; then
-    echo "Error: CLICKHOUSE_URL is not configured. Migrating from V2? Check out migration guide: https://langfuse.com/self-hosting/upgrade-guides/upgrade-v2-to-v3"
-    exit 1
 fi
 
 # Set DIRECT_URL to the value of DATABASE_URL if it is not set, required for migrations
@@ -105,24 +79,8 @@ if [ $status -ne 0 ]; then
     exit $status
 fi
 
-# Execute the Clickhouse migration, except when disabled.
-if [ "$LANGFUSE_AUTO_CLICKHOUSE_MIGRATION_DISABLED" != "true" ]; then
-    # Apply Clickhouse migrations
-    cd ./packages/shared
-    sh ./clickhouse/scripts/up.sh
-    status=$?
-    cd ../../
-fi
-
-# If migration fails (returns non-zero exit status), exit script with that status
-if [ $status -ne 0 ]; then
-    echo "Applying clickhouse migrations failed. Common causes:"
-    echo "  1. The database is unavailable or unreachable."
-    echo "  2. CLICKHOUSE_PASSWORD contains special characters that are not URL-encoded."
-    check_clickhouse_password "$CLICKHOUSE_PASSWORD"
-    echo "Exiting..."
-    exit $status
-fi
+# Note: the GreptimeDB analytics-store schema is applied out of band, not from
+# this entrypoint (see packages/shared/src/server/greptime/applyMigrations.ts).
 
 # Run the command passed to the docker image on start
 exec "$@"
