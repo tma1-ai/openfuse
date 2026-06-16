@@ -121,6 +121,17 @@ const EnvSchema = z.object({
     .int()
     .positive()
     .default(1_000_000),
+  // Entities enumerated + rebuilt per reconciliation job before it re-enqueues itself with the next
+  // keyset cursor. Conservative default; bound by raw_events read + projection write throughput.
+  LANGFUSE_GREPTIME_RECONCILIATION_BATCH_SIZE: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(100),
+  LANGFUSE_GREPTIME_RECONCILIATION_CONCURRENCY: z.coerce
+    .number()
+    .positive()
+    .default(1),
   LANGFUSE_EVAL_CREATOR_LIMITER_DURATION: z.coerce
     .number()
     .positive()
@@ -241,6 +252,9 @@ const EnvSchema = z.object({
     .enum(["true", "false"])
     .default("true"),
   QUEUE_CONSUMER_SCORE_DELETE_QUEUE_IS_ENABLED: z
+    .enum(["true", "false"])
+    .default("true"),
+  QUEUE_CONSUMER_GREPTIME_RECONCILIATION_QUEUE_IS_ENABLED: z
     .enum(["true", "false"])
     .default("true"),
   QUEUE_CONSUMER_DATASET_DELETE_QUEUE_IS_ENABLED: z

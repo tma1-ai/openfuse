@@ -92,3 +92,58 @@ export const readRawEventsForEntity = async (params: {
     readOnly: true,
   });
 };
+
+export interface RawEventEntityRef {
+  entity_type: string;
+  entity_id: string;
+}
+
+/**
+ * Enumerate distinct (entity_type, entity_id) for a project from raw_events, keyset-paginated so a
+ * long-running reconciliation scan is stable: raw_events is append-only and grows during the scan, so
+ * LIMIT/OFFSET would skip or duplicate rows. Pass the last ref of a page as `cursor` to fetch the
+ * next page; omit it for the first page. Returns up to `limit` refs ordered by (entity_type, entity_id).
+ */
+export const listRawEventEntities = async (params: {
+  projectId: string;
+  limit: number;
+  cursor?: { entityType: string; entityId: string };
+}): Promise<RawEventEntityRef[]> => {
+  const table = quoteIdent(env.GREPTIME_RAW_EVENTS_TABLE);
+  const entityType = quoteIdent("entity_type");
+  const entityId = quoteIdent("entity_id");
+  const projectId = quoteIdent("project_id");
+
+  // Keyset predicate over the composite (entity_type, entity_id) order, written out (not a row-value
+  // comparison) for engine portability.
+  const where = params.cursor
+    ? `WHERE ${projectId} = ? AND (${entityType} > ? OR (${entityType} = ? AND ${entityId} > ?))`
+    : `WHERE ${projectId} = ?`;
+  const bind = params.cursor
+    ? [
+        params.projectId,
+        params.cursor.entityType,
+        params.cursor.entityType,
+        params.cursor.entityId,
+      ]
+    : [params.projectId];
+
+  // Clamp to a finite positive integer before interpolating into the SQL: a NaN/Infinity limit would
+  // otherwise render `LIMIT NaN`/`LIMIT Infinity` and fail at the engine. This helper is exported, so
+  // it must guard its own interpolation rather than trust callers.
+  const limit = Number.isFinite(params.limit)
+    ? Math.max(1, Math.floor(params.limit))
+    : 1;
+
+  return greptimeQuery<RawEventEntityRef>({
+    query: `
+      SELECT DISTINCT ${entityType}, ${entityId}
+      FROM ${table}
+      ${where}
+      ORDER BY ${entityType} ASC, ${entityId} ASC
+      LIMIT ${limit}
+    `,
+    params: bind,
+    readOnly: true,
+  });
+};

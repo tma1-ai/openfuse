@@ -21,6 +21,7 @@ import {
   QueueJobs,
   recordIncrement,
   ScoreEventType,
+  ScoreSnapshotEventType,
   DatasetRunItemEventType,
   scoreRecordInsertSchema,
   ScoreRecordInsertType,
@@ -172,11 +173,16 @@ export class IngestionService {
           projectId,
           entityId: eventBodyId,
           createdAtTimestamp,
-          scoreEventList: events as ScoreEventType[],
+          scoreEventList: events as (ScoreEventType | ScoreSnapshotEventType)[],
           deleted,
         });
       }
       case "dataset_run_item": {
+        // dataset_run_items are hard-deleted (no soft-delete column in the read path, no per-entity
+        // tombstone/replay — see deletion.ts). A rebuild of a deleted entity (entity tombstone) or a
+        // deleted project (project tombstone) must therefore write nothing, otherwise the replay would
+        // re-insert a live row and resurrect what a project delete hard-removed.
+        if (deleted) return;
         return await this.processDatasetRunItemEventList({
           projectId,
           entityId: eventBodyId,
@@ -473,7 +479,7 @@ export class IngestionService {
     projectId: string;
     entityId: string;
     createdAtTimestamp: Date;
-    scoreEventList: ScoreEventType[];
+    scoreEventList: (ScoreEventType | ScoreSnapshotEventType)[];
     deleted?: boolean;
   }) {
     const { projectId, entityId, createdAtTimestamp, scoreEventList, deleted } =
@@ -486,6 +492,17 @@ export class IngestionService {
     const scoreRecords = await Promise.all(
       timeSortedEvents.map(async (scoreEvent) => {
         try {
+          // Synthetic snapshot (UI mutation): already inflated, map straight to a record so the
+          // rebuild does not re-run validateAndInflateScore (which would reject e.g. an ANNOTATION
+          // score without a configId).
+          if (scoreEvent.type === eventTypes.SCORE_SNAPSHOT) {
+            return this.mapScoreSnapshotToRecord(
+              scoreEvent.body,
+              entityId,
+              projectId,
+            );
+          }
+
           const validatedScore = await validateAndInflateScore({
             body: scoreEvent.body,
             scoreId: entityId,
@@ -536,12 +553,55 @@ export class IngestionService {
 
     const finalScoreRecord: ScoreRecordInsertType =
       await this.mergeScoreRecords({ scoreRecords });
-    finalScoreRecord.created_at = createdAtTimestamp.getTime();
+
+    // created_at: a pure-ingestion history derives it from min(ingested_at). A snapshot (UI mutation)
+    // carries the real createdAt in its body, and merge keeps it (created_at is an immutable merge
+    // key, so the earliest record wins) — do not overwrite it with the ingestion time.
+    const hasSnapshot = timeSortedEvents.some(
+      (e) => e.type === eventTypes.SCORE_SNAPSHOT,
+    );
+    if (!hasSnapshot)
+      finalScoreRecord.created_at = createdAtTimestamp.getTime();
 
     // Tombstoned entity: mark soft-deleted so a replay rebuilds it deleted, not resurrected.
     if (deleted) finalScoreRecord.is_deleted = 1;
 
     this.greptimeWriter.addToQueue(GreptimeTable.Scores, finalScoreRecord);
+  }
+
+  /** Map a synthetic score-snapshot body (already inflated) straight to a projection record. */
+  private mapScoreSnapshotToRecord(
+    body: ScoreSnapshotEventType["body"],
+    entityId: string,
+    projectId: string,
+  ): ScoreRecordInsertType {
+    const timestampMs = this.getMillisecondTimestamp(body.timestamp);
+    return {
+      id: entityId,
+      project_id: projectId,
+      environment: body.environment,
+      timestamp: timestampMs,
+      name: body.name,
+      value: body.value,
+      source: body.source,
+      trace_id: body.traceId ?? null,
+      session_id: body.sessionId ?? null,
+      dataset_run_id: body.datasetRunId ?? null,
+      data_type: body.dataType,
+      observation_id: body.observationId ?? null,
+      config_id: body.configId ?? null,
+      comment: body.comment ?? null,
+      metadata: body.metadata ?? {},
+      string_value: body.stringValue ?? null,
+      long_string_value: body.longStringValue,
+      execution_trace_id: body.executionTraceId ?? null,
+      queue_id: body.queueId ?? null,
+      author_user_id: body.authorUserId ?? null,
+      created_at: new Date(body.createdAt).getTime(),
+      updated_at: new Date(body.updatedAt).getTime(),
+      event_ts: timestampMs,
+      is_deleted: 0,
+    };
   }
 
   private async processTraceEventList(params: {
@@ -867,7 +927,11 @@ export class IngestionService {
    * keep their own input order on ties — same as before.)
    */
   private static toTimeSortedEventList<
-    T extends TraceEventType | ScoreEventType | ObservationEvent,
+    T extends
+      | TraceEventType
+      | ScoreEventType
+      | ScoreSnapshotEventType
+      | ObservationEvent,
   >(eventList: T[]): T[] {
     return eventList.slice().sort((a, b) => {
       const aTimestamp = new Date(a.timestamp).getTime();

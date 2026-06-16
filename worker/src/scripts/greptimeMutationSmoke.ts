@@ -8,8 +8,12 @@
  *     `trace-create` appended to raw_events; a full-history rebuild restores the toggle (the worker
  *     `mapTraceEventsToRecords` reads `bookmarked` from the body). A LATER genuine trace event still
  *     clobbers it — same as upstream Langfuse — which this smoke asserts as the expected behavior.
- *   - scores: projection-only (annotation/manual scores have no faithfully-replayable ingestion
- *     event), asserted across all data types so the value-column mapping is exercised.
+ *   - scores: dual-write of a synthetic `score-snapshot` raw_event (source of truth, body carries
+ *     the already-inflated projection row) + the projection (immediate visibility), asserted across
+ *     all data types so the value-column mapping is exercised. Because the snapshot restores the
+ *     full SoT, a reconciliation rebuild reconstructs a lost/diverged score projection (D1+D2).
+ *   - project-delete guard: a project tombstone soft-deletes every entity for that project on
+ *     rebuild, including late appends during deletion (D3).
  */
 import { redis } from "@langfuse/shared/src/server";
 import {
@@ -22,6 +26,9 @@ import {
   parseRawEventHistory,
   deleteEntityFromGreptime,
   deleteEntitiesFromGreptime,
+  deleteProjectFromGreptime,
+  getProjectDeletedAt,
+  listRawEventEntities,
 } from "@langfuse/shared/src/server";
 import { prisma } from "@langfuse/shared/src/db";
 import { GreptimeWriter } from "../services/GreptimeWriter";
@@ -82,15 +89,54 @@ const rebuild = async (entityId: string, createdAt: Date) => {
     prisma,
     GreptimeWriter.getInstance(),
   );
+  await svc.mergeAndWrite("trace", PROJECT, entityId, createdAt, events);
+  await GreptimeWriter.getInstance().flushAll(true);
+  await sleep(700);
+};
+
+/**
+ * Reconciliation rebuild for one entity, mirroring the worker handler's rebuildEntity:
+ * read full history -> parse -> project-delete guard -> mergeAndWrite. This is the same core D2 runs.
+ */
+const reconcile = async (
+  projectId: string,
+  entityType: "trace" | "score",
+  entityId: string,
+) => {
+  const { events, minIngestedAtMs, deleted } = parseRawEventHistory(
+    await readRawEventsForEntity({ projectId, entityType, entityId }),
+  );
+  if (events.length === 0) return;
+  const projDeletedAt = await getProjectDeletedAt(projectId);
+  const isDeleted = deleted || projDeletedAt !== null;
+  const svc = new IngestionService(
+    redis!,
+    prisma,
+    GreptimeWriter.getInstance(),
+  );
   await svc.mergeAndWrite(
-    "trace",
-    PROJECT,
+    entityType,
+    projectId,
     entityId,
-    createdAt,
-    events as never,
+    new Date(minIngestedAtMs),
+    events,
+    isDeleted,
   );
   await GreptimeWriter.getInstance().flushAll(true);
   await sleep(700);
+};
+
+/** Live (non-soft-deleted) score value, or undefined when absent / soft-deleted. */
+const scoreLiveValue = async (
+  projectId: string,
+  id: string,
+): Promise<number | string | undefined> => {
+  const rows = await greptimeQuery<{ value: number | string }>({
+    query:
+      "SELECT `value` FROM `scores` WHERE `project_id` = ? AND `id` = ? AND `is_deleted` = false LIMIT 1",
+    params: [projectId, id],
+  });
+  return rows[0]?.value;
 };
 
 const traceBookmarked = async (id: string): Promise<number | undefined> => {
@@ -270,6 +316,20 @@ async function main() {
     check(`score ${sc.data_type}: projection value mapping`, ok, r);
   }
 
+  // D1: every annotation upsert also appends a synthetic score-snapshot to raw_events (SoT).
+  for (const sc of scoreCases) {
+    const rawScore = await readRawEventsForEntity({
+      projectId: PROJECT,
+      entityType: "score",
+      entityId: sc.id,
+    });
+    check(
+      `score ${sc.data_type}: snapshot appended to raw_events (D1)`,
+      rawScore.some((r) => r.event_type === "score-snapshot"),
+      rawScore.map((r) => r.event_type),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // 5. score delete propagates to GreptimeDB (deleteAnnotationScore router fix)
   // ---------------------------------------------------------------------------
@@ -292,6 +352,141 @@ async function main() {
   );
 
   // ---------------------------------------------------------------------------
+  // 6. D1+D2: a snapshot survives projection loss — reconciliation rebuild reconstructs the score
+  // ---------------------------------------------------------------------------
+  const NOLOSS_ID = `mut-score-noloss-${RUN}`;
+  await upsertScore({
+    ...scoreBase,
+    id: NOLOSS_ID,
+    name: "noloss",
+    source: "ANNOTATION",
+    data_type: "NUMERIC",
+    value: 0.77,
+    string_value: null,
+    long_string_value: "",
+  });
+  await sleep(300);
+  const nolossRaw = await readRawEventsForEntity({
+    projectId: PROJECT,
+    entityType: "score",
+    entityId: NOLOSS_ID,
+  });
+  check(
+    "noloss: snapshot present in raw_events (precondition, D1)",
+    nolossRaw.some((r) => r.event_type === "score-snapshot"),
+    nolossRaw.map((r) => r.event_type),
+  );
+  // Simulate projection drift/loss: hard-delete the projection row, leaving raw_events intact.
+  await greptimeQuery({
+    query: "DELETE FROM `scores` WHERE `project_id` = ? AND `id` = ?",
+    params: [PROJECT, NOLOSS_ID],
+  });
+  await sleep(300);
+  check(
+    "noloss: projection cleared (precondition)",
+    (await scoreLiveValue(PROJECT, NOLOSS_ID)) === undefined,
+  );
+  // D2 enumeration finds the entity, and the reconciliation rebuild reconstructs it from the snapshot.
+  const entities = await listRawEventEntities({
+    projectId: PROJECT,
+    limit: 1000,
+  });
+  check(
+    "reconciliation: listRawEventEntities enumerates the score entity (D2)",
+    entities.some(
+      (e) => e.entity_type === "score" && e.entity_id === NOLOSS_ID,
+    ),
+  );
+  await reconcile(PROJECT, "score", NOLOSS_ID);
+  check(
+    "noloss: reconciliation rebuilds projection from snapshot (D1+D2, no data loss)",
+    Number(await scoreLiveValue(PROJECT, NOLOSS_ID)) === 0.77,
+    await scoreLiveValue(PROJECT, NOLOSS_ID),
+  );
+
+  // ---------------------------------------------------------------------------
+  // 7. D3: project-delete guard — rebuild does not resurrect, including late appends after delete
+  // ---------------------------------------------------------------------------
+  const DEL_PROJECT = `smoke-mutation-del-${RUN}`;
+  const DEL_SCORE = `del-score-${RUN}`;
+  await upsertScore({
+    ...scoreBase,
+    project_id: DEL_PROJECT,
+    id: DEL_SCORE,
+    name: "del",
+    source: "ANNOTATION",
+    data_type: "NUMERIC",
+    value: 0.5,
+    string_value: null,
+    long_string_value: "",
+  });
+  await sleep(300);
+  await deleteProjectFromGreptime(DEL_PROJECT);
+  await sleep(300);
+  check(
+    "project-delete: projection cleared (precondition)",
+    (await scoreLiveValue(DEL_PROJECT, DEL_SCORE)) === undefined,
+  );
+  // Project deletion is terminal for the projectId, so rebuild keeps the entity soft-deleted.
+  await reconcile(DEL_PROJECT, "score", DEL_SCORE);
+  check(
+    "project-delete guard: rebuild keeps deleted entity soft-deleted (D3, no resurrection)",
+    (await scoreLiveValue(DEL_PROJECT, DEL_SCORE)) === undefined,
+    await scoreLiveValue(DEL_PROJECT, DEL_SCORE),
+  );
+
+  // A fresh snapshot appended AFTER the deletion (ingested_at > deleted_at) still rebuilds deleted:
+  // project deletion is terminal for this projectId, not entity-level re-create semantics.
+  const LATE_SCORE = `del-score-late-${RUN}`;
+  const deletedAt = (await getProjectDeletedAt(DEL_PROJECT)) ?? RUN;
+  const afterTs = new Date(deletedAt + 60_000).toISOString();
+  await writeRawEvents([
+    {
+      projectId: DEL_PROJECT,
+      entityType: "score",
+      entityId: LATE_SCORE,
+      eventId: `late-snap-${RUN}`,
+      eventType: "score-snapshot",
+      eventTs: new Date(afterTs).getTime(),
+      ingestedAt: deletedAt + 60_000,
+      body: JSON.stringify({
+        id: `late-snap-${RUN}`,
+        timestamp: afterTs,
+        type: "score-snapshot",
+        body: {
+          id: LATE_SCORE,
+          name: "late",
+          value: 0.9,
+          source: "ANNOTATION",
+          dataType: "NUMERIC",
+          stringValue: null,
+          longStringValue: "",
+          comment: null,
+          metadata: {},
+          traceId: null,
+          observationId: null,
+          sessionId: null,
+          datasetRunId: null,
+          executionTraceId: null,
+          configId: null,
+          queueId: null,
+          authorUserId: "u-1",
+          environment: "default",
+          timestamp: afterTs,
+          createdAt: afterTs,
+          updatedAt: afterTs,
+        },
+      }),
+    },
+  ]);
+  await reconcile(DEL_PROJECT, "score", LATE_SCORE);
+  check(
+    "project-delete guard: entity appended after deletedAt stays soft-deleted (D3, terminal project delete)",
+    (await scoreLiveValue(DEL_PROJECT, LATE_SCORE)) === undefined,
+    await scoreLiveValue(DEL_PROJECT, LATE_SCORE),
+  );
+
+  // ---------------------------------------------------------------------------
   // cleanup
   // ---------------------------------------------------------------------------
   for (const id of [TRACE_ID, REPLAY_ID]) {
@@ -301,6 +496,11 @@ async function main() {
       entityId: id,
     });
   }
+  await deleteEntitiesFromGreptime({
+    projectId: PROJECT,
+    entityType: "score",
+    entityIds: [NOLOSS_ID],
+  });
 
   console.log(`\n${failures === 0 ? "ALL PASS" : `${failures} FAILURE(S)`}`);
 }

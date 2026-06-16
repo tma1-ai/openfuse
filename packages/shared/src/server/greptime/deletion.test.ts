@@ -2,11 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   greptimeQuery: vi.fn(),
+  greptimeWrite: vi.fn(),
   writeRawEvents: vi.fn(),
 }));
 
 vi.mock("./client", () => ({
   greptimeQuery: mocks.greptimeQuery,
+  getGreptimeIngestClient: () => ({
+    write: mocks.greptimeWrite,
+  }),
 }));
 
 vi.mock("./rawEvents", async (importOriginal) => ({
@@ -18,12 +22,14 @@ import {
   deleteEntitiesFromGreptime,
   deleteProjectFromGreptime,
   deleteTracesFromGreptime,
+  getProjectDeletedAt,
 } from "./deletion";
 
 describe("Greptime deletion", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.greptimeQuery.mockResolvedValue([]);
+    mocks.greptimeWrite.mockResolvedValue(undefined);
     mocks.writeRawEvents.mockResolvedValue(undefined);
   });
 
@@ -96,6 +102,7 @@ describe("Greptime deletion", () => {
   it("deletes every project-scoped projection table for project deletion", async () => {
     await deleteProjectFromGreptime("project-1");
 
+    expect(mocks.greptimeWrite).toHaveBeenCalledOnce();
     expect(mocks.greptimeQuery).toHaveBeenCalledTimes(10);
     expect(mocks.greptimeQuery.mock.calls).toEqual(
       expect.arrayContaining([
@@ -113,5 +120,30 @@ describe("Greptime deletion", () => {
         ],
       ]),
     );
+  });
+
+  describe("getProjectDeletedAt (D3 project tombstone)", () => {
+    it("returns null when the project has no tombstone", async () => {
+      mocks.greptimeQuery.mockResolvedValueOnce([]);
+      expect(await getProjectDeletedAt("project-1")).toBeNull();
+
+      mocks.greptimeQuery.mockResolvedValueOnce([{ deleted_at: null }]);
+      expect(await getProjectDeletedAt("project-1")).toBeNull();
+    });
+
+    it("parses the latest deleted_at to ms epoch from a Date", async () => {
+      const at = new Date("2024-05-01T00:00:00.000Z");
+      mocks.greptimeQuery.mockResolvedValueOnce([{ deleted_at: at }]);
+      expect(await getProjectDeletedAt("project-1")).toBe(at.getTime());
+    });
+
+    it("parses the latest deleted_at to ms epoch from a string", async () => {
+      mocks.greptimeQuery.mockResolvedValueOnce([
+        { deleted_at: "2024-05-01 00:00:00.000" },
+      ]);
+      expect(await getProjectDeletedAt("project-1")).toBe(
+        new Date("2024-05-01 00:00:00.000").getTime(),
+      );
+    });
   });
 });

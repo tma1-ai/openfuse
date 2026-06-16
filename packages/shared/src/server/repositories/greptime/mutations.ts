@@ -29,10 +29,11 @@ import {
  * a synthetic `trace-create` appended to `raw_events` so a full-history rebuild reconstructs the
  * edit (the event store stays the source of truth).
  *
- * Scores are intentionally projection-only: annotation/manual scores have no ingestion origin and a
- * synthetic `score-create` is not faithfully replayable (`validateAndInflateScore` rejects an
- * ANNOTATION score without a configId — e.g. in-app-agent feedback — and would silently drop it on
- * replay). Their durable home is the projection, never an ingestion rebuild.
+ * Scores follow the same shape via a synthetic `score-snapshot` event: a `score-create` is not
+ * faithfully replayable (`validateAndInflateScore` rejects an ANNOTATION score without a configId —
+ * e.g. in-app-agent feedback), so the snapshot carries the already-inflated projection row and the
+ * worker replay maps it directly, bypassing that validation. raw_events stays the complete source of
+ * truth for scores too, so a full-history rebuild reconstructs UI scores instead of losing them.
  *
  * These are low-frequency, single-entity upserts (one bookmark toggle / one annotation at a time);
  * the per-call gRPC write is acceptable here and must not be reused as a bulk write path.
@@ -181,7 +182,44 @@ export const upsertScoreToGreptime = async (
 ): Promise<void> => {
   const full = normalizeScoreRecord(record);
 
-  // Projection-only: see the module docstring for why scores are not appended to raw_events.
+  // 1. Append the synthetic snapshot event first (source of truth), mirroring the legacy
+  //    "S3 event-store append then CH insert" ordering. The body carries the already-inflated
+  //    projection row verbatim; the worker replay (`mapScoreSnapshotToRecord`) reads it back
+  //    without re-running `validateAndInflateScore`. createdAt is preserved so edits keep the
+  //    original creation time on rebuild; event_ts is intentionally omitted (the merge rewrites it).
+  const body = {
+    id: full.id,
+    name: full.name,
+    value: full.value,
+    source: full.source,
+    dataType: full.data_type,
+    stringValue: full.string_value,
+    longStringValue: full.long_string_value,
+    comment: full.comment,
+    metadata: full.metadata ?? {},
+    traceId: full.trace_id,
+    observationId: full.observation_id,
+    sessionId: full.session_id,
+    datasetRunId: full.dataset_run_id,
+    executionTraceId: full.execution_trace_id,
+    configId: full.config_id,
+    queueId: full.queue_id,
+    authorUserId: full.author_user_id,
+    environment: full.environment,
+    timestamp: parseClickhouseUTCDateTimeFormat(full.timestamp).toISOString(),
+    createdAt: parseClickhouseUTCDateTimeFormat(full.created_at).toISOString(),
+    updatedAt: parseClickhouseUTCDateTimeFormat(full.updated_at).toISOString(),
+  };
+  const event = {
+    id: randomUUID(),
+    timestamp: body.timestamp,
+    type: eventTypes.SCORE_SNAPSHOT,
+    body,
+  } as unknown as IngestionEventType;
+  const rawEvent = ingestionEventToRawEvent(event, full.project_id, Date.now());
+  if (rawEvent) await writeRawEvents([rawEvent]);
+
+  // 2. Direct projection+EAV write for immediate read-after-write visibility.
   const insert: ScoreRecordInsertType = {
     ...full,
     timestamp: chToMs(full.timestamp),
