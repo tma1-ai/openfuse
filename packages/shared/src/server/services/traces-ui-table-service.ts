@@ -5,7 +5,6 @@ import Decimal from "decimal.js";
 import { ScoreAggregate } from "../../features/scores";
 import { TracingSearchType } from "../../interfaces/search";
 import { ObservationLevelType, TraceDomain } from "../../domain";
-import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import {
   getTracesTableCountGreptime,
   getTracesTableGreptime,
@@ -17,8 +16,7 @@ import {
  * Traces UI table service (04-read-path.md, P2). The legacy ClickHouse rollup (FINAL +
  * `sumMap`/`countIf`/`multiIf` CTEs) is replaced by the GreptimeDB read path in
  * `repositories/greptime/tracesUiTable.ts`; these public functions delegate there. Signatures and
- * return shapes are unchanged so callers (web tRPC, worker export stream) are untouched. The
- * `clickhouseConfigs` parameter is retained for source compatibility and ignored.
+ * return shapes are unchanged so callers (web tRPC, worker export stream) are untouched.
  */
 
 export type TracesTableReturnType = Pick<
@@ -93,7 +91,6 @@ export const getTracesTableMetrics = async (props: {
   orderBy?: OrderByState;
   limit?: number;
   page?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions | undefined;
 }): Promise<Array<Omit<TracesMetricsUiReturnType, "scores">>> => {
   return getTracesTableMetricsGreptime(props);
 };
@@ -106,7 +103,6 @@ export const getTracesTable = async (p: {
   orderBy?: OrderByState;
   limit?: number;
   page?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions | undefined;
 }): Promise<TracesTableUiReturnType[]> => {
   return getTracesTableGreptime(p);
 };
@@ -119,7 +115,6 @@ export const getTraceIdentifiers = async (props: {
   orderBy?: OrderByState;
   limit?: number;
   page?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions | undefined;
 }): Promise<Array<{ id: string; projectId: string; timestamp: Date }>> => {
   return getTraceIdentifiersGreptime(props);
 };

@@ -1,4 +1,3 @@
-import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import { OrderByState } from "../../interfaces/orderBy";
 import { FilterState } from "../../types";
 import {
@@ -12,8 +11,7 @@ import {
 /**
  * Sessions UI table service (04-read-path.md, P2). The legacy ClickHouse 5-CTE rollup is replaced by
  * the GreptimeDB read path in `repositories/greptime/sessionsUiTable.ts`; these public functions
- * delegate there with unchanged signatures/return shapes. `clickhouseConfigs` is retained for source
- * compatibility and ignored.
+ * delegate there with unchanged signatures/return shapes.
  */
 
 export type { SessionDataReturnType, SessionWithMetricsReturnType };
@@ -44,7 +42,6 @@ export const getSessionsWithMetrics = async (props: {
   orderBy?: OrderByState;
   limit?: number;
   page?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions | undefined;
 }): Promise<SessionWithMetricsReturnType[]> => {
   return getSessionsWithMetricsGreptime(props);
 };

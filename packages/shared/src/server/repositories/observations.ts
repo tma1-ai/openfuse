@@ -4,11 +4,9 @@ import { FilterState } from "../../types";
 import { FilterList, FullObservations } from "../queries";
 import { OrderByState } from "../../interfaces/orderBy";
 import { getTracesByIds } from "./traces";
-import { PreferredClickhouseService } from "../clickhouse/client";
 import { enrichObservationWithModelData } from "./observations_converters";
 import { env } from "../../env";
 import { TracingSearchType } from "../../interfaces/search";
-import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import type { AnalyticsGenerationEvent } from "../analytics-integrations/types";
 import { ObservationType } from "../../domain";
 import {
@@ -54,7 +52,6 @@ export type GetObservationsForTraceOpts<IncludeIO extends boolean> = {
   projectId: string;
   timestamp?: Date;
   includeIO?: IncludeIO;
-  preferredClickhouseService?: PreferredClickhouseService;
 };
 
 export const getObservationsForTrace = <IncludeIO extends boolean>(
@@ -99,7 +96,6 @@ export const getObservationByIdFromObservationsTable = ({
   type?: ObservationType;
   traceId?: string;
   renderingProps?: RenderingProps;
-  preferredClickhouseService?: PreferredClickhouseService;
 }) =>
   greptimeObservationReads.getObservationByIdFromObservationsTable({
     id,
@@ -132,7 +128,6 @@ export type ObservationTableQuery = {
   offset?: number;
   selectIOAndMetadata?: boolean;
   renderingProps?: RenderingProps;
-  clickhouseConfigs?: ClickHouseClientConfigOptions | undefined;
 };
 
 export type ObservationsTableQueryResult = ObservationRecordReadType & {

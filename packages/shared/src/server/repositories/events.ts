@@ -5,7 +5,6 @@ import type {
   ObservationType,
 } from "../../domain";
 import { env } from "../../env";
-import { PreferredClickhouseService } from "../clickhouse/client";
 import {
   getTraceByIdFromTracesTable,
   getTracesIdentifierForSessionFromTracesTable,
@@ -190,7 +189,6 @@ export const getObservationByIdFromEventsTable = async ({
   type,
   traceId,
   renderingProps = DEFAULT_RENDERING_PROPS,
-  preferredClickhouseService: _preferredClickhouseService,
 }: {
   id: string;
   projectId: string;
@@ -199,7 +197,6 @@ export const getObservationByIdFromEventsTable = async ({
   type?: ObservationType;
   traceId?: string;
   renderingProps?: RenderingProps;
-  preferredClickhouseService?: PreferredClickhouseService;
 }) => {
   return getObservationByIdFromEventsGreptime({
     id,
@@ -240,10 +237,6 @@ export const getTraceByIdFromEventsTable = async ({
   timestamp,
   fromTimestamp,
   renderingProps = DEFAULT_RENDERING_PROPS,
-  // GreptimeDB has a single merged `traces` projection; the events trace read collapses to the same
-  // projection read as the legacy path. These CH-only routing hints are ignored.
-  clickhouseFeatureTag: _clickhouseFeatureTag = "tracing",
-  preferredClickhouseService: _preferredClickhouseService,
   excludeInputOutput = false,
   excludeMetadata = false,
 }: {
@@ -252,8 +245,6 @@ export const getTraceByIdFromEventsTable = async ({
   timestamp?: Date;
   fromTimestamp?: Date;
   renderingProps?: RenderingProps;
-  clickhouseFeatureTag?: string;
-  preferredClickhouseService?: PreferredClickhouseService;
   /** When true, sets input/output columns to empty in the query to reduce database load */
   excludeInputOutput?: boolean;
   /** When true, sets metadata column to empty in the query to reduce database load */

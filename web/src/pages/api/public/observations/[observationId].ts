@@ -34,7 +34,6 @@ export default withMiddlewares(
               id: query.observationId,
               projectId: auth.scope.projectId,
               fetchWithInputOutput: true,
-              preferredClickhouseService: "ReadOnly",
             });
 
         if (!clickhouseObservation) {

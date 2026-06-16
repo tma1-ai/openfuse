@@ -58,8 +58,6 @@ export default withMiddlewares(
         const trace = await getTraceById({
           traceId,
           projectId: auth.scope.projectId,
-          clickhouseFeatureTag: "tracing-public-api",
-          preferredClickhouseService: "ReadOnly",
           excludeInputOutput: !includeIO,
           excludeMetadata: !includeIO,
         });
@@ -77,7 +75,6 @@ export default withMiddlewares(
                 projectId: auth.scope.projectId,
                 timestamp: trace?.timestamp,
                 includeIO: includeObservations,
-                preferredClickhouseService: "ReadOnly",
               })
             : Promise.resolve([]),
           includeScores
@@ -85,7 +82,6 @@ export default withMiddlewares(
                 projectId: auth.scope.projectId,
                 traceIds: [traceId],
                 timestamp: trace?.timestamp,
-                preferredClickhouseService: "ReadOnly",
               })
             : Promise.resolve([]),
         ]);

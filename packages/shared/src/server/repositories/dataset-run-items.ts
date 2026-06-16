@@ -1,7 +1,6 @@
 import { DatasetRunItemDomain } from "../../domain/dataset-run-items";
 import { type OrderByState } from "../../interfaces/orderBy";
 import { FilterState } from "../../types";
-import { ClickHouseClientConfigOptions } from "@clickhouse/client";
 import Decimal from "decimal.js";
 import { ScoreAggregate } from "../../features/scores";
 import {
@@ -44,7 +43,6 @@ type DatasetRunItemsTableQuery = {
   orderBy?: OrderByState | OrderByState[];
   limit?: number;
   offset?: number;
-  clickhouseConfigs?: ClickHouseClientConfigOptions;
 };
 
 type DatasetRunItemsByDatasetIdQuery = Omit<
