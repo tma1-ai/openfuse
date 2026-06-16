@@ -88,17 +88,6 @@ jobs:
         options: >-
           --health-cmd "redis-cli ping"
           --health-interval 10s --health-timeout 5s --health-retries 10
-      minio:
-        image: bitnami/minio:latest
-        env:
-          MINIO_ROOT_USER: minio
-          MINIO_ROOT_PASSWORD: miniosecret
-          MINIO_DEFAULT_BUCKETS: langfuse
-        ports:
-          - 9090:9000
-        options: >-
-          --health-cmd "mc ready local"
-          --health-interval 10s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -120,6 +109,20 @@ jobs:
           for i in $(seq 1 30); do
             if curl -sf http://localhost:4000/health; then echo "greptimedb up"; break; fi
             echo "waiting for greptimedb ($i)"; sleep 2
+          done
+
+      # MinIO also needs a custom command (create the path-style bucket dir, then
+      # start the server), which GitHub `services:` cannot express. Mirrors the
+      # docker-compose.dev.yml setup with the official image.
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9090:9000 \
+            -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=miniosecret \
+            --entrypoint sh minio/minio \
+            -c 'mkdir -p /data/langfuse && minio server /data'
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9090/minio/health/live; then echo "minio up"; break; fi
+            echo "waiting for minio ($i)"; sleep 2
           done
 
       - run: cp .env.dev.example .env
