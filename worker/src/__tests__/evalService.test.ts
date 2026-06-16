@@ -13,7 +13,6 @@ import {
   createObservationsGreptime,
   createTrace,
   createTracesGreptime,
-  upsertObservation,
   upsertTrace,
   createDatasetRunItemsGreptime,
   createDatasetRunItem,
@@ -642,15 +641,17 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         updated_at: convertDateToClickhouseDateTime(new Date()),
       });
 
-      await upsertObservation({
-        id: observationId,
-        trace_id: traceId,
-        project_id: projectId,
-        type: "GENERATION",
-        start_time: convertDateToClickhouseDateTime(new Date()),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
+      await createObservationsGreptime([
+        createObservation({
+          id: observationId,
+          trace_id: traceId,
+          project_id: projectId,
+          type: "GENERATION",
+          start_time: Date.now(),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }),
+      ]);
 
       await prisma.dataset.create({
         data: {
@@ -2371,19 +2372,21 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         updated_at: convertDateToClickhouseDateTime(new Date()),
       });
 
-      await upsertObservation({
-        id: randomUUID(),
-        trace_id: traceId,
-        project_id: projectId,
-        name: "great-llm-name",
-        type: "GENERATION",
-        environment: "production",
-        input: JSON.stringify({ huhu: "This is a great prompt" }),
-        output: JSON.stringify({ haha: "This is a great response" }),
-        start_time: convertDateToClickhouseDateTime(new Date()),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
+      await createObservationsGreptime([
+        createObservation({
+          id: randomUUID(),
+          trace_id: traceId,
+          project_id: projectId,
+          name: "great-llm-name",
+          type: "GENERATION",
+          environment: "production",
+          input: JSON.stringify({ huhu: "This is a great prompt" }),
+          output: JSON.stringify({ haha: "This is a great response" }),
+          start_time: Date.now(),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }),
+      ]);
 
       const variableMapping = variableMappingList.parse([
         {
@@ -2470,16 +2473,20 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
       });
 
       // fetching input and output for an observation which has NULL values
-      await upsertObservation({
-        id: randomUUID(),
-        trace_id: traceId,
-        project_id: projectId,
-        name: "great-llm-name",
-        type: "GENERATION",
-        start_time: convertDateToClickhouseDateTime(new Date()),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
+      await createObservationsGreptime([
+        createObservation({
+          id: randomUUID(),
+          trace_id: traceId,
+          project_id: projectId,
+          name: "great-llm-name",
+          type: "GENERATION",
+          input: null,
+          output: null,
+          start_time: Date.now(),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }),
+      ]);
 
       const variableMapping = variableMappingList.parse([
         {
@@ -2532,35 +2539,35 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
         updated_at: convertDateToClickhouseDateTime(new Date()),
       });
 
-      await upsertObservation({
-        id: randomUUID(),
-        trace_id: traceId,
-        project_id: projectId,
-        name: "great-llm-name",
-        type: "GENERATION",
-        input: JSON.stringify({ huhu: "This is a great prompt" }),
-        output: JSON.stringify({ haha: "This is a great response" }),
-        start_time: convertDateToClickhouseDateTime(
-          new Date("2022-01-01T00:00:00.000Z"),
-        ),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
+      await createObservationsGreptime([
+        createObservation({
+          id: randomUUID(),
+          trace_id: traceId,
+          project_id: projectId,
+          name: "great-llm-name",
+          type: "GENERATION",
+          input: JSON.stringify({ huhu: "This is a great prompt" }),
+          output: JSON.stringify({ haha: "This is a great response" }),
+          start_time: new Date("2022-01-01T00:00:00.000Z").getTime(),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }),
+      ]);
 
-      await upsertObservation({
-        id: randomUUID(),
-        trace_id: traceId,
-        project_id: projectId,
-        name: "great-llm-name",
-        type: "GENERATION",
-        input: JSON.stringify({ huhu: "This is a great prompt again" }),
-        output: JSON.stringify({ haha: "This is a great response again" }),
-        start_time: convertDateToClickhouseDateTime(
-          new Date("2022-01-02T00:00:00.000Z"),
-        ),
-        created_at: convertDateToClickhouseDateTime(new Date()),
-        updated_at: convertDateToClickhouseDateTime(new Date()),
-      });
+      await createObservationsGreptime([
+        createObservation({
+          id: randomUUID(),
+          trace_id: traceId,
+          project_id: projectId,
+          name: "great-llm-name",
+          type: "GENERATION",
+          input: JSON.stringify({ huhu: "This is a great prompt again" }),
+          output: JSON.stringify({ haha: "This is a great response again" }),
+          start_time: new Date("2022-01-02T00:00:00.000Z").getTime(),
+          created_at: Date.now(),
+          updated_at: Date.now(),
+        }),
+      ]);
 
       const variableMapping = variableMappingList.parse([
         {
@@ -2619,19 +2626,21 @@ Respond with JSON: {"score": <number>, "reasoning": "<explanation>"}`;
           updated_at: convertDateToClickhouseDateTime(new Date()),
         });
 
-        await upsertObservation({
-          id: randomUUID(),
-          trace_id: traceId,
-          project_id: projectId,
-          name: `great-${observationType.toLowerCase()}-name`,
-          type: observationType,
-          environment: "production",
-          input: JSON.stringify({ huhu: "This is a great prompt" }),
-          output: JSON.stringify({ haha: "This is a great response" }),
-          start_time: convertDateToClickhouseDateTime(new Date()),
-          created_at: convertDateToClickhouseDateTime(new Date()),
-          updated_at: convertDateToClickhouseDateTime(new Date()),
-        });
+        await createObservationsGreptime([
+          createObservation({
+            id: randomUUID(),
+            trace_id: traceId,
+            project_id: projectId,
+            name: `great-${observationType.toLowerCase()}-name`,
+            type: observationType,
+            environment: "production",
+            input: JSON.stringify({ huhu: "This is a great prompt" }),
+            output: JSON.stringify({ haha: "This is a great response" }),
+            start_time: Date.now(),
+            created_at: Date.now(),
+            updated_at: Date.now(),
+          }),
+        ]);
 
         const variableMapping = variableMappingList.parse([
           {
