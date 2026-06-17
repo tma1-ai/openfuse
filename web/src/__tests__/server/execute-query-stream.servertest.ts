@@ -120,7 +120,7 @@ describe("execute-query-stream handler", () => {
 
     expect(res._getStatusCode()).toBe(400);
     expect(JSON.parse(res._getData())).toMatchObject({
-      message: "Streaming is only supported for v4-enabled dashboard queries",
+      message: "Streaming dashboard queries are no longer supported",
     });
   });
 

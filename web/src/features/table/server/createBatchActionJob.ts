@@ -57,8 +57,12 @@ export const createBatchActionJob = async ({
   });
 
   // v4 events-table preview is gone; the worker always reads legacy data
-  // sources and ignores any client-sent useEventsTable value.
-  const queryWithSnapshot: BatchActionQuery = query;
+  // sources. Hard-force the persisted snapshot to false so a stale client-sent
+  // useEventsTable value can never be stored on the job.
+  const queryWithSnapshot: BatchActionQuery = {
+    ...query,
+    useEventsTable: false,
+  };
 
   const batchActionId = generateBatchActionId(projectId, actionId, tableName);
 

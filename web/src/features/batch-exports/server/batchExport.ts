@@ -35,8 +35,9 @@ export const batchExportRouter = createTRPCRouter({
         const { projectId, format, name } = input;
 
         // v4 events-table preview is gone; the worker always reads legacy data
-        // sources and ignores any client-sent useEventsTable value.
-        const query = input.query;
+        // sources. Hard-force the persisted snapshot to false so a stale
+        // client-sent useEventsTable value can never be stored on the job.
+        const query = { ...input.query, useEventsTable: false };
 
         if (query.tableName === BatchExportTableName.AuditLogs) {
           throwIfNoEntitlement({

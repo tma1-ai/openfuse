@@ -9,10 +9,12 @@ export const runEvaluationRouter = createTRPCRouter({
   create: protectedProjectProcedure
     .input(CreateObservationBatchEvaluationActionSchema)
     .mutation(async () => {
-      // The events table is no longer supported; this action is unavailable.
+      // The events-backed batch evaluation surface was removed and is no longer
+      // supported.
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: "Events table is not enabled for this instance.",
+        message:
+          "Events-backed batch evaluation is no longer supported and has been removed.",
       });
     }),
 });

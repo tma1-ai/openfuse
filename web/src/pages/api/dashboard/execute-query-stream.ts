@@ -71,10 +71,10 @@ export default async function handler(
   }
 
   // Streaming dashboard queries were only ever served for the v4 beta, which is
-  // no longer available. The endpoint stays mounted but rejects until streaming
-  // ships for the GA dashboards.
+  // no longer available. The endpoint stays mounted but always rejects because
+  // streaming is no longer supported.
   res.status(400).json({
-    message: "Streaming is only supported for v4-enabled dashboard queries",
+    message: "Streaming dashboard queries are no longer supported",
   });
   return;
 }
