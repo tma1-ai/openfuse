@@ -2,7 +2,6 @@ import type { Connection } from "mysql2/promise";
 
 import { env } from "../../env";
 import { logger } from "../logger";
-import { quoteIdent } from "./schemaUtils";
 
 /**
  * GreptimeDB database-level retention (TTL).
@@ -34,6 +33,7 @@ const UNIT_SECONDS: Record<string, number> = {
 }; // prettier-ignore
 
 const DURATION_TOKEN = /(\d+)\s*([a-z]+)/g;
+const UNQUOTED_DATABASE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
 
 /**
  * Normalize a TTL string to the exact form `parseDurationSeconds` validates: trimmed + lowercased.
@@ -76,9 +76,22 @@ export const parseDurationSeconds = (raw: string): number => {
   return total;
 };
 
+const formatDatabaseNameForAlter = (database: string): string => {
+  if (!UNQUOTED_DATABASE_IDENTIFIER.test(database)) {
+    throw new Error(
+      `invalid GreptimeDB database name '${database}' for ALTER DATABASE; use lowercase letters, digits, and underscores`,
+    );
+  }
+  return database;
+};
+
 /**
  * Build the database-level retention statement. Pure (no IO) and validates the TTL string before
  * it reaches SQL, so it is unit-testable and injection-safe.
+ *
+ * GreptimeDB v1.1.0 accepts backtick-quoted names for CREATE/USE DATABASE, but ALTER DATABASE
+ * forwards a quoted ObjectName as the literal schema name (for example, `openfuse`). Emit a
+ * validated unquoted identifier here so schema lookup sees "openfuse".
  */
 export const buildDatabaseRetentionStatement = (
   database: string,
@@ -86,7 +99,7 @@ export const buildDatabaseRetentionStatement = (
 ): string => {
   const normalized = normalizeDuration(ttl);
   parseDurationSeconds(normalized); // validate; throws on a bad/injection-y duration
-  return `ALTER DATABASE ${quoteIdent(database)} SET 'ttl'='${normalized}'`;
+  return `ALTER DATABASE ${formatDatabaseNameForAlter(database)} SET 'ttl'='${normalized}'`;
 };
 
 /**

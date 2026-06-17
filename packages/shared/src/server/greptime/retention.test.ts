@@ -25,19 +25,22 @@ describe("parseDurationSeconds", () => {
 describe("buildDatabaseRetentionStatement", () => {
   it("emits a database-level ALTER for the given db and ttl", () => {
     expect(buildDatabaseRetentionStatement("openfuse", "730d")).toBe(
-      "ALTER DATABASE `openfuse` SET 'ttl'='730d'",
+      "ALTER DATABASE openfuse SET 'ttl'='730d'",
     );
   });
 
   it("normalizes (trims + lowercases) the duration into SQL", () => {
     expect(buildDatabaseRetentionStatement("openfuse", " 730D ")).toBe(
-      "ALTER DATABASE `openfuse` SET 'ttl'='730d'",
+      "ALTER DATABASE openfuse SET 'ttl'='730d'",
     );
   });
 
-  it("quotes the database identifier (escaping backticks)", () => {
-    expect(buildDatabaseRetentionStatement("weird`db", "1y")).toBe(
-      "ALTER DATABASE `weird``db` SET 'ttl'='1y'",
+  it("rejects database names that would require quoting in ALTER DATABASE", () => {
+    expect(() => buildDatabaseRetentionStatement("weird`db", "1y")).toThrow(
+      /invalid GreptimeDB database name/,
+    );
+    expect(() => buildDatabaseRetentionStatement("prod-db", "1y")).toThrow(
+      /invalid GreptimeDB database name/,
     );
   });
 
