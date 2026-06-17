@@ -3,7 +3,7 @@ services:
     # GreptimeDB backend for the fork. Replaces ClickHouse as the analytics store; the read/write
     # paths and the test harness target this. Standalone mode exposes HTTP (4000), gRPC (4001,
     # ingest SDK), MySQL wire (4002, read pool + migrations), and Postgres wire (4003).
-    image: docker.io/greptime/greptimedb:latest
+    image: docker.io/greptime/greptimedb:v1.1.0
     container_name: ${GREPTIME_CONTAINER_NAME:-langfuse-greptimedb}
     command:
       - standalone

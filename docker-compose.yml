@@ -5,7 +5,12 @@
 # External connections from other machines will not be able to reach these services directly.
 services:
   langfuse-worker:
-    image: docker.io/langfuse/langfuse-worker:3
+    build:
+      dockerfile: ./worker/Dockerfile
+      context: .
+      args:
+        - NEXT_PUBLIC_LANGFUSE_CLOUD_REGION=${NEXT_PUBLIC_LANGFUSE_CLOUD_REGION}
+    image: ${OPENFUSE_WORKER_IMAGE:-openfuse-worker:local}
     restart: always
     depends_on: &langfuse-depends-on
       postgres:
@@ -14,7 +19,7 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      clickhouse:
+      greptimedb:
         condition: service_healthy
     ports:
       - 127.0.0.1:3030:3030
@@ -25,11 +30,12 @@ services:
       ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000} # CHANGEME: generate via `openssl rand -hex 32`
       TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
       LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
-      CLICKHOUSE_MIGRATION_URL: ${CLICKHOUSE_MIGRATION_URL:-clickhouse://clickhouse:9000}
-      CLICKHOUSE_URL: ${CLICKHOUSE_URL:-http://clickhouse:8123}
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse} # CHANGEME
-      CLICKHOUSE_CLUSTER_ENABLED: ${CLICKHOUSE_CLUSTER_ENABLED:-false}
+      GREPTIME_GRPC_URL: ${GREPTIME_GRPC_URL:-greptimedb:4001}
+      GREPTIME_SQL_HOST: ${GREPTIME_SQL_HOST:-greptimedb}
+      GREPTIME_SQL_PORT: ${GREPTIME_SQL_PORT:-4002}
+      GREPTIME_DB: ${GREPTIME_DB:-openfuse}
+      GREPTIME_USER: ${GREPTIME_USER:-}
+      GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-} # CHANGEME (set if GreptimeDB auth is enabled)
       LANGFUSE_USE_AZURE_BLOB: ${LANGFUSE_USE_AZURE_BLOB:-false}
       LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: ${LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE:-false}
       LANGFUSE_OCI_AUTH_TYPE: ${LANGFUSE_OCI_AUTH_TYPE:-workload_identity}
@@ -70,7 +76,12 @@ services:
       SMTP_CONNECTION_URL: ${SMTP_CONNECTION_URL:-}
 
   langfuse-web:
-    image: docker.io/langfuse/langfuse:3
+    build:
+      dockerfile: ./web/Dockerfile
+      context: .
+      args:
+        - NEXT_PUBLIC_LANGFUSE_CLOUD_REGION=${NEXT_PUBLIC_LANGFUSE_CLOUD_REGION}
+    image: ${OPENFUSE_WEB_IMAGE:-openfuse-web:local}
     restart: always
     depends_on: *langfuse-depends-on
     ports:
@@ -88,26 +99,32 @@ services:
       LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
 
-  clickhouse:
-    image: docker.io/clickhouse/clickhouse-server
+  greptimedb:
+    # GreptimeDB analytics store (replaces ClickHouse). Standalone mode exposes HTTP (4000),
+    # gRPC (4001, ingest SDK), MySQL wire (4002, read path + migrations), Postgres wire (4003).
+    image: docker.io/greptime/greptimedb:v1.1.0
     restart: always
-    user: "101:101"
-    environment:
-      CLICKHOUSE_DB: default
-      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-clickhouse}
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-clickhouse} # CHANGEME
+    command:
+      - standalone
+      - start
+      - --http-addr=0.0.0.0:4000
+      - --rpc-bind-addr=0.0.0.0:4001
+      - --mysql-addr=0.0.0.0:4002
+      - --postgres-addr=0.0.0.0:4003
+      - --data-home=/greptimedb_data
     volumes:
-      - langfuse_clickhouse_data:/var/lib/clickhouse
-      - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      - langfuse_greptimedb_data:/greptimedb_data
     ports:
-      - 127.0.0.1:8123:8123
-      - 127.0.0.1:9000:9000
+      - 127.0.0.1:4000:4000
+      - 127.0.0.1:4001:4001
+      - 127.0.0.1:4002:4002
+      - 127.0.0.1:4003:4003
     healthcheck:
-      test: wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
       interval: 5s
       timeout: 5s
       retries: 10
-      start_period: 1s
+      start_period: 2s
 
   minio:
     image: cgr.dev/chainguard/minio
@@ -169,9 +186,7 @@ services:
 volumes:
   langfuse_postgres_data:
     driver: local
-  langfuse_clickhouse_data:
-    driver: local
-  langfuse_clickhouse_logs:
+  langfuse_greptimedb_data:
     driver: local
   langfuse_minio_data:
     driver: local

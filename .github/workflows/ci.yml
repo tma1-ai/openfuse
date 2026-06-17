@@ -102,7 +102,7 @@ jobs:
         run: |
           docker run -d --name greptimedb \
             -p 4000:4000 -p 4001:4001 -p 4002:4002 \
-            greptime/greptimedb:latest standalone start \
+            greptime/greptimedb:v1.1.0 standalone start \
             --http-addr 0.0.0.0:4000 \
             --rpc-bind-addr 0.0.0.0:4001 \
             --mysql-addr 0.0.0.0:4002
@@ -136,7 +136,18 @@ jobs:
       - name: Prisma migrate
         run: pnpm --filter @langfuse/shared run db:deploy
 
-      # The web/worker test setup applies the GreptimeDB migrations on first run.
+      # Bootstrap the GreptimeDB schema (the D2 deploy step) before any test runs.
+      # The web globalSetup also applies migrations idempotently, but the worker
+      # servertests have no globalSetup and would otherwise depend on the web job
+      # step having created the schema first. Running it explicitly here removes
+      # that ordering dependency; the migrations are idempotent so the overlap is
+      # harmless. GREPTIME_DB/host come from the .env copied above + the defaults
+      # in packages/shared/src/env.ts (localhost:4002, db "openfuse").
+      - name: Bootstrap GreptimeDB schema
+        env:
+          GREPTIME_DB: openfuse
+        run: pnpm --filter @langfuse/shared run greptime:migrate
+
       - name: Web repository + tRPC servertests (GreptimeDB-backed)
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
