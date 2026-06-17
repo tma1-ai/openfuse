@@ -61,10 +61,6 @@ vi.mock("@/src/features/organizations/components/AIFeatureSwitch", () => ({
   default: () => null,
 }));
 
-vi.mock("@/src/ee/features/audit-log-viewer/OrgAuditLogsSettingsPage", () => ({
-  OrgAuditLogsSettingsPage: () => null,
-}));
-
 vi.mock("@/src/features/rbac/utils/checkOrganizationAccess", () => ({
   useHasOrganizationAccess: vi.fn(),
 }));

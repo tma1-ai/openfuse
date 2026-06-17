@@ -22,7 +22,6 @@ import { SettingsDangerZone } from "@/src/components/SettingsDangerZone";
 import { ActionButton } from "@/src/components/ActionButton";
 import { BatchExportsSettingsPage } from "@/src/features/batch-exports/components/BatchExportsSettingsPage";
 import { BatchActionsSettingsPage } from "@/src/features/batch-actions/components/BatchActionsSettingsPage";
-import { AuditLogsSettingsPage } from "@/src/ee/features/audit-log-viewer/AuditLogsSettingsPage";
 import { ModelsSettings } from "@/src/features/models/components/ModelSettings";
 import ConfigureRetention from "@/src/features/projects/components/ConfigureRetention";
 import ContainerPage from "@/src/components/layouts/container-page";
@@ -227,12 +226,6 @@ export const getProjectSettingsPages = ({
     slug: "batch-actions",
     cmdKKeywords: ["bulk", "batch", "action", "dataset", "delete"],
     content: <BatchActionsSettingsPage projectId={project.id} />,
-  },
-  {
-    title: "Audit Logs",
-    slug: "audit-logs",
-    cmdKKeywords: ["trail"],
-    content: <AuditLogsSettingsPage projectId={project.id} />,
   },
   {
     title: "Notifications",

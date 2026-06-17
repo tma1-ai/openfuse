@@ -14,7 +14,6 @@ import { useQueryProjectOrOrganization } from "@/src/features/projects/hooks";
 import { ApiKeyList } from "@/src/features/public-api/components/ApiKeyList";
 import AIFeatureSwitch from "@/src/features/organizations/components/AIFeatureSwitch";
 import { env } from "@/src/env.mjs";
-import { OrgAuditLogsSettingsPage } from "@/src/ee/features/audit-log-viewer/OrgAuditLogsSettingsPage";
 import { useHasOrganizationAccess } from "@/src/features/rbac/utils/checkOrganizationAccess";
 
 type OrganizationSettingsPage = {
@@ -32,25 +31,21 @@ export function useOrganizationSettingsPages(): OrganizationSettingsPage[] {
     scope: "organization:CRUD_apiKeys",
   });
   const showOrgApiKeySettings = hasAdminApiEntitlement && hasOrgApiKeyAccess;
-  const showAuditLogs = useHasEntitlement("audit-logs");
 
   if (!organization) return [];
 
   return getOrganizationSettingsPages({
     organization,
     showOrgApiKeySettings,
-    showAuditLogs,
   });
 }
 
 export const getOrganizationSettingsPages = ({
   organization,
   showOrgApiKeySettings,
-  showAuditLogs,
 }: {
   organization: { id: string; name: string; metadata: Record<string, unknown> };
   showOrgApiKeySettings: boolean;
-  showAuditLogs: boolean;
 }): OrganizationSettingsPage[] => [
   {
     title: "General",
@@ -112,13 +107,6 @@ export const getOrganizationSettingsPages = ({
         </div>
       </div>
     ),
-  },
-  {
-    title: "Audit Logs",
-    slug: "audit-logs",
-    cmdKKeywords: ["audit", "logs", "history", "changes"],
-    content: <OrgAuditLogsSettingsPage orgId={organization.id} />,
-    show: showAuditLogs,
   },
   {
     title: "Projects",
