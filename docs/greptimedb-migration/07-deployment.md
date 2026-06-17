@@ -77,11 +77,13 @@ pnpm --filter=@langfuse/shared run greptime:migrate
 ```
 
 The migrations are idempotent (`CREATE DATABASE / TABLE IF NOT EXISTS`), so
-re-running is safe. The optional global TTL (`0002_retention.sql`) is **opt-in
-and is not applied** by `greptime:migrate`: it ships fully commented out, and the
-migration runner strips comments before executing, so retention stays a no-op
-until an operator uncomments those statements (or applies retention out of band
-via `applyGreptimeRetention`).
+re-running is safe. After the schema is in place, `greptime:migrate` also applies
+the **database-level retention TTL** — an idempotent `ALTER DATABASE ... SET 'ttl'`
+built from `LANGFUSE_GREPTIME_TTL` (default `730d`, i.e. 2 years), covering every
+table at once. To change retention, set `LANGFUSE_GREPTIME_TTL` and re-run
+`greptime:migrate`; a manual `ALTER DATABASE` is reverted on the next bootstrap.
+(`0002_retention.sql` itself is operator documentation and contributes no
+statements.)
 
 ## 3. The Docker Compose stack
 
