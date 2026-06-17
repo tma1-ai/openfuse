@@ -97,12 +97,12 @@ const mockEvalExecutionResult = {
 describe("processObservationEval", () => {
   const projectId = "test-project-123";
   const jobExecutionId = "job-exec-456";
-  const observationS3Path = "evals/test-project-123/observations/obs-789.json";
+  const observationBlobPath = "evals/test-project-123/observations/obs-789.json";
 
   const baseEvent = {
     projectId,
     jobExecutionId,
-    observationS3Path,
+    observationBlobPath,
   };
 
   beforeEach(() => {
@@ -133,7 +133,7 @@ describe("processObservationEval", () => {
           projectId,
         },
       });
-      expect(deps.downloadObservationFromS3).not.toHaveBeenCalled();
+      expect(deps.downloadObservationBlob).not.toHaveBeenCalled();
       expect(runLLMAsJudgeEvaluation).not.toHaveBeenCalled();
     });
   });
@@ -230,7 +230,7 @@ describe("processObservationEval", () => {
           endTime: expect.any(Date),
         },
       });
-      expect(deps.downloadObservationFromS3).not.toHaveBeenCalled();
+      expect(deps.downloadObservationBlob).not.toHaveBeenCalled();
       expect(runLLMAsJudgeEvaluation).not.toHaveBeenCalled();
     });
   });
@@ -267,7 +267,7 @@ describe("processObservationEval", () => {
           }),
         }),
       );
-      expect(deps.downloadObservationFromS3).not.toHaveBeenCalled();
+      expect(deps.downloadObservationBlob).not.toHaveBeenCalled();
       expect(runLLMAsJudgeEvaluation).not.toHaveBeenCalled();
     });
 
@@ -305,7 +305,7 @@ describe("processObservationEval", () => {
           endTime: expect.any(Date),
         },
       });
-      expect(deps.downloadObservationFromS3).not.toHaveBeenCalled();
+      expect(deps.downloadObservationBlob).not.toHaveBeenCalled();
       expect(runLLMAsJudgeEvaluation).not.toHaveBeenCalled();
     });
 
@@ -334,8 +334,8 @@ describe("processObservationEval", () => {
       });
 
       expect(prisma.jobExecution.update).not.toHaveBeenCalled();
-      expect(deps.downloadObservationFromS3).toHaveBeenCalledWith(
-        observationS3Path,
+      expect(deps.downloadObservationBlob).toHaveBeenCalledWith(
+        observationBlobPath,
       );
       expect(runLLMAsJudgeEvaluation).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -348,8 +348,8 @@ describe("processObservationEval", () => {
     });
   });
 
-  describe("S3 download", () => {
-    it("should throw error when S3 download fails (retryable)", async () => {
+  describe("blob download", () => {
+    it("should throw error when blob download fails (retryable)", async () => {
       const job = createMockJobExecution({
         id: jobExecutionId,
         projectId,
@@ -365,22 +365,22 @@ describe("processObservationEval", () => {
       (prisma.jobConfiguration.findFirst as Mock).mockResolvedValue(config);
 
       const deps = createMockProcessorDeps({
-        downloadObservationFromS3: vi
-          .fn<ObservationEvalProcessorDeps["downloadObservationFromS3"]>()
-          .mockRejectedValue(new Error("S3 connection failed")),
+        downloadObservationBlob: vi
+          .fn<ObservationEvalProcessorDeps["downloadObservationBlob"]>()
+          .mockRejectedValue(new Error("blob store connection failed")),
       });
 
-      // S3 connection errors should be retryable (not UnrecoverableError)
+      // blob store connection errors should be retryable (not UnrecoverableError)
       await expect(
         processObservationEval({
           event: baseEvent,
           executionType: EvalTemplateType.LLM_AS_JUDGE,
           deps,
         }),
-      ).rejects.toThrow("Failed to download observation from S3");
+      ).rejects.toThrow("Failed to download observation from the blob store");
     });
 
-    it("should throw UnrecoverableError when S3 data is invalid JSON", async () => {
+    it("should throw UnrecoverableError when blob store data is invalid JSON", async () => {
       const job = createMockJobExecution({
         id: jobExecutionId,
         projectId,
@@ -396,8 +396,8 @@ describe("processObservationEval", () => {
       (prisma.jobConfiguration.findFirst as Mock).mockResolvedValue(config);
 
       const deps = createMockProcessorDeps({
-        downloadObservationFromS3: vi
-          .fn<ObservationEvalProcessorDeps["downloadObservationFromS3"]>()
+        downloadObservationBlob: vi
+          .fn<ObservationEvalProcessorDeps["downloadObservationBlob"]>()
           .mockResolvedValue("not valid json {"),
       });
 
@@ -411,7 +411,7 @@ describe("processObservationEval", () => {
       ).rejects.toThrow(UnrecoverableError);
     });
 
-    it("should throw UnrecoverableError when S3 data fails schema validation", async () => {
+    it("should throw UnrecoverableError when blob store data fails schema validation", async () => {
       const job = createMockJobExecution({
         id: jobExecutionId,
         projectId,
@@ -429,8 +429,8 @@ describe("processObservationEval", () => {
       // Missing required fields - valid JSON but invalid schema
       const invalidObservation = { id: "obs-123", someField: "value" };
       const deps = createMockProcessorDeps({
-        downloadObservationFromS3: vi
-          .fn<ObservationEvalProcessorDeps["downloadObservationFromS3"]>()
+        downloadObservationBlob: vi
+          .fn<ObservationEvalProcessorDeps["downloadObservationBlob"]>()
           .mockResolvedValue(JSON.stringify(invalidObservation)),
       });
 
@@ -482,7 +482,7 @@ describe("processObservationEval", () => {
       (prisma.jobConfiguration.findFirst as Mock).mockResolvedValue(config);
 
       const deps = createMockProcessorDeps({
-        downloadObservationFromS3: vi
+        downloadObservationBlob: vi
           .fn()
           .mockResolvedValue(JSON.stringify(observation)),
       });
@@ -567,7 +567,7 @@ describe("processObservationEval", () => {
         .fn<EvalExecutionDeps["updateJobExecution"]>()
         .mockResolvedValue(undefined);
       const deps = createMockProcessorDeps({
-        downloadObservationFromS3: vi
+        downloadObservationBlob: vi
           .fn()
           .mockResolvedValue(JSON.stringify(observation)),
         evalExecutionDeps: createMockEvalExecutionDeps({
@@ -650,7 +650,7 @@ describe("processObservationEval", () => {
       (prisma.jobConfiguration.findFirst as Mock).mockResolvedValue(config);
 
       const deps = createMockProcessorDeps({
-        downloadObservationFromS3: vi
+        downloadObservationBlob: vi
           .fn()
           .mockResolvedValue(JSON.stringify(observation)),
       });
@@ -705,7 +705,7 @@ describe("processObservationEval", () => {
         .fn<EvalExecutionDeps["uploadScore"]>()
         .mockResolvedValue(undefined);
       const deps = createMockProcessorDeps({
-        downloadObservationFromS3: vi
+        downloadObservationBlob: vi
           .fn()
           .mockResolvedValue(JSON.stringify(observation)),
         evalExecutionDeps: createMockEvalExecutionDeps({
@@ -755,7 +755,7 @@ describe("processObservationEval", () => {
       (prisma.jobConfiguration.findFirst as Mock).mockResolvedValue(config);
 
       const deps = createMockProcessorDeps({
-        downloadObservationFromS3: vi
+        downloadObservationBlob: vi
           .fn()
           .mockResolvedValue(JSON.stringify(observation)),
       });
@@ -786,7 +786,7 @@ describe("processObservationEval", () => {
   describe("default dependencies", () => {
     it("should use default deps when none provided", async () => {
       // This test verifies the code path where deps are not provided
-      // It will fail due to missing S3 config, but proves the default deps path is exercised
+      // It will fail due to missing blob store config, but proves the default deps path is exercised
       const job = createMockJobExecution({
         id: jobExecutionId,
         projectId,
@@ -801,7 +801,7 @@ describe("processObservationEval", () => {
       (prisma.jobExecution.findFirst as Mock).mockResolvedValue(job);
       (prisma.jobConfiguration.findFirst as Mock).mockResolvedValue(config);
 
-      // Without injected deps, it will try to use real S3 which should fail
+      // Without injected deps, it will try to use the real blob store which should fail
       await expect(
         processObservationEval({
           event: baseEvent,

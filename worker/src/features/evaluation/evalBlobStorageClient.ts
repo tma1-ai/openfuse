@@ -10,13 +10,13 @@ import { env } from "../../env";
  * Reuses the event-upload storage config and supports a local-file backend so no object store is
  * required (LANGFUSE_EVENT_STORAGE_BACKEND="local").
  */
-let s3StorageServiceClient: StorageService | null = null;
+let evalBlobStorageClient: StorageService | null = null;
 
 /**
  * Gets the singleton storage client for eval observation blobs.
  * Creates the client on first call using environment configuration.
  */
-export function getEvalS3StorageClient(): StorageService {
+export function getEvalBlobStorageClient(): StorageService {
   if (
     env.LANGFUSE_EVENT_STORAGE_BACKEND === "s3" &&
     !env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET
@@ -26,8 +26,8 @@ export function getEvalS3StorageClient(): StorageService {
     );
   }
 
-  if (!s3StorageServiceClient) {
-    s3StorageServiceClient = StorageServiceFactory.getInstance({
+  if (!evalBlobStorageClient) {
+    evalBlobStorageClient = StorageServiceFactory.getInstance({
       bucketName: env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET ?? "",
       accessKeyId: env.LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID,
       secretAccessKey: env.LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY,
@@ -41,5 +41,5 @@ export function getEvalS3StorageClient(): StorageService {
     });
   }
 
-  return s3StorageServiceClient;
+  return evalBlobStorageClient;
 }

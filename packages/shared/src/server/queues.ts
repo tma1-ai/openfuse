@@ -136,7 +136,7 @@ export const EvalExecutionEvent = z.object({
 export const ObservationEvalExecutionEventSchema = z.object({
   projectId: z.string(),
   jobExecutionId: z.string(),
-  observationS3Path: z.string(),
+  observationBlobPath: z.string(),
   executionMode: JobConfigExecutionMode.optional(),
 });
 export const PostHogIntegrationProcessingEventSchema = z.object({

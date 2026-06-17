@@ -19,15 +19,15 @@ import {
 
 type MockSchedulerDeps = ObservationEvalSchedulerDeps & {
   upsertJobExecution: Mock<ObservationEvalSchedulerDeps["upsertJobExecution"]>;
-  uploadObservationToS3: Mock<
-    ObservationEvalSchedulerDeps["uploadObservationToS3"]
+  uploadObservationBlob: Mock<
+    ObservationEvalSchedulerDeps["uploadObservationBlob"]
   >;
   enqueueEvalJob: Mock<ObservationEvalSchedulerDeps["enqueueEvalJob"]>;
 };
 
 type MockProcessorDeps = ObservationEvalProcessorDeps & {
-  downloadObservationFromS3: Mock<
-    ObservationEvalProcessorDeps["downloadObservationFromS3"]
+  downloadObservationBlob: Mock<
+    ObservationEvalProcessorDeps["downloadObservationBlob"]
   >;
   evalExecutionDeps: EvalExecutionDeps;
 };
@@ -135,8 +135,8 @@ export function createMockSchedulerDeps(
     upsertJobExecution: Mock<
       ObservationEvalSchedulerDeps["upsertJobExecution"]
     >;
-    uploadObservationToS3: Mock<
-      ObservationEvalSchedulerDeps["uploadObservationToS3"]
+    uploadObservationBlob: Mock<
+      ObservationEvalSchedulerDeps["uploadObservationBlob"]
     >;
     enqueueEvalJob: Mock<ObservationEvalSchedulerDeps["enqueueEvalJob"]>;
   }> = {},
@@ -147,10 +147,10 @@ export function createMockSchedulerDeps(
       vi
         .fn<ObservationEvalSchedulerDeps["upsertJobExecution"]>()
         .mockResolvedValue({ id: `job-exec-${randomUUID()}` }),
-    uploadObservationToS3:
-      overrides.uploadObservationToS3 ??
+    uploadObservationBlob:
+      overrides.uploadObservationBlob ??
       vi
-        .fn<ObservationEvalSchedulerDeps["uploadObservationToS3"]>()
+        .fn<ObservationEvalSchedulerDeps["uploadObservationBlob"]>()
         .mockResolvedValue(`observations/test/obs-123.json`),
     enqueueEvalJob:
       overrides.enqueueEvalJob ??
@@ -165,8 +165,8 @@ export function createMockSchedulerDeps(
  */
 export function createMockProcessorDeps(
   overrides: Partial<{
-    downloadObservationFromS3: Mock<
-      ObservationEvalProcessorDeps["downloadObservationFromS3"]
+    downloadObservationBlob: Mock<
+      ObservationEvalProcessorDeps["downloadObservationBlob"]
     >;
     evalExecutionDeps: EvalExecutionDeps;
   }> = {},
@@ -174,10 +174,10 @@ export function createMockProcessorDeps(
   const defaultObservation = createTestObservation();
 
   return {
-    downloadObservationFromS3:
-      overrides.downloadObservationFromS3 ??
+    downloadObservationBlob:
+      overrides.downloadObservationBlob ??
       vi
-        .fn<ObservationEvalProcessorDeps["downloadObservationFromS3"]>()
+        .fn<ObservationEvalProcessorDeps["downloadObservationBlob"]>()
         .mockResolvedValue(JSON.stringify(defaultObservation)),
     evalExecutionDeps:
       overrides.evalExecutionDeps ?? createMockEvalExecutionDeps(),
@@ -352,8 +352,8 @@ export function createFullyMockedEvalPipeline(
     upsertJobExecution: vi
       .fn<ObservationEvalSchedulerDeps["upsertJobExecution"]>()
       .mockResolvedValue({ id: `job-exec-${randomUUID()}` }),
-    uploadObservationToS3: vi
-      .fn<ObservationEvalSchedulerDeps["uploadObservationToS3"]>()
+    uploadObservationBlob: vi
+      .fn<ObservationEvalSchedulerDeps["uploadObservationBlob"]>()
       .mockImplementation(async (params) => {
         const path =
           config.s3UploadPath ??
@@ -387,8 +387,8 @@ export function createFullyMockedEvalPipeline(
   });
 
   const processorDeps: MockProcessorDeps = {
-    downloadObservationFromS3: vi
-      .fn<ObservationEvalProcessorDeps["downloadObservationFromS3"]>()
+    downloadObservationBlob: vi
+      .fn<ObservationEvalProcessorDeps["downloadObservationBlob"]>()
       .mockImplementation(async (path) => {
         const data = uploadedData.get(path);
         if (data) {

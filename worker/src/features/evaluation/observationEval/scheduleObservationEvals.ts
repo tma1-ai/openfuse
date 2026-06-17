@@ -29,11 +29,11 @@ interface ScheduleObservationEvalsParams {
  * and project). It evaluates each config's filter and sampling against the observation,
  * checks for deduplication, and creates job executions for matching configs.
  *
- * The observation is uploaded to S3 once (not per config) for efficiency.
+ * The observation is uploaded to the blob store once (not per config) for efficiency.
  *
  * @param params.observation - The ObservationForEval (converted from processToEvent() or ClickHouse)
  * @param params.configs - Pre-fetched observation eval configs for this project
- * @param params.schedulerDeps - Dependencies for scheduling (S3, job execution, queue)
+ * @param params.schedulerDeps - Dependencies for scheduling (blob store, job execution, queue)
  */
 export async function scheduleObservationEvals(
   params: ScheduleObservationEvalsParams,
@@ -46,7 +46,7 @@ export async function scheduleObservationEvals(
   }
 
   // Filter configs that match this observation (filter + sampling).
-  // This is done before S3 upload to avoid unnecessary uploads.
+  // This is done before blob upload to avoid unnecessary uploads.
   const matchingConfigs = configs.filter((config) => {
     if (!isJobConfigExecutableForExecutionMode(config, executionMode)) {
       logger.debug("Skipping non-executable observation eval config", {
@@ -82,11 +82,11 @@ export async function scheduleObservationEvals(
     return true;
   });
 
-  // Early return if no configs match - no S3 upload needed
+  // Early return if no configs match - no blob upload needed
   if (matchingConfigs.length === 0) return;
 
-  // Upload observation to S3 once
-  const observationS3Path = await schedulerDeps.uploadObservationToS3({
+  // Upload observation to the blob store once
+  const observationBlobPath = await schedulerDeps.uploadObservationBlob({
     projectId: observation.project_id,
     traceId: observation.trace_id,
     observationId: observation.span_id,
@@ -99,7 +99,7 @@ export async function scheduleObservationEvals(
       processMatchingConfig({
         observation,
         matchingConfig,
-        observationS3Path,
+        observationBlobPath,
         schedulerDeps,
         executionMode,
       }).catch((error) => {
@@ -117,7 +117,7 @@ export async function scheduleObservationEvals(
 interface ProcessConfigParams {
   observation: ObservationForEval;
   matchingConfig: ObservationEvalConfig;
-  observationS3Path: string;
+  observationBlobPath: string;
   schedulerDeps: ObservationEvalSchedulerDeps;
   executionMode?: JobConfigExecutionMode;
 }
@@ -128,7 +128,7 @@ async function processMatchingConfig(
   const {
     observation,
     matchingConfig,
-    observationS3Path,
+    observationBlobPath,
     schedulerDeps,
     executionMode,
   } = params;
@@ -157,7 +157,7 @@ async function processMatchingConfig(
   await schedulerDeps.enqueueEvalJob({
     jobExecutionId,
     projectId: observation.project_id,
-    observationS3Path,
+    observationBlobPath,
     delay: 0,
     evalTemplateType: matchingConfig.evalTemplate.type,
     ...(executionMode ? { executionMode } : {}),

@@ -32,7 +32,7 @@ describe("createObservationEvalSchedulerDeps", () => {
     await createObservationEvalSchedulerDeps().enqueueEvalJob({
       projectId: "project-1",
       jobExecutionId: "job-1",
-      observationS3Path: "evals/project-1/observations/obs-1.json",
+      observationBlobPath: "evals/project-1/observations/obs-1.json",
       delay: 10,
       evalTemplateType: EvalTemplateType.LLM_AS_JUDGE,
     });
@@ -59,7 +59,7 @@ describe("createObservationEvalSchedulerDeps", () => {
     await createObservationEvalSchedulerDeps().enqueueEvalJob({
       projectId: "project-1",
       jobExecutionId: "job-2",
-      observationS3Path: "evals/project-1/observations/obs-1.json",
+      observationBlobPath: "evals/project-1/observations/obs-1.json",
       delay: 20,
       evalTemplateType: EvalTemplateType.CODE,
     });

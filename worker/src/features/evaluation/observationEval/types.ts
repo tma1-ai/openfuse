@@ -56,8 +56,8 @@ export interface ObservationEvalSchedulerDeps {
     status: JobExecutionStatus;
   }) => Promise<{ id: string }>;
 
-  /** Upload observation data to S3 for later retrieval */
-  uploadObservationToS3: (params: {
+  /** Upload observation data to the blob store for later retrieval */
+  uploadObservationBlob: (params: {
     projectId: string;
     traceId: string;
     observationId: string;
@@ -68,7 +68,7 @@ export interface ObservationEvalSchedulerDeps {
   enqueueEvalJob: (params: {
     jobExecutionId: string;
     projectId: string;
-    observationS3Path: string;
+    observationBlobPath: string;
     delay: number;
     evalTemplateType: EvalTemplateType;
     executionMode?: JobConfigExecutionMode;

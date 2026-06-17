@@ -32,12 +32,12 @@ import {
 } from "../evalExecutionDeps";
 import { runLLMAsJudgeEvaluation } from "../evalService";
 import { executeCodeBasedEvaluation } from "../codeBased";
-import { getEvalS3StorageClient } from "../s3StorageClient";
+import { getEvalBlobStorageClient } from "../evalBlobStorageClient";
 import { type ObservationForEval } from "./types";
 
 /**
  * Dependencies for processing observation evals.
- * Allows S3 operations to be injected for testability.
+ * Allows blob-store operations to be injected for testability.
  */
 export type ObservationEvalExecutionBaseParams = {
   projectId: string;
@@ -53,7 +53,7 @@ export type ObservationEvalExecutionBaseParams = {
 };
 
 export interface ObservationEvalProcessorDeps {
-  downloadObservationFromS3: (path: string) => Promise<string>;
+  downloadObservationBlob: (path: string) => Promise<string>;
   evalExecutionDeps: EvalExecutionDeps;
 }
 
@@ -62,10 +62,10 @@ export interface ObservationEvalProcessorDeps {
  */
 export function createObservationEvalProcessorDeps(): ObservationEvalProcessorDeps {
   return {
-    downloadObservationFromS3: async (path: string) => {
-      const s3Client = getEvalS3StorageClient();
+    downloadObservationBlob: async (path: string) => {
+      const blobClient = getEvalBlobStorageClient();
 
-      return s3Client.download(path);
+      return blobClient.download(path);
     },
     evalExecutionDeps: createProductionEvalExecutionDeps(),
   };
@@ -76,7 +76,7 @@ export function createObservationEvalProcessorDeps(): ObservationEvalProcessorDe
  *
  * This function:
  * 1. Fetches job execution, config, and the expected template type
- * 2. Downloads observation data from S3 (stored during scheduling)
+ * 2. Downloads observation data from the blob store (stored during scheduling)
  * 3. Extracts variables from the observation
  * 4. Executes the evaluator-specific implementation
  * 5. Completes the eval execution with shared score persistence
@@ -174,18 +174,18 @@ export async function processObservationEval(
     return;
   }
 
-  // Download observation data from S3
+  // Download observation data from the blob store
   let observationData: ObservationForEval;
   let downloadedString: string;
 
   try {
-    downloadedString = await deps.downloadObservationFromS3(
-      event.observationS3Path,
+    downloadedString = await deps.downloadObservationBlob(
+      event.observationBlobPath,
     );
   } catch (e) {
-    // S3 download failures are retryable (network issues, temporary unavailability)
+    // Blob-store download failures are retryable (network issues, temporary unavailability)
     throw new Error(
-      `Failed to download observation from S3 at ${event.observationS3Path}: ${e}`,
+      `Failed to download observation from the blob store at ${event.observationBlobPath}: ${e}`,
     );
   }
 
@@ -196,7 +196,7 @@ export async function processObservationEval(
   } catch (e) {
     // JSON parse errors are permanent - the data won't change on retry
     throw new UnrecoverableError(
-      `Invalid observation data from S3 at ${event.observationS3Path}: invalid JSON - ${e}`,
+      `Invalid observation data from the blob store at ${event.observationBlobPath}: invalid JSON - ${e}`,
     );
   }
 

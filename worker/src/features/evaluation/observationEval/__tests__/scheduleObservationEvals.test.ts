@@ -96,8 +96,8 @@ describe("scheduleObservationEvals", () => {
     upsertJobExecution: vi
       .fn<ObservationEvalSchedulerDeps["upsertJobExecution"]>()
       .mockResolvedValue({ id: "job-exec-1" }),
-    uploadObservationToS3: vi
-      .fn<ObservationEvalSchedulerDeps["uploadObservationToS3"]>()
+    uploadObservationBlob: vi
+      .fn<ObservationEvalSchedulerDeps["uploadObservationBlob"]>()
       .mockResolvedValue("observations/project-789/obs-123.json"),
     enqueueEvalJob: vi
       .fn<ObservationEvalSchedulerDeps["enqueueEvalJob"]>()
@@ -119,14 +119,14 @@ describe("scheduleObservationEvals", () => {
         schedulerDeps,
       });
 
-      expect(schedulerDeps.uploadObservationToS3).not.toHaveBeenCalled();
+      expect(schedulerDeps.uploadObservationBlob).not.toHaveBeenCalled();
       expect(schedulerDeps.upsertJobExecution).not.toHaveBeenCalled();
       expect(schedulerDeps.enqueueEvalJob).not.toHaveBeenCalled();
     });
   });
 
   describe("executability", () => {
-    it("should skip paused and inactive configs before uploading to S3", async () => {
+    it("should skip paused and inactive configs before uploading to the blob store", async () => {
       const schedulerDeps = createMockSchedulerDeps();
       const observation = createMockObservation();
 
@@ -145,7 +145,7 @@ describe("scheduleObservationEvals", () => {
         schedulerDeps,
       });
 
-      expect(schedulerDeps.uploadObservationToS3).not.toHaveBeenCalled();
+      expect(schedulerDeps.uploadObservationBlob).not.toHaveBeenCalled();
       expect(schedulerDeps.upsertJobExecution).not.toHaveBeenCalled();
       expect(schedulerDeps.enqueueEvalJob).not.toHaveBeenCalled();
     });
@@ -171,7 +171,7 @@ describe("scheduleObservationEvals", () => {
         executionMode: "MANUAL",
       });
 
-      expect(schedulerDeps.uploadObservationToS3).toHaveBeenCalledTimes(1);
+      expect(schedulerDeps.uploadObservationBlob).toHaveBeenCalledTimes(1);
       expect(schedulerDeps.upsertJobExecution).toHaveBeenCalledTimes(1);
       expect(schedulerDeps.upsertJobExecution).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -186,8 +186,8 @@ describe("scheduleObservationEvals", () => {
     });
   });
 
-  describe("S3 upload", () => {
-    it("should upload observation to S3 once when configs exist", async () => {
+  describe("blob upload", () => {
+    it("should upload observation to the blob store once when configs exist", async () => {
       const schedulerDeps = createMockSchedulerDeps();
       const observation = createMockObservation();
 
@@ -197,8 +197,8 @@ describe("scheduleObservationEvals", () => {
         schedulerDeps,
       });
 
-      expect(schedulerDeps.uploadObservationToS3).toHaveBeenCalledTimes(1);
-      expect(schedulerDeps.uploadObservationToS3).toHaveBeenCalledWith({
+      expect(schedulerDeps.uploadObservationBlob).toHaveBeenCalledTimes(1);
+      expect(schedulerDeps.uploadObservationBlob).toHaveBeenCalledWith({
         projectId: "project-789",
         traceId: "trace-456",
         observationId: "obs-123",
@@ -220,12 +220,12 @@ describe("scheduleObservationEvals", () => {
         schedulerDeps,
       });
 
-      expect(schedulerDeps.uploadObservationToS3).toHaveBeenCalledTimes(1);
+      expect(schedulerDeps.uploadObservationBlob).toHaveBeenCalledTimes(1);
     });
   });
 
   describe("filter evaluation", () => {
-    it("should skip config and S3 upload when filter does not match", async () => {
+    it("should skip config and blob upload when filter does not match", async () => {
       const schedulerDeps = createMockSchedulerDeps();
       const observation = createMockObservation({ type: "span" });
 
@@ -246,7 +246,7 @@ describe("scheduleObservationEvals", () => {
         schedulerDeps,
       });
 
-      expect(schedulerDeps.uploadObservationToS3).not.toHaveBeenCalled();
+      expect(schedulerDeps.uploadObservationBlob).not.toHaveBeenCalled();
       expect(schedulerDeps.upsertJobExecution).not.toHaveBeenCalled();
       expect(schedulerDeps.enqueueEvalJob).not.toHaveBeenCalled();
     });
@@ -292,7 +292,7 @@ describe("scheduleObservationEvals", () => {
   });
 
   describe("sampling", () => {
-    it("should skip config and S3 upload when sampled out (sampling rate 0)", async () => {
+    it("should skip config and blob upload when sampled out (sampling rate 0)", async () => {
       const schedulerDeps = createMockSchedulerDeps();
       const observation = createMockObservation();
 
@@ -306,7 +306,7 @@ describe("scheduleObservationEvals", () => {
         schedulerDeps,
       });
 
-      expect(schedulerDeps.uploadObservationToS3).not.toHaveBeenCalled();
+      expect(schedulerDeps.uploadObservationBlob).not.toHaveBeenCalled();
       expect(schedulerDeps.upsertJobExecution).not.toHaveBeenCalled();
       expect(schedulerDeps.enqueueEvalJob).not.toHaveBeenCalled();
     });
@@ -363,8 +363,8 @@ describe("scheduleObservationEvals", () => {
 
     it("should enqueue job with correct parameters", async () => {
       const schedulerDeps = createMockSchedulerDeps();
-      schedulerDeps.uploadObservationToS3 = vi
-        .fn<ObservationEvalSchedulerDeps["uploadObservationToS3"]>()
+      schedulerDeps.uploadObservationBlob = vi
+        .fn<ObservationEvalSchedulerDeps["uploadObservationBlob"]>()
         .mockResolvedValue("observations/project-789/obs-123.json");
       const observation = createMockObservation();
       const config = createMockConfig();
@@ -386,7 +386,7 @@ describe("scheduleObservationEvals", () => {
       expect(schedulerDeps.enqueueEvalJob).toHaveBeenCalledWith({
         jobExecutionId: expectedJobExecutionId,
         projectId: "project-789",
-        observationS3Path: "observations/project-789/obs-123.json",
+        observationBlobPath: "observations/project-789/obs-123.json",
         delay: 0,
         evalTemplateType: EvalTemplateType.LLM_AS_JUDGE,
       });
@@ -463,14 +463,14 @@ describe("scheduleObservationEvals", () => {
         2,
         expect.objectContaining({ id: secondJobExecutionId }),
       );
-      expect(schedulerDeps.uploadObservationToS3).toHaveBeenNthCalledWith(
+      expect(schedulerDeps.uploadObservationBlob).toHaveBeenNthCalledWith(
         1,
         expect.objectContaining({
           traceId: firstObservation.trace_id,
           observationId: firstObservation.span_id,
         }),
       );
-      expect(schedulerDeps.uploadObservationToS3).toHaveBeenNthCalledWith(
+      expect(schedulerDeps.uploadObservationBlob).toHaveBeenNthCalledWith(
         2,
         expect.objectContaining({
           traceId: secondObservation.trace_id,
@@ -500,8 +500,8 @@ describe("scheduleObservationEvals", () => {
         schedulerDeps,
       });
 
-      // S3 upload only once
-      expect(schedulerDeps.uploadObservationToS3).toHaveBeenCalledTimes(1);
+      // blob upload only once
+      expect(schedulerDeps.uploadObservationBlob).toHaveBeenCalledTimes(1);
 
       // Job creation for each config
       expect(schedulerDeps.upsertJobExecution).toHaveBeenCalledTimes(3);

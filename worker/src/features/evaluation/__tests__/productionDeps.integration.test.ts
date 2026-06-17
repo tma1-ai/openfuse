@@ -168,7 +168,7 @@ describe("Production Dependency Factories Integration Tests", () => {
       }, 15_000);
     });
 
-    describe("uploadObservationToS3", () => {
+    describe("uploadObservationBlob", () => {
       it("should upload observation data to S3 and return the path", async () => {
         const { projectId } = await createOrgProjectAndApiKey();
         const observationId = randomUUID();
@@ -186,7 +186,7 @@ describe("Production Dependency Factories Integration Tests", () => {
         };
 
         // Execute
-        const s3Path = await deps.uploadObservationToS3({
+        const s3Path = await deps.uploadObservationBlob({
           projectId,
           traceId,
           observationId,
@@ -402,7 +402,7 @@ describe("Production Dependency Factories Integration Tests", () => {
         environment: "test",
       };
 
-      const s3Path = await schedulerDeps.uploadObservationToS3({
+      const s3Path = await schedulerDeps.uploadObservationBlob({
         projectId,
         traceId,
         observationId,
