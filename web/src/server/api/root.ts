@@ -55,7 +55,6 @@ import { surveysRouter } from "@/src/server/api/routers/surveys";
 import { naturalLanguageFilterRouter } from "@/src/features/natural-language-filters/server/router";
 import { notificationPreferencesRouter } from "@/src/server/api/routers/notificationPreferences";
 import { webCalloutsRouter } from "@/src/features/web-callouts/server/router";
-import { inAppAgentRouter } from "@/src/ee/features/in-app-agent/server/router";
 
 /**
  * This is the primary router for your server.
@@ -119,7 +118,6 @@ export const appRouter = createTRPCRouter({
   naturalLanguageFilters: naturalLanguageFilterRouter,
   notificationPreferences: notificationPreferencesRouter,
   webCallouts: webCalloutsRouter,
-  inAppAgent: inAppAgentRouter,
 });
 
 // export type definition of API

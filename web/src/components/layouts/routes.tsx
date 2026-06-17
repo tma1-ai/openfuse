@@ -26,7 +26,6 @@ import { type Entitlement } from "@/src/features/entitlements/constants/entitlem
 import { type User } from "next-auth";
 import { type OrganizationScope } from "@/src/features/rbac/constants/organizationAccessRights";
 import { SupportButton } from "@/src/components/nav/support-button";
-import { InAppAiAgentButton } from "@/src/components/nav/in-app-ai-agent-button";
 import { BookACallButton } from "@/src/components/nav/book-a-call-button";
 import { SidebarMenuButton } from "@/src/components/ui/sidebar";
 import { KeyboardShortcut } from "@/src/components/ui/keyboard-shortcut";
@@ -234,15 +233,6 @@ export const ROUTES: Route[] = [
     section: RouteSection.Secondary,
     pathname: "",
     menuNode: <BookACallButton />,
-  },
-  {
-    title: "Assistant",
-    section: RouteSection.Secondary,
-    pathname: "",
-    featureFlag: "inAppAgent",
-    show: ({ organization, projectId, isLangfuseCloud }) =>
-      isLangfuseCloud && organization !== undefined && projectId !== undefined,
-    menuNode: <InAppAiAgentButton />,
   },
   {
     title: "Support",
