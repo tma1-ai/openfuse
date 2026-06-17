@@ -36,7 +36,6 @@ import { Tabs, TabsList, TabsTrigger } from "@/src/components/ui/tabs";
 import { api, type RouterOutputs } from "@/src/utils/api";
 import { cn } from "@/src/utils/tailwind";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
-import { type useUiCustomization } from "@/src/ee/features/ui-customization/useUiCustomization";
 import { DialogFooter } from "@/src/components/ui/dialog";
 import { DialogBody } from "@/src/components/ui/dialog";
 import { env } from "@/src/env.mjs";
@@ -247,7 +246,6 @@ const createFormSchema = (params: {
 interface CreateLLMApiKeyFormProps {
   projectId?: string;
   onSuccess: () => void;
-  customization: ReturnType<typeof useUiCustomization>;
   mode?: "create" | "update";
   existingKey?: LlmApiKeyListItem;
 }
@@ -255,7 +253,6 @@ interface CreateLLMApiKeyFormProps {
 export function CreateLLMApiKeyForm({
   projectId,
   onSuccess,
-  customization,
   mode = "create",
   existingKey,
 }: CreateLLMApiKeyFormProps) {
@@ -281,22 +278,7 @@ export function CreateLLMApiKeyForm({
   const mutTestLLMApiKey = api.llmApiKey.test.useMutation();
   const mutTestUpdateLLMApiKey = api.llmApiKey.testUpdate.useMutation();
 
-  const defaultAdapter: LLMAdapter = customization?.defaultModelAdapter
-    ? LLMAdapter[customization.defaultModelAdapter]
-    : LLMAdapter.OpenAI;
-
-  const getCustomizedBaseURL = (adapter: LLMAdapter) => {
-    switch (adapter) {
-      case LLMAdapter.OpenAI:
-        return customization?.defaultBaseUrlOpenAI ?? "";
-      case LLMAdapter.Azure:
-        return customization?.defaultBaseUrlAzure ?? "";
-      case LLMAdapter.Anthropic:
-        return customization?.defaultBaseUrlAnthropic ?? "";
-      default:
-        return "";
-    }
-  };
+  const defaultAdapter: LLMAdapter = LLMAdapter.OpenAI;
 
   const formSchema = createFormSchema({
     mode,
@@ -315,9 +297,7 @@ export function CreateLLMApiKeyForm({
               existingKey.displaySecretKey === "Default GCP credentials (ADC)"
                 ? VERTEXAI_USE_DEFAULT_CREDENTIALS
                 : "",
-            baseURL:
-              existingKey.baseURL ??
-              getCustomizedBaseURL(existingKey.adapter as LLMAdapter),
+            baseURL: existingKey.baseURL ?? "",
             withDefaultModels: existingKey.withDefaultModels,
             customModels: existingKey.customModels.map((value) => ({ value })),
             extraHeaders:
@@ -348,7 +328,7 @@ export function CreateLLMApiKeyForm({
             adapter: defaultAdapter,
             provider: "",
             secretKey: "",
-            baseURL: getCustomizedBaseURL(defaultAdapter),
+            baseURL: "",
             withDefaultModels: true,
             customModels: [],
             extraHeaders: [],
@@ -677,10 +657,7 @@ export function CreateLLMApiKeyForm({
                   defaultValue={field.value}
                   onValueChange={(value) => {
                     field.onChange(value as LLMAdapter);
-                    form.setValue(
-                      "baseURL",
-                      getCustomizedBaseURL(value as LLMAdapter),
-                    );
+                    form.setValue("baseURL", "");
                   }}
                   disabled={isFieldDisabled("adapter")}
                 >

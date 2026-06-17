@@ -8,7 +8,6 @@ import {
   DialogTrigger,
 } from "@/src/components/ui/dialog";
 import { CreateLLMApiKeyForm } from "./CreateLLMApiKeyForm";
-import { useUiCustomization } from "@/src/ee/features/ui-customization/useUiCustomization";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
 import { PencilIcon } from "lucide-react";
 import { type RouterOutputs } from "@/src/utils/api";
@@ -27,7 +26,6 @@ export function UpdateLLMApiKeyDialog({
   onOpenChange?: (open: boolean) => void;
 }) {
   const [internalOpen, setInternalOpen] = useState(false);
-  const uiCustomization = useUiCustomization();
 
   // Use external state if provided, otherwise use internal state
   const isOpen = open !== undefined ? open : internalOpen;
@@ -58,7 +56,6 @@ export function UpdateLLMApiKeyDialog({
           <CreateLLMApiKeyForm
             projectId={projectId}
             onSuccess={() => setIsOpen(false)}
-            customization={uiCustomization}
             mode="update"
             existingKey={apiKey}
           />

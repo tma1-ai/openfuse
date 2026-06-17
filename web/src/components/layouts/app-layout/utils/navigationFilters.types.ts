@@ -23,8 +23,6 @@ export type NavigationFilterContext = {
   cloudAdmin: boolean;
   /** Plan-based entitlements available to current user/org */
   entitlements: Entitlement[];
-  /** UI customization settings (enterprise feature) */
-  uiCustomization: { visibleModules: string[] } | null;
   /** Whether the deployment is a Langfuse Cloud environment */
   isLangfuseCloud: boolean;
   /** Current router path for active state detection */

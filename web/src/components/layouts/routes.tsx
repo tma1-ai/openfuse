@@ -32,7 +32,6 @@ import { KeyboardShortcut } from "@/src/components/ui/keyboard-shortcut";
 import { useCommandMenu } from "@/src/features/command-k-menu/CommandMenuProvider";
 import { usePostHogClientCapture } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 import { CloudStatusMenu } from "@/src/features/cloud-status-notification/components/CloudStatusMenu";
-import { type ProductModule } from "@/src/ee/features/ui-customization/productModuleSchema";
 
 export enum RouteSection {
   Main = "main",
@@ -58,7 +57,6 @@ export type Route = {
   section?: RouteSection; // which section of the sidebar (top/main/bottom)
   newTab?: boolean; // open in new tab
   entitlements?: Entitlement[]; // entitlements required, array treated as OR
-  productModule?: ProductModule; // Product module this route belongs to. Used to show/hide modules via ui customization.
   show?: (p: {
     organization: User["organizations"][number] | undefined;
     projectId: string | undefined;
@@ -98,13 +96,11 @@ export const ROUTES: Route[] = [
     title: "Dashboards",
     pathname: `/project/[projectId]/dashboards`,
     icon: LayoutDashboard,
-    productModule: "dashboards",
     section: RouteSection.Main,
   },
   {
     title: "Tracing",
     icon: ListTree,
-    productModule: "tracing",
     group: RouteGroup.Observability,
     section: RouteSection.Main,
     pathname: `/project/[projectId]/traces`,
@@ -112,7 +108,6 @@ export const ROUTES: Route[] = [
   {
     title: "Sessions",
     icon: Clock,
-    productModule: "tracing",
     group: RouteGroup.Observability,
     section: RouteSection.Main,
     pathname: `/project/[projectId]/sessions`,
@@ -121,7 +116,6 @@ export const ROUTES: Route[] = [
     title: "Users",
     pathname: `/project/[projectId]/users`,
     icon: UsersIcon,
-    productModule: "tracing",
     group: RouteGroup.Observability,
     section: RouteSection.Main,
   },
@@ -140,7 +134,6 @@ export const ROUTES: Route[] = [
     pathname: "/project/[projectId]/prompts",
     icon: FileJson,
     projectRbacScopes: ["prompts:read"],
-    productModule: "prompt-management",
     group: RouteGroup.PromptManagement,
     section: RouteSection.Main,
   },
@@ -148,7 +141,6 @@ export const ROUTES: Route[] = [
     title: "Playground",
     pathname: "/project/[projectId]/playground",
     icon: TerminalIcon,
-    productModule: "playground",
     group: RouteGroup.PromptManagement,
     section: RouteSection.Main,
   },
@@ -162,7 +154,6 @@ export const ROUTES: Route[] = [
   {
     title: "Evaluators",
     icon: Lightbulb,
-    productModule: "evaluation",
     projectRbacScopes: ["evalJob:read"],
     group: RouteGroup.Evaluation,
     section: RouteSection.Main,
@@ -180,7 +171,6 @@ export const ROUTES: Route[] = [
     title: "Datasets",
     pathname: `/project/[projectId]/datasets`,
     icon: Database,
-    productModule: "datasets",
     group: RouteGroup.Evaluation,
     section: RouteSection.Main,
   },
