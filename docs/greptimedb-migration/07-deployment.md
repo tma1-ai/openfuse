@@ -62,9 +62,12 @@ same migration set — there is no separate retention step.
 
 [`docker-compose.yml`](../../docker-compose.yml) is the production stack:
 `langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, `redis`, and
-`minio`. The web/worker services `depends_on` GreptimeDB being healthy
-(`/health` on port `4000`). GreptimeDB runs in `standalone` mode and persists to
-the `langfuse_greptimedb_data` volume.
+`minio`. By default it builds the web and worker images from this repository so
+the running containers include the fork's GreptimeDB code. Set
+`OPENFUSE_WEB_IMAGE` and `OPENFUSE_WORKER_IMAGE` if you publish prebuilt fork
+images and want Compose to tag/pull those instead. The web/worker services
+`depends_on` GreptimeDB being healthy (`/health` on port `4000`). GreptimeDB runs
+in `standalone` mode and persists to the `langfuse_greptimedb_data` volume.
 
 [`docker-compose.dev.yml`](../../docker-compose.dev.yml) is the local dev variant
 (GreptimeDB + MinIO + Redis + Postgres, no app containers) and is the reference
@@ -96,8 +99,6 @@ These have **not** been validated end to end and remain open:
   `docker compose config -q` (syntax + reference validation). A full stack
   bring-up — schema bootstrap, then write + read traffic through the running
   web/worker images against GreptimeDB — has not been exercised here.
-- **Image publish.** `docker-compose.yml` pins the upstream
-  `langfuse/langfuse:3` / `langfuse/langfuse-worker:3` images, which do **not**
-  contain this fork's GreptimeDB code. Fork images must be built (see
-  `docker-compose.build.yml`) and published, and the `image:` tags updated,
-  before the published Compose stack runs the GreptimeDB backend.
+- **Image publish.** `docker-compose.yml` builds local fork images by default.
+  For distribution, publish those images to a registry and set
+  `OPENFUSE_WEB_IMAGE` / `OPENFUSE_WORKER_IMAGE` to the published tags.

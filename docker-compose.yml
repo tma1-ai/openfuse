@@ -5,7 +5,12 @@
 # External connections from other machines will not be able to reach these services directly.
 services:
   langfuse-worker:
-    image: docker.io/langfuse/langfuse-worker:3
+    build:
+      dockerfile: ./worker/Dockerfile
+      context: .
+      args:
+        - NEXT_PUBLIC_LANGFUSE_CLOUD_REGION=${NEXT_PUBLIC_LANGFUSE_CLOUD_REGION}
+    image: ${OPENFUSE_WORKER_IMAGE:-openfuse-worker:local}
     restart: always
     depends_on: &langfuse-depends-on
       postgres:
@@ -71,7 +76,12 @@ services:
       SMTP_CONNECTION_URL: ${SMTP_CONNECTION_URL:-}
 
   langfuse-web:
-    image: docker.io/langfuse/langfuse:3
+    build:
+      dockerfile: ./web/Dockerfile
+      context: .
+      args:
+        - NEXT_PUBLIC_LANGFUSE_CLOUD_REGION=${NEXT_PUBLIC_LANGFUSE_CLOUD_REGION}
+    image: ${OPENFUSE_WEB_IMAGE:-openfuse-web:local}
     restart: always
     depends_on: *langfuse-depends-on
     ports:
