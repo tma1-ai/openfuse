@@ -4,14 +4,15 @@ import { prisma } from "@langfuse/shared/src/db";
 import {
   DefaultEvalModelService,
   fetchLLMCompletion,
+  ingestionEventToRawEvent,
+  IngestionEventType,
   IngestionQueue,
   LLMAdapter,
   QueueJobs,
   ScoreEventType,
+  writeRawEvents,
 } from "@langfuse/shared/src/server";
-import { env } from "../../env";
 import { buildEvalMessages } from "./evalRuntime";
-import { getEvalS3StorageClient } from "./s3StorageClient";
 import { createInternalEventsWriter } from "../internal-tracing/createInternalEventsWriter";
 
 type StructuredOutputSchema = NonNullable<
@@ -67,7 +68,7 @@ export interface UpdateJobExecutionData {
 }
 
 /**
- * Parameters for uploading a score to S3.
+ * Parameters for persisting an eval-generated score event to raw_events.
  */
 export interface UploadScoreParams {
   projectId: string;
@@ -144,11 +145,17 @@ export function createProductionEvalExecutionDeps(): EvalExecutionDeps {
     },
 
     uploadScore: async (params) => {
-      const bucketPath = `${env.LANGFUSE_S3_EVENT_UPLOAD_PREFIX}${params.projectId}/score/${params.scoreId}/${params.eventId}.json`;
-
-      await getEvalS3StorageClient().uploadJson(bucketPath, [
-        params.event as unknown as Record<string, unknown>,
-      ]);
+      // Persist the eval-generated score to raw_events (the durable source of truth), mirroring the
+      // standard ingestion path. The worker rebuilds the score projection by replaying raw_events,
+      // so no blob storage is involved.
+      const rawEvent = ingestionEventToRawEvent(
+        params.event as unknown as IngestionEventType,
+        params.projectId,
+        Date.now(),
+      );
+      if (rawEvent) {
+        await writeRawEvents([rawEvent]);
+      }
     },
 
     enqueueScoreIngestion: async (params) => {
@@ -158,6 +165,9 @@ export function createProductionEvalExecutionDeps(): EvalExecutionDeps {
         throw new Error("Ingestion queue not available");
       }
 
+      // Ref-only job: the body already lives in raw_events (written by uploadScore above), so the
+      // worker reads it from there. entityType lets the worker skip re-deriving it; batchId scopes
+      // the Redis seen-cache. No fileKey — there is no blob to download.
       await queue.add(QueueJobs.IngestionJob, {
         id: randomUUID(),
         timestamp: new Date(),
@@ -166,7 +176,8 @@ export function createProductionEvalExecutionDeps(): EvalExecutionDeps {
           data: {
             type: "score-create",
             eventBodyId: params.scoreId,
-            fileKey: params.eventId,
+            entityType: "score",
+            batchId: randomUUID(),
           },
           authCheck: {
             validKey: true,

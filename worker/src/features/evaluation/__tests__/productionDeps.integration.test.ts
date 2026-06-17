@@ -318,7 +318,7 @@ describe("Production Dependency Factories Integration Tests", () => {
     });
 
     describe("uploadScore", () => {
-      it("should upload score event to S3 without throwing", async () => {
+      it("should persist score event to raw_events without throwing", async () => {
         const { projectId } = await createOrgProjectAndApiKey();
         const scoreId = randomUUID();
         const eventId = randomUUID();
@@ -425,7 +425,7 @@ describe("Production Dependency Factories Integration Tests", () => {
         },
       });
 
-      // Step 4: Executor uploads score to S3
+      // Step 4: Executor persists score to raw_events (no blob storage)
       const eventId = randomUUID();
       await executorDeps.uploadScore({
         projectId,
@@ -441,11 +441,6 @@ describe("Production Dependency Factories Integration Tests", () => {
           dataType: "NUMERIC",
         },
       });
-
-      const prefix = env.LANGFUSE_S3_EVENT_UPLOAD_PREFIX || "";
-      createdS3Paths.push(
-        `${prefix}${projectId}/score/${scoreId}/${eventId}.json`,
-      );
 
       // Verify final state
       jobExecution = await prisma.jobExecution.findUnique({
