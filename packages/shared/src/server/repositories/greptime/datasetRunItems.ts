@@ -280,13 +280,14 @@ const dedupSubquery = (opts: {
   // resolve on the single table.
   `FROM ${quoteIdent("dataset_run_items")} dri WHERE ${opts.whereSql}`;
 
-// Unit-separator delimiter: the logical-key columns are ids (cuid/uuid) that may contain '-', so a
-// printable separator would not be injective (e.g. ('a-b','c') vs ('a','b-c')); 0x1F cannot appear in
-// an id, making the concatenation a faithful single-column stand-in for count(DISTINCT tuple).
-const LOGICAL_KEY_SEP = String.fromCharCode(31);
+// Unit-separator (0x1F) delimiter between the logical-key id columns: ids (cuid/uuid) may contain
+// '-', so a printable separator would not be injective (e.g. ('a-b','c') vs ('a','b-c')); 0x1F cannot
+// appear in an id, making the concatenation a faithful single-column stand-in for count(DISTINCT
+// tuple). It is emitted via `chr(31)` rather than a literal control byte because GreptimeDB's SQL
+// parser rejects a raw 0x1F embedded in a string literal ("unterminated string literal").
 const LOGICAL_KEY_CONCAT =
-  `concat(CAST(project_id AS STRING), '${LOGICAL_KEY_SEP}', CAST(dataset_id AS STRING), '${LOGICAL_KEY_SEP}', ` +
-  `CAST(dataset_run_id AS STRING), '${LOGICAL_KEY_SEP}', CAST(dataset_item_id AS STRING))`;
+  `concat(CAST(project_id AS STRING), chr(31), CAST(dataset_id AS STRING), chr(31), ` +
+  `CAST(dataset_run_id AS STRING), chr(31), CAST(dataset_item_id AS STRING))`;
 
 // ---------------------------------------------------------------------------
 // dataset run ITEMS reads (row-grain; score filters via standard trace-grain EXISTS)
