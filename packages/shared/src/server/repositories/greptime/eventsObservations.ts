@@ -16,11 +16,7 @@ import {
   getObservationsTableCountGreptime,
   getObservationsTableRowsGreptime,
 } from "./observationsTable";
-import {
-  convertGreptimeObservationRowToDomain,
-  greptimeObservationSelect,
-} from "./converters";
-import { greptimeTsParam, notDeleted } from "./queryHelpers";
+import { notDeleted } from "./queryHelpers";
 
 /**
  * GreptimeDB obs-from-events collapse (04-read-path.md, P5 Piece D).
@@ -349,64 +345,4 @@ export const getObservationsCountForPublicApiFromEventsGreptime = async (opts: {
     projectId: opts.projectId,
     filter: buildEventsPublicApiObservationsFilter(opts.props),
   });
-};
-
-/**
- * V2 cursor-paginated variant. Stable composite cursor `(start_time, trace_id, id)` DESC (the CH
- * version used `xxHash32(trace_id)` as the middle key; GreptimeDB orders on the raw trace_id with the
- * same cursor payload). Fetches `limit + 1` so the caller can detect "has more".
- */
-export const getObservationsV2ForPublicApiFromEventsGreptime = async (opts: {
-  projectId: string;
-  props: EventsPublicApiObservationsProps;
-  limit: number;
-  cursor?: { lastStartTimeTo: Date; lastTraceId: string; lastId: string };
-  selectIOAndMetadata?: boolean;
-  parseIoAsJson?: boolean;
-}) => {
-  const { projectId } = opts;
-  const compiled = buildObservationsTableQuery({
-    projectId,
-    filter: buildEventsPublicApiObservationsFilter(opts.props),
-  });
-
-  const cursorSql = opts.cursor
-    ? `AND (o.start_time < :curTs
-         OR (o.start_time = :curTs AND (o.trace_id < :curTrace
-           OR (o.trace_id = :curTrace AND o.id < :curId))))`
-    : "";
-  const exclude = !opts.selectIOAndMetadata;
-
-  const rows = await greptimeQuery<Record<string, unknown>>({
-    query: `
-      SELECT ${greptimeObservationSelect({ prefix: "o", excludeIo: exclude, excludeMetadata: exclude })}
-      FROM observations o
-      ${compiled.traceJoin ? "LEFT JOIN traces t ON t.id = o.trace_id AND t.project_id = o.project_id AND " + notDeleted("t") : ""}
-      WHERE ${compiled.whereSql} AND ${notDeleted("o")}
-        ${compiled.lookback ? "AND t.timestamp >= :obsTraceLookback" : ""}
-        ${cursorSql}
-      ORDER BY o.start_time DESC, o.trace_id DESC, o.id DESC
-      LIMIT :limit`,
-    params: {
-      ...compiled.params,
-      ...(compiled.lookback ? { obsTraceLookback: compiled.lookback } : {}),
-      ...(opts.cursor
-        ? {
-            curTs: greptimeTsParam(opts.cursor.lastStartTimeTo),
-            curTrace: opts.cursor.lastTraceId,
-            curId: opts.cursor.lastId,
-          }
-        : {}),
-      limit: opts.limit + 1,
-    },
-    readOnly: true,
-  });
-
-  const observations = rows.map((r) =>
-    convertGreptimeObservationRowToDomain(r, {
-      shouldJsonParse: opts.parseIoAsJson ?? false,
-      truncated: false,
-    }),
-  );
-  return enrichEventsObservations(observations, projectId);
 };
