@@ -66,7 +66,7 @@ export const buildObservationsStatsCte = (
         ${greptimeLatencyMs()} AS latency_milliseconds,
         ${greptimeLevelCounts()},
         ${greptimeAggregatedLevelString()},
-        sum(total_cost) AS cost_total,
+        sum(coalesce(total_cost, 0)) AS cost_total,
         ${greptimeKnownKeySum("cost_details", "input", undefined, "cost_input")},
         ${greptimeKnownKeySum("cost_details", "output", undefined, "cost_output")},
         ${greptimeKnownKeySum("usage_details", "input", undefined, "usage_input")},

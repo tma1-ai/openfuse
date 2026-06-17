@@ -317,7 +317,12 @@ export const run = async (): Promise<void> => {
   } finally {
     // Release the GreptimeDB ingest gRPC client + SQL pools, otherwise their open
     // handles keep the event loop alive and the CLI hangs after writing (esp. large batches).
-    await closeGreptimeConnections().catch(() => {});
+    await closeGreptimeConnections().catch((error) => {
+      logger.warn(
+        "failed to close GreptimeDB connections during cleanup",
+        error,
+      );
+    });
     await prisma.$disconnect().catch(() => {});
     redis?.disconnect();
   }
