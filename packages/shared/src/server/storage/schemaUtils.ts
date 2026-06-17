@@ -39,7 +39,7 @@ export const getIngestionEntityType = (
     case eventTypes.SCORE_SNAPSHOT:
       return "score";
     case eventTypes.DATASET_RUN_ITEM_CREATE:
-    // Replay compatibility: s3-ingestion-event-replay.ts reconstructs event types from S3 paths containing entity types
+    // Also accept the explicit "<entity>-create" string form defensively.
     // eslint-disable-next-line no-fallthrough
     case "dataset_run_item-create":
       return "dataset_run_item";

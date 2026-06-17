@@ -115,10 +115,9 @@ export const otelIngestionQueueProcessorBuilder = (
         });
 
         if (!maskingResult.success) {
-          // Fail-closed: drop event. Emit the S3 location so operators can
-          // scan logs to identify which raw payloads need to be replayed via
-          // worker/src/scripts/replayIngestionEventsV2 once the upstream
-          // masking callback is healthy again.
+          // Fail-closed: drop event. Emit the S3 location so operators can identify which raw OTel
+          // payloads were dropped; the file remains in the event bucket and can be re-ingested once
+          // the upstream masking callback is healthy again.
           logger.warn(`Dropping OTEL event due to masking failure`, {
             projectId,
             orgId: job.data.payload.authCheck.scope.orgId,
