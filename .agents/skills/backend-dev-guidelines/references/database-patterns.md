@@ -1,12 +1,12 @@
-# Database Patterns - PostgreSQL & ClickHouse
+# Database Patterns - PostgreSQL & GreptimeDB
 
-Complete guide to database access patterns in Langfuse using PostgreSQL (Prisma ORM) and ClickHouse (direct client).
+Complete guide to database access patterns in Langfuse using PostgreSQL (Prisma ORM) and GreptimeDB (direct SQL via mysql2).
 
 ## Table of Contents
 
 - [Database Architecture Overview](#database-architecture-overview)
 - [PostgreSQL with Prisma](#postgresql-with-prisma)
-- [ClickHouse with Direct Client](#clickhouse-with-direct-client)
+- [GreptimeDB with Direct Client](#greptimedb-with-direct-client)
 - [Repository Pattern](#repository-pattern)
 - [When to Use Which Database](#when-to-use-which-database)
 - [Error Handling](#error-handling)
@@ -17,13 +17,15 @@ Complete guide to database access patterns in Langfuse using PostgreSQL (Prisma 
 
 Langfuse uses a **dual database architecture**:
 
-| Database       | Technology        | Purpose                                                       | Access Pattern                         |
-| -------------- | ----------------- | ------------------------------------------------------------- | -------------------------------------- |
-| **PostgreSQL** | Prisma ORM        | Transactional data, relational data, CRUD operations          | Type-safe ORM with migrations          |
-| **ClickHouse** | Direct SQL client | Analytics data, high-volume traces/observations, aggregations | Raw SQL queries with streaming support |
-| **Redis**      | ioredis           | Queues (BullMQ), caching, rate limiting                       | Direct client access                   |
+| Database       | Technology          | Purpose                                                       | Access Pattern                         |
+| -------------- | ------------------- | ------------------------------------------------------------- | -------------------------------------- |
+| **PostgreSQL** | Prisma ORM          | Transactional data, relational data, CRUD operations          | Type-safe ORM with migrations          |
+| **GreptimeDB** | Direct SQL (mysql2) | Analytics data, high-volume traces/observations, aggregations | Raw SQL queries with streaming support |
+| **Redis**      | ioredis             | Queues (BullMQ), caching, rate limiting                       | Direct client access                   |
 
-**Key Principle**: Use PostgreSQL for transactional data and relationships. Use ClickHouse for high-volume analytics and time-series data.
+**Key Principle**: Use PostgreSQL for transactional data and relationships. Use GreptimeDB for high-volume analytics and time-series data.
+
+**Event-sourced storage model**: GreptimeDB is event-sourced. `raw_events` (an `append_mode` table) is the source of truth. The `traces`, `observations`, `scores`, and `dataset_run_items` tables are `merge_mode=last_non_null` projection tables, rebuilt by replaying `raw_events`. There is no ClickHouse-style `FINAL` or `LIMIT 1 BY` — the projection tables already hold the merged latest state. `metadata`/`tags` JSON columns on the projection tables are display-only; filtering by metadata/tag goes through EAV subtables `<table>_metadata` / `<table>_tags` via a semijoin (see [GreptimeDB Query Best Practices](#greptimedb-query-best-practices)).
 
 **⚠️ Important**: All queries must filter by `project_id` (or `projectId`) to ensure proper data isolation between tenants. This is essential for the multi-tenant architecture.
 
@@ -180,61 +182,70 @@ const traces = await prisma.trace.findMany({
 });
 ```
 
-## ClickHouse with Direct Client
+## GreptimeDB with Direct Client
 
 ### Import Pattern
 
 ```typescript
-import { queryClickhouse } from "@langfuse/shared/src/server/repositories/clickhouse";
-import { clickhouseClient } from "@langfuse/shared/src/server/clickhouse/client";
+import { greptimeQuery } from "@langfuse/shared/src/server";
 ```
 
-### ClickHouse Client Singleton
+Everything is exported from `@langfuse/shared/src/server`. The implementation
+lives in `packages/shared/src/server/greptime/client.ts`.
 
-ClickHouse uses a singleton client manager that reuses connections:
+### No Singleton Client
+
+There is **no** singleton client object. You do not "get a client" — you call
+`greptimeQuery(...)` directly, and it routes to a managed connection pool.
+Pass `readOnly: true` for read queries; the call is then routed to the
+read-only pool (which targets `GREPTIME_SQL_READ_ONLY_HOST` when configured,
+otherwise the primary SQL endpoint).
 
 ```typescript
-import { clickhouseClient } from "@langfuse/shared/src/server/clickhouse/client";
+import { greptimeQuery } from "@langfuse/shared/src/server";
 
-// Get client (automatically reuses existing connection)
-const client = clickhouseClient();
-
-// For read-only queries (uses read replica if configured)
-const client = clickhouseClient(undefined, "ReadOnly");
+// Read query → read-only pool
+const rows = await greptimeQuery({ query, params, readOnly: true });
 ```
 
 ### Query Patterns
 
-ClickHouse queries use **raw SQL** with parameterized queries. Parameters use `{paramName: Type}` syntax:
+GreptimeDB queries use **raw SQL** with **mysql2 placeholders**: `:name` for
+named parameters or `?` for positional. This is **not** the old ClickHouse
+`{name: Type}` syntax — there are no inline type annotations.
 
-**⚠️ Important**: All ClickHouse queries must include `project_id` filter to ensure proper tenant isolation.
+**⚠️ Important**: All GreptimeDB queries must include a `project_id` filter to
+ensure proper tenant isolation.
 
 **Simple query:**
 
 ```typescript
-import { queryClickhouse } from "@langfuse/shared/src/server/repositories/clickhouse";
+import {
+  greptimeQuery,
+  convertDateToDbDateTime,
+} from "@langfuse/shared/src/server";
 
 // ✅ GOOD: Always filter by project_id
-const rows = await queryClickhouse<{ id: string; name: string }>({
+const rows = await greptimeQuery<{ id: string; name: string }>({
   query: `
     SELECT id, name, timestamp
     FROM traces
-    WHERE project_id = {projectId: String}  -- ← REQUIRED: Always filter by project_id
-    AND timestamp >= {startTime: DateTime64(3)}
+    WHERE project_id = :projectId  -- ← REQUIRED: Always filter by project_id
+    AND timestamp >= :startTime
     ORDER BY timestamp DESC
-    LIMIT {limit: UInt32}
+    LIMIT :limit
   `,
   params: {
     projectId, // ← Required for tenant isolation
-    startTime: convertDateToClickhouseDateTime(startDate),
+    startTime: convertDateToDbDateTime(startDate),
     limit: 100,
   },
-  tags: { feature: "tracing", type: "trace" },
+  readOnly: true,
 });
 
 // ❌ BAD: Missing project_id filter
-// const rows = await queryClickhouse({
-//   query: `SELECT * FROM traces WHERE timestamp >= {startTime: DateTime64(3)}`,
+// const rows = await greptimeQuery({
+//   query: `SELECT * FROM traces WHERE timestamp >= :startTime`,
 //   params: { startTime },
 // });
 ```
@@ -242,86 +253,82 @@ const rows = await queryClickhouse<{ id: string; name: string }>({
 **Streaming query (for large result sets):**
 
 ```typescript
-import { queryClickhouseStream } from "@langfuse/shared/src/server/repositories/clickhouse";
+import { greptimeQueryStream } from "@langfuse/shared/src/server";
 
-// Stream results to avoid loading all rows in memory
-for await (const row of queryClickhouseStream<ObservationRecordReadType>({
+// Async generator — stream results to avoid loading all rows in memory
+for await (const row of greptimeQueryStream<ObservationRecordReadType>({
   query: `
     SELECT *
     FROM observations
-    WHERE project_id = {projectId: String}
-    AND start_time >= {startTime: DateTime64(3)}
+    WHERE project_id = :projectId
+    AND start_time >= :startTime
   `,
   params: { projectId, startTime },
+  readOnly: true,
 })) {
   // Process row by row
   await processObservation(row);
 }
 ```
 
-**Upsert (insert) operation:**
+For checkpoint/resume exports (where a stream must survive restarts and pick up
+where it left off), use `greptimeKeysetScan` instead of a plain stream.
+
+**Writes:**
+
+Writes do **not** go through `greptimeQuery`. There is no `upsert` helper on the
+read client.
+
+- **Bulk ingestion** is owned by the worker's `GreptimeWriter` singleton
+  (`worker/src/services/GreptimeWriter`). It is **worker-internal** — it is
+  fed from the `raw_events` replay flow in
+  `worker/src/queues/ingestionQueue.ts` and is **not** importable from
+  `@langfuse/shared`. Application code never calls it directly.
+- **Low-frequency single-entity edits** (e.g. a tRPC/UI mutation that updates
+  one trace or one score) use the mutation helpers
+  `upsertTraceToGreptime` / `upsertScoreToGreptime` from
+  `packages/shared/src/server/repositories/greptime/mutations.ts`. These write
+  one `raw_events` row, which the projection tables then reflect.
 
 ```typescript
-import { upsertClickhouse } from "@langfuse/shared/src/server/repositories/clickhouse";
+import { upsertTraceToGreptime } from "@langfuse/shared/src/server/repositories/greptime/mutations";
 
-await upsertClickhouse({
-  table: "traces",
-  records: [
-    {
-      id: traceId,
-      project_id: projectId,
-      timestamp: new Date(),
-      name: "API Call",
-      user_id: userId,
-      // ... other fields
-    },
-  ],
-  eventBodyMapper: (record) => ({
-    // Transform record for event log
-    id: record.id,
-    name: record.name,
-    // ... other fields
-  }),
-  tags: { feature: "ingestion", type: "trace" },
+await upsertTraceToGreptime({
+  id: traceId,
+  project_id: projectId,
+  timestamp: new Date(),
+  name: "API Call",
+  user_id: userId,
+  // ... other fields
 });
 ```
 
-**DDL/Administrative commands:**
+**DDL / schema:**
 
-```typescript
-import { commandClickhouse } from "@langfuse/shared/src/server/repositories/clickhouse";
+There is no runtime DDL helper. Schema is **static SQL** in
+`packages/shared/greptime/migrations/*.sql`, applied at startup by
+`applyGreptimeMigrations` (`packages/shared/src/server/greptime/applyMigrations.ts`).
+Application code never issues `ALTER TABLE` at runtime.
 
-// Create table, alter schema, etc.
-await commandClickhouse({
-  query: `
-    ALTER TABLE traces
-    ADD COLUMN IF NOT EXISTS new_field String
-  `,
-  tags: { feature: "migration" },
-});
-```
+### Date / Parameter Handling
 
-### ClickHouse Type Mapping
-
-| JavaScript Type | ClickHouse Param Type                                     |
-| --------------- | --------------------------------------------------------- |
-| `string`        | `String`                                                  |
-| `number`        | `UInt32`, `Int64`, `Float64`                              |
-| `Date`          | `DateTime64(3)` (use `convertDateToClickhouseDateTime()`) |
-| `boolean`       | `UInt8` (0 or 1)                                          |
-| `string[]`      | `Array(String)`                                           |
+GreptimeDB uses native mysql2 type binding, so JavaScript values map directly —
+no per-parameter type annotations.
 
 **Date handling:**
 
 ```typescript
-import { convertDateToClickhouseDateTime } from "@langfuse/shared/src/server/clickhouse/client";
+import { convertDateToDbDateTime } from "@langfuse/shared/src/server";
 
 const params = {
-  startTime: convertDateToClickhouseDateTime(new Date()),
+  startTime: convertDateToDbDateTime(new Date()),
 };
 ```
 
-### ClickHouse Query Best Practices
+To parse a DB UTC datetime string back into a `Date`, use
+`parseDbUtcDateTimeFormat` (from `repositories/dbUtils`).
+
+### GreptimeDB Query Best Practices
 
 **1. Always filter by `project_id` for tenant isolation:**
 
@@ -330,13 +337,13 @@ const params = {
 const query = `
   SELECT *
   FROM traces
-  WHERE project_id = {projectId: String}  -- ← Required for tenant isolation
-  AND timestamp >= {startTime: DateTime64(3)}
+  WHERE project_id = :projectId  -- ← Required for tenant isolation
+  AND timestamp >= :startTime
 `;
 
 // ❌ WRONG: Missing project_id filter
 // const query = `
-//   SELECT * FROM traces WHERE timestamp >= {startTime: DateTime64(3)}
+//   SELECT * FROM traces WHERE timestamp >= :startTime
 // `;
 ```
 
@@ -346,61 +353,62 @@ const query = `
 - The `project_id` filter ensures queries only access data from the intended tenant
 - All queries on project-scoped tables (traces, observations, scores, sessions, etc.) must filter by `project_id`
 
-**2. Use LIMIT BY for deduplication:**
+**2. No deduplication step needed.**
+
+The projection tables (`traces`, `observations`, `scores`,
+`dataset_run_items`) are `merge_mode=last_non_null`. They already hold the
+merged latest state, so there is **no** ClickHouse-style `FINAL` /
+`LIMIT 1 BY id, project_id` to write. Query the projection table directly:
 
 ```typescript
-// Get latest version of each trace
+// mysql2 does NOT splice arrays into named placeholders. The greptime repos build
+// the IN-list with greptimeInClause (repositories/greptime/queryHelpers).
+const idList = greptimeInClause("id", traceIds, "tid"); // -> { sql: "`id` IN (:tid_0, ...)", params }
 const query = `
   SELECT *
   FROM traces
-  WHERE project_id = {projectId: String}  -- ← Always include project_id
-  ORDER BY event_ts DESC
-  LIMIT 1 BY id, project_id
+  WHERE project_id = :projectId
+  AND ${idList.sql}
+`;
+// params: { projectId, ...idList.params }
+```
+
+**3. Filtering by metadata or tags uses EAV subtables.**
+
+The `metadata` / `tags` JSON columns on the projection tables are
+**display-only**. To filter on a metadata key/value or a tag, semijoin against
+the EAV subtable `<table>_metadata` / `<table>_tags`:
+
+```typescript
+const query = `
+  SELECT *
+  FROM traces
+  WHERE project_id = :projectId
+  AND id IN (
+    SELECT entity_id FROM traces_metadata
+    WHERE project_id = :projectId
+    AND key = :metaKey
+    AND value LIKE :metaValue
+  )
 `;
 ```
 
-**`is_deleted` on `traces`, `observations`, `scores`, and `dataset_run_items_rmt` is dormant — avoid new filters.**
+The subtable query must filter `project_id` too.
 
-These four tables are declared as
-`ReplacingMergeTree(event_ts, is_deleted)`, but no production
-code writes `is_deleted = 1` for them — all deletes use
-ClickHouse's lightweight `DELETE FROM` mutation (e.g.
-`deleteObservationsByTraceIds`,
-`deleteObservationsByProjectId`,
-`deleteObservationsOlderThanDays`), which marks rows via the
-engine-managed `_row_exists` column. `_row_exists` is handled
-transparently by the read path; no special query handling is
-needed.
-
-What this means for query authors:
-
-- **`WHERE is_deleted = 0` filters on these four tables are
-  dead weight in practice.** A few legacy reads still carry
-  them (e.g. `web/src/features/score-analytics/server/`); new
-  code should not add them unless soft-delete writes have
-  actually been introduced.
-
-**Separate case: `blob_storage_file_log`.** This table is also
-a `ReplacingMergeTree` but **does** use soft-delete
-intentionally — `ingestionFileDeletion.ts` writes
-`is_deleted: "1"`, `batch-project-blob-cleaner` reads with
-`countIf(is_deleted = 1)`. The guidance above does not apply
-to it.
-
-**3. Use time-based filtering for performance:**
+**4. Use time-based filtering for performance:**
 
 ```typescript
 // Combine project_id filter with timestamp for optimal performance
 const query = `
   SELECT *
   FROM observations
-  WHERE project_id = {projectId: String}  -- ← Required for tenant isolation
-  AND start_time >= {startTime: DateTime64(3)}  -- ← Improves performance
-  AND start_time < {endTime: DateTime64(3)}
+  WHERE project_id = :projectId  -- ← Required for tenant isolation
+  AND start_time >= :startTime  -- ← Improves performance
+  AND start_time < :endTime
 `;
 ```
 
-**4. Use CTEs for complex queries (still require `project_id`):**
+**5. Use CTEs for complex queries (still require `project_id`):**
 
 ```typescript
 const query = `
@@ -410,7 +418,7 @@ const query = `
       count() as observation_count,
       sum(total_cost) as total_cost
     FROM observations
-    WHERE project_id = {projectId: String}  -- ← Filter in CTE
+    WHERE project_id = :projectId  -- ← Filter in CTE
     GROUP BY trace_id
   )
   SELECT
@@ -420,7 +428,7 @@ const query = `
     o.total_cost
   FROM traces t
   LEFT JOIN observations_agg o ON t.id = o.trace_id
-  WHERE t.project_id = {projectId: String}  -- ← Filter in main query
+  WHERE t.project_id = :projectId  -- ← Filter in main query
 `;
 ```
 
@@ -428,20 +436,18 @@ const query = `
 
 **Error handling with retries:**
 
-ClickHouse queries automatically retry on network errors (socket hang up). Custom error handling for resource limits:
+GreptimeDB queries automatically retry on transient network errors. Custom
+error handling for resource limits:
 
 ```typescript
-import {
-  queryClickhouse,
-  ClickHouseResourceError,
-} from "@langfuse/shared/src/server/repositories/clickhouse";
+import { greptimeQuery, DbResourceError } from "@langfuse/shared/src/server";
 
 try {
-  const rows = await queryClickhouse({ query, params });
+  const rows = await greptimeQuery({ query, params, readOnly: true });
 } catch (error) {
-  if (error instanceof ClickHouseResourceError) {
+  if (error instanceof DbResourceError) {
     // Memory limit, timeout, or overcommit error
-    throw new Error(ClickHouseResourceError.ERROR_ADVICE_MESSAGE);
+    throw new Error(DbResourceError.ERROR_ADVICE_MESSAGE);
   }
   throw error;
 }
@@ -457,45 +463,58 @@ Langfuse uses repositories in `packages/shared/src/server/repositories/` for com
 
 ✅ **Use repositories when:**
 
-- Complex ClickHouse queries with CTEs, aggregations, or joins
+- Complex GreptimeDB queries with CTEs, aggregations, or joins
 - Query used in multiple places (DRY principle)
 - Need data transformation/converters (DB → domain models)
 - Building reusable query logic with filters
 
-❌ **Use direct Prisma/ClickHouse for:**
+❌ **Use direct Prisma/`greptimeQuery` for:**
 
 - Simple CRUD operations
 - One-off queries
 - Prototyping (refactor to repository later)
 
+The read repositories `repositories/traces.ts`, `repositories/scores.ts`, and
+`repositories/observations.ts` are thin entry points — they delegate to the
+GreptimeDB query builders under `repositories/greptime/*`.
+
 ### Repository Examples
 
-**Trace repository (ClickHouse):**
+**Trace repository (GreptimeDB):**
 
 ```typescript
-// packages/shared/src/server/repositories/traces.ts
-export const getTracesByIds = async (
-  projectId: string,
-  traceIds: string[],
-): Promise<TraceRecordReadType[]> => {
-  const rows = await queryClickhouse<TraceRecordReadType>({
+// packages/shared/src/server/repositories/greptime/traces.ts
+import {
+  convertGreptimeTraceRowToDomain,
+  greptimeTraceSelect,
+} from "./converters";
+import { greptimeInClause, notDeleted } from "./queryHelpers";
+
+export const getTracesByIds = async (traceIds: string[], projectId: string) => {
+  if (traceIds.length === 0) return [];
+  // mysql2 does not splice arrays into named placeholders — build the IN-list.
+  const idList = greptimeInClause("id", traceIds, "tid");
+  const rows = await greptimeQuery<Record<string, unknown>>({
+    // Explicit select builder (never SELECT *) + is_deleted guard on the merged
+    // projection (no FINAL / LIMIT 1 BY).
     query: `
-      SELECT *
+      SELECT ${greptimeTraceSelect()}
       FROM traces
-      WHERE project_id = {projectId: String}
-      AND id IN ({traceIds: Array(String)})
-      ORDER BY event_ts DESC
-      LIMIT 1 BY id, project_id
+      WHERE ${idList.sql} AND project_id = :projectId AND ${notDeleted()}
     `,
-    params: { projectId, traceIds },
-    tags: { feature: "tracing", type: "trace" },
+    params: { projectId, ...idList.params },
+    readOnly: true,
   });
 
-  return rows.map(convertClickhouseToDomain);
+  return rows.map((r) =>
+    convertGreptimeTraceRowToDomain(r, DEFAULT_RENDERING_PROPS),
+  );
 };
+// Per-query metrics/tags are added by wrapping greptimeQuery in measureAndReturn
+// (storage/measureAndReturn); greptimeQuery itself takes only { query, params, readOnly }.
 ```
 
-**Score repository (PostgreSQL + ClickHouse):**
+**Score repository (PostgreSQL + GreptimeDB):**
 
 ```typescript
 // Repositories can query both databases
@@ -503,15 +522,16 @@ export const getScoresByTraceId = async (
   projectId: string,
   traceId: string,
 ) => {
-  // Use ClickHouse for analytics
-  const clickhouseScores = await queryClickhouse<ScoreRecordReadType>({
+  // Use GreptimeDB for analytics
+  const greptimeScores = await greptimeQuery<ScoreRecordReadType>({
     query: `
       SELECT *
       FROM scores
-      WHERE project_id = {projectId: String}
-      AND trace_id = {traceId: String}
+      WHERE project_id = :projectId
+      AND trace_id = :traceId
     `,
     params: { projectId, traceId },
+    readOnly: true,
   });
 
   // Use Prisma for config data
@@ -519,7 +539,7 @@ export const getScoresByTraceId = async (
     where: { projectId },
   });
 
-  return enrichScoresWithConfigs(clickhouseScores, scoreConfigs);
+  return enrichScoresWithConfigs(greptimeScores, scoreConfigs);
 };
 ```
 
@@ -532,29 +552,29 @@ export const getScoresByTraceId = async (
 | User accounts, projects, API keys      | PostgreSQL | Transactional data with strong consistency |
 | Prompt management, dataset definitions | PostgreSQL | Configuration data with relations          |
 | Project settings, RBAC permissions     | PostgreSQL | Small, frequently updated data             |
-| Traces, observations, events           | ClickHouse | High-volume time-series data               |
-| Score aggregations, analytics queries  | ClickHouse | Fast aggregations over millions of rows    |
-| Usage metrics, cost calculations       | ClickHouse | Analytical queries with GROUP BY           |
-| Exports, large dataset queries         | ClickHouse | Streaming support for large result sets    |
+| Traces, observations, events           | GreptimeDB | High-volume time-series data               |
+| Score aggregations, analytics queries  | GreptimeDB | Fast aggregations over millions of rows    |
+| Usage metrics, cost calculations       | GreptimeDB | Analytical queries with GROUP BY           |
+| Exports, large dataset queries         | GreptimeDB | Streaming support for large result sets    |
 
 **Decision flow:**
 
-1. Is it high-volume time-series data? → **ClickHouse**
-2. Does it need aggregation over millions of rows? → **ClickHouse**
+1. Is it high-volume time-series data? → **GreptimeDB**
+2. Does it need aggregation over millions of rows? → **GreptimeDB**
 3. Is it transactional data with relationships? → **PostgreSQL**
 4. Is it configuration or user data? → **PostgreSQL**
 5. Is it frequently updated? → **PostgreSQL**
-6. Is it append-only analytics data? → **ClickHouse**
+6. Is it append-only analytics data? → **GreptimeDB**
 
 ### Project-Scoped vs Global Tables
 
 **Project-scoped tables (MUST filter by `project_id`):**
 
+- `raw_events` - The append-only source of truth; queries require `project_id`
 - `traces` - All trace queries require `project_id`
 - `observations` - All observation queries require `project_id`
 - `scores` - All score queries require `project_id`
-- `events` - All event queries require `project_id`
-- `dataset_run_items_rmt` - All dataset run queries require `project_id`
+- `dataset_run_items` - All dataset run queries require `project_id`
 
 **Global tables (no `project_id` filter needed):**
 
@@ -566,13 +586,14 @@ export const getScoresByTraceId = async (
 
 ```typescript
 // ✅ CORRECT: Project-scoped query
-const traces = await queryClickhouse({
+const traces = await greptimeQuery({
   query: `
     SELECT * FROM traces
-    WHERE project_id = {projectId: String}
-    AND timestamp >= {startTime: DateTime64(3)}
+    WHERE project_id = :projectId
+    AND timestamp >= :startTime
   `,
   params: { projectId, startTime },
+  readOnly: true,
 });
 
 // ✅ CORRECT: Global table query (no project_id needed)
@@ -581,8 +602,8 @@ const user = await prisma.user.findUnique({
 });
 
 // ❌ WRONG: Project-scoped query without project_id filter
-// const traces = await queryClickhouse({
-//   query: `SELECT * FROM traces WHERE timestamp >= {startTime: DateTime64(3)}`,
+// const traces = await greptimeQuery({
+//   query: `SELECT * FROM traces WHERE timestamp >= :startTime`,
 // });
 ```
 
@@ -637,50 +658,41 @@ try {
 | `P2025` | Record not found            | Update/delete of non-existent record   |
 | `P2018` | Required relation not found | Connect to non-existent related record |
 
-### ClickHouse Errors
+### GreptimeDB Errors
 
 ```typescript
-import {
-  queryClickhouse,
-  ClickHouseResourceError,
-} from "@langfuse/shared/src/server/repositories/clickhouse";
+import { greptimeQuery, DbResourceError } from "@langfuse/shared/src/server";
 
 try {
-  const rows = await queryClickhouse({ query, params });
+  const rows = await greptimeQuery({ query, params, readOnly: true });
 } catch (error) {
-  // ClickHouse resource errors (memory limit, timeout, overcommit)
-  if (error instanceof ClickHouseResourceError) {
-    logger.warn("ClickHouse resource error", {
+  // Resource errors (memory limit, timeout, overcommit)
+  if (error instanceof DbResourceError) {
+    logger.warn("GreptimeDB resource error", {
       errorType: error.errorType, // "MEMORY_LIMIT" | "OVERCOMMIT" | "TIMEOUT"
       message: error.message,
     });
 
     // User-friendly error message
-    throw new BadRequestError(ClickHouseResourceError.ERROR_ADVICE_MESSAGE);
+    throw new BadRequestError(DbResourceError.ERROR_ADVICE_MESSAGE);
   }
 
   // Network/connection errors are automatically retried
-  logger.error("ClickHouse error", { error });
+  logger.error("GreptimeDB error", { error });
   throw error;
 }
 ```
 
-**ClickHouse error types:**
+**GreptimeDB resource error types:**
 
-| Error Type     | Discriminator           | Meaning                     | Solution                                          |
-| -------------- | ----------------------- | --------------------------- | ------------------------------------------------- |
-| `MEMORY_LIMIT` | "memory limit exceeded" | Query used too much memory  | Use more specific filters or shorter time range   |
-| `OVERCOMMIT`   | "OvercommitTracker"     | Memory overcommit limit hit | Reduce query complexity or result set size        |
-| `TIMEOUT`      | "Timeout", "timed out"  | Query took too long         | Add filters, reduce time range, or optimize query |
+| Error Type     | Meaning                     | Solution                                          |
+| -------------- | --------------------------- | ------------------------------------------------- |
+| `MEMORY_LIMIT` | Query used too much memory  | Use more specific filters or shorter time range   |
+| `OVERCOMMIT`   | Memory overcommit limit hit | Reduce query complexity or result set size        |
+| `TIMEOUT`      | Query took too long         | Add filters, reduce time range, or optimize query |
 
-**ClickHouse retries:**
-
-ClickHouse queries automatically retry network errors (socket hang up) with exponential backoff. Configure retry behavior:
-
-```typescript
-// In packages/shared/src/env.ts
-LANGFUSE_CLICKHOUSE_QUERY_MAX_ATTEMPTS: z.coerce.number().positive().default(3);
-```
+`DbResourceError` carries a static `ERROR_ADVICE_MESSAGE` and the
+`errorType` discriminator above.
 
 ---
 

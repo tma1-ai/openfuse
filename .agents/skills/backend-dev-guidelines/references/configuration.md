@@ -68,8 +68,9 @@ export const env = createEnv({
     DATABASE_URL: z.string().url(),
     NEXTAUTH_SECRET: z.string().min(1),
     SALT: z.string(),
-    CLICKHOUSE_URL: z.string().url(),
-    // ... 100+ server variables
+    // ... 100+ server variables. NOTE: the web app defines no GREPTIME_* vars —
+    // GreptimeDB connection config lives in the shared/worker env; web reaches
+    // GreptimeDB only through @langfuse/shared server code.
   },
 
   // Client-side variables (exposed to browser)
@@ -129,10 +130,13 @@ const EnvSchema = z.object({
   DATABASE_URL: z.string(),
   PORT: z.coerce.number().positive().max(65536).default(3030),
 
-  // ClickHouse
-  CLICKHOUSE_URL: z.string().url(),
-  CLICKHOUSE_USER: z.string(),
-  CLICKHOUSE_PASSWORD: z.string(),
+  // GreptimeDB
+  GREPTIME_GRPC_URL: z.string().default("localhost:4001"),
+  GREPTIME_SQL_HOST: z.string().default("localhost"),
+  GREPTIME_SQL_PORT: z.coerce.number().int().positive().default(4002),
+  GREPTIME_DB: z.string().default("openfuse"),
+  GREPTIME_USER: z.string().default(""),
+  GREPTIME_PASSWORD: z.string().default(""),
 
   // S3 Event Upload (required)
   LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string({
@@ -197,11 +201,16 @@ const EnvSchema = z.object({
   REDIS_CONNECTION_STRING: z.string().nullish(),
   REDIS_CLUSTER_ENABLED: z.enum(["true", "false"]).default("false"),
 
-  // ClickHouse
-  CLICKHOUSE_URL: z.string().url(),
-  CLICKHOUSE_USER: z.string(),
-  CLICKHOUSE_PASSWORD: z.string(),
-  CLICKHOUSE_MAX_OPEN_CONNECTIONS: z.coerce.number().int().default(25),
+  // GreptimeDB
+  GREPTIME_GRPC_URL: z.string().default("localhost:4001"),
+  GREPTIME_SQL_HOST: z.string().default("localhost"),
+  GREPTIME_SQL_PORT: z.coerce.number().int().positive().default(4002),
+  GREPTIME_SQL_READ_ONLY_HOST: z.string().optional(),
+  GREPTIME_DB: z.string().default("openfuse"),
+  GREPTIME_USER: z.string().default(""),
+  GREPTIME_PASSWORD: z.string().default(""),
+  GREPTIME_SQL_MAX_OPEN_CONNECTIONS: z.coerce.number().int().default(25),
+  GREPTIME_RAW_EVENTS_TABLE: z.string().default("raw_events"),
 
   // S3 Event Upload
   LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string(),
@@ -237,7 +246,7 @@ export const env: z.infer<typeof EnvSchema> =
 import { env } from "@langfuse/shared/src/env";
 
 const redisHost = env.REDIS_HOST;
-const clickhouseUrl = env.CLICKHOUSE_URL;
+const greptimeSqlHost = env.GREPTIME_SQL_HOST;
 ```
 
 ### Enterprise Edition Package (`ee/src/env.ts`)
@@ -503,7 +512,7 @@ All environment variables are validated when the application starts. Invalid con
 ```bash
 ❌ Validation error:
   - SALT: Required
-  - CLICKHOUSE_URL: Invalid url
+  - GREPTIME_SQL_PORT: Expected number, received nan
   - PORT: Number must be less than or equal to 65536
 ```
 

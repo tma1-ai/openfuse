@@ -1,5 +1,13 @@
 # ClickHouse Load-Seed Plan — `traces` & `observations`
 
+> **HISTORICAL — ClickHouse-era planning notes.** This document predates the
+> migration to GreptimeDB and is kept for reference only. Its approach relies on
+> ClickHouse-specific features (`INSERT ... SELECT FROM numbers(N)`, `FINAL`,
+> `LIMIT 1 BY`, `ReplacingMergeTree` dedup) that do **not** exist in the current
+> GreptimeDB-backed storage. It is **superseded** by the GreptimeDB seeder,
+> whose bulk writer is `utils/greptime-writer.ts`. Do not follow the SQL below
+> against the live stack.
+
 Working notes for generating realistic, *cheaply parameterizable* seed data
 for a load test against ClickHouse. The goal is two `INSERT INTO ... SELECT
 FROM numbers(N)` statements — one per table — that can be invoked repeatedly

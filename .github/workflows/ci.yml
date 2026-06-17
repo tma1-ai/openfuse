@@ -2,9 +2,9 @@
 #
 # The upstream Langfuse workflows live in .github/workflows-disabled/ — they need upstream
 # secrets / deploy infra / the full ClickHouse stack and are re-enabled one at a time as the
-# migration progresses. This workflow only covers what is green today: install (which builds the
-# git-hosted @greptime/ingester SDK), codegen, build, typecheck, and the GreptimeDB unit tests.
-# Smoke/integration tests that need a live GreptimeDB + Postgres/Redis are added later.
+# migration progresses. This workflow only covers what is green today: install, codegen, build,
+# typecheck, GreptimeDB unit tests, and a headless servertest subset. Heavy jobs are gated on the
+# `changes` filter so docs-only changes skip them.
 name: CI
 
 on:
@@ -18,8 +18,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Gate the heavy jobs so docs-only changes (markdown / docs/ / .agents/) skip the full
+  # install + build + typecheck + GreptimeDB-container servertests. This job is cheap and always
+  # runs; the heavy jobs `needs: changes` and skip when only non-code files changed. GitHub counts
+  # a skipped required check as satisfied for branch protection, so this does not block merges.
+  changes:
+    name: detect changes
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
+        id: filter
+        with:
+          filters: |
+            code:
+              - '**'
+              - '!**/*.md'
+              - '!docs/**'
+              - '!.agents/**'
+
   write-path:
     name: build + typecheck + unit tests
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -31,11 +54,29 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      # Incremental typecheck cache: the shared/worker typechecks run tsc/tsgo with
+      # --incremental --tsBuildInfoFile .tsbuildinfo, so a cached tsbuildinfo lets unchanged TS skip
+      # re-checking across runs. Rolling key (per-commit save + prefix restore fallback).
+      - uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            packages/shared/.tsbuildinfo
+            worker/.tsbuildinfo
+          key: ts-incremental-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            ts-incremental-${{ runner.os }}-
+
       # Dummy env just to satisfy import-time env validation; no service is contacted here.
       - run: cp .env.dev.example .env
 
-      # Installs deps and builds the git-hosted SDK via its prepare script (allowBuilds gates it).
-      - run: pnpm install --frozen-lockfile
+      # --config.minimumReleaseAge=0 skips pnpm's per-entry supply-chain age verification
+      # (it re-checks all ~2300 lockfile entries' publish timestamps, the slowest step here).
+      # That age gate (minimumReleaseAge in pnpm-workspace.yaml) guards resolve/update time so a
+      # freshly-published compromised version can't enter; a --frozen-lockfile install only
+      # materializes the already-committed-and-vetted lockfile, so re-verifying adds latency with
+      # no security benefit.
+      - run: pnpm install --frozen-lockfile --config.minimumReleaseAge=0
 
       - run: pnpm run db:generate
 
@@ -68,6 +109,8 @@ jobs:
 
   servertests:
     name: GreptimeDB servertests (headless subset)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -126,7 +169,8 @@ jobs:
           done
 
       - run: cp .env.dev.example .env
-      - run: pnpm install --frozen-lockfile
+      # Skip the supply-chain age verification on the frozen lockfile (see the build job).
+      - run: pnpm install --frozen-lockfile --config.minimumReleaseAge=0
       - run: pnpm run db:generate
       - run: pnpm --filter @langfuse/shared run build
 
