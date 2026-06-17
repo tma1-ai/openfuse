@@ -34,8 +34,13 @@ jobs:
       # Dummy env just to satisfy import-time env validation; no service is contacted here.
       - run: cp .env.dev.example .env
 
-      # Installs deps and builds the git-hosted SDK via its prepare script (allowBuilds gates it).
-      - run: pnpm install --frozen-lockfile
+      # --config.minimumReleaseAge=0 skips pnpm's per-entry supply-chain age verification
+      # (it re-checks all ~2300 lockfile entries' publish timestamps, the slowest step here).
+      # That age gate (minimumReleaseAge in pnpm-workspace.yaml) guards resolve/update time so a
+      # freshly-published compromised version can't enter; a --frozen-lockfile install only
+      # materializes the already-committed-and-vetted lockfile, so re-verifying adds latency with
+      # no security benefit.
+      - run: pnpm install --frozen-lockfile --config.minimumReleaseAge=0
 
       - run: pnpm run db:generate
 
@@ -126,7 +131,8 @@ jobs:
           done
 
       - run: cp .env.dev.example .env
-      - run: pnpm install --frozen-lockfile
+      # Skip the supply-chain age verification on the frozen lockfile (see the build job).
+      - run: pnpm install --frozen-lockfile --config.minimumReleaseAge=0
       - run: pnpm run db:generate
       - run: pnpm --filter @langfuse/shared run build
 
