@@ -9,6 +9,8 @@
 --
 -- Change retention for everything at once, at any time:
 --   ALTER DATABASE openfuse SET 'ttl'='365d';   -- or clear with SET 'ttl'=NULL
+-- NOTE: schema bootstrap (greptime:migrate) re-applies LANGFUSE_GREPTIME_TTL, so a manual ALTER is
+-- reverted on the next bootstrap. To persist a change, set LANGFUSE_GREPTIME_TTL accordingly.
 --
 -- One shared horizon keeps the projection-rebuild contract simple: each projection snapshot is
 -- rebuilt by replaying the entity's raw_events history, and with raw_events and projections

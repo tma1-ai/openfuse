@@ -79,7 +79,7 @@ export const parseDurationSeconds = (raw: string): number => {
 const formatDatabaseNameForAlter = (database: string): string => {
   if (!UNQUOTED_DATABASE_IDENTIFIER.test(database)) {
     throw new Error(
-      `invalid GreptimeDB database name '${database}' for ALTER DATABASE; use lowercase letters, digits, and underscores`,
+      `invalid GreptimeDB database name '${database}' for ALTER DATABASE; must start with a lowercase letter or underscore, then lowercase letters, digits, or underscores`,
     );
   }
   return database;
