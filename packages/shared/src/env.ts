@@ -202,7 +202,8 @@ const EnvSchema = z.object({
     .default(3),
   // Optional: ingestion and eval-generated scores persist to GreptimeDB raw_events, not S3. A bucket
   // is only needed when LANGFUSE_EVENT_STORAGE_BACKEND is "s3" (the OTel ingestion carrier and the
-  // eval observation blob store). With the default "local" backend, no object store is required.
+  // eval observation blob store). The schema default is "s3", but the Compose stack overrides both
+  // blob backends to "local", so a stock deployment needs no object store.
   LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string().optional(),
   LANGFUSE_S3_EVENT_UPLOAD_PREFIX: z.string().default(""),
   LANGFUSE_S3_EVENT_UPLOAD_REGION: z.string().optional(),

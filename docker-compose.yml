@@ -1,8 +1,9 @@
 # Make sure to update the credential placeholders with your own secrets.
 # We mark them with # CHANGEME in the file below.
-# Object storage (MinIO/S3) is OPTIONAL: by default media and the eval observation blob store use a
-# local-file backend and ingestion persists to GreptimeDB, so no MinIO is started. Enable it with
-# `docker compose --profile s3 up` only if you want S3-backed media/exports or OTel ingestion.
+# Object storage (MinIO/S3) is OPTIONAL: by default media, the eval observation blob store, and the
+# OTel ingestion carrier use a local-file backend and ingestion persists to GreptimeDB, so no MinIO
+# is started. Enable it with `docker compose --profile s3 up` only if you want S3-backed media/event
+# stores or batch/blob exports.
 # We recommend restricting inbound traffic on the host to langfuse-web (port 3000) only.
 # All other components are bound to localhost (127.0.0.1) to only accept connections from the local machine.
 # External connections from other machines will not be able to reach these services directly.
