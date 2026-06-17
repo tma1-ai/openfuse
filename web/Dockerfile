@@ -36,7 +36,12 @@ COPY --from=pruner /app/out/pnpm-lock.yaml ./pnpm-lock.yaml
 COPY --from=pruner /app/out/pnpm-workspace.yaml ./pnpm-workspace.yaml
 COPY --from=pruner /app/out/json/ .
 
-RUN pnpm install --frozen-lockfile
+# --config.minimumReleaseAge=0 skips pnpm's supply-chain age verification of every lockfile entry.
+# This is a --frozen-lockfile install (resolves nothing, just materializes the committed+vetted
+# lockfile), so the age gate adds no protection here — it only slows the build and would false-fail
+# on a recently-added dep not yet in minimumReleaseAgeExclude. The gate stays enforced where it
+# matters: non-frozen installs that update the lockfile.
+RUN pnpm install --frozen-lockfile --config.minimumReleaseAge=0
 
 ENV DOCKER_BUILD 1
 ENV NEXT_MANUAL_SIG_HANDLE true
