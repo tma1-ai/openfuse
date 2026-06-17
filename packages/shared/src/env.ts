@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { removeEmptyEnvVariables } from "./utils/environment";
+import {
+  isValidGreptimeDatabaseName,
+  isValidGreptimeDuration,
+} from "./utils/greptimeRetentionDuration";
 
 const EnvSchema = z.object({
   NEXT_PUBLIC_LANGFUSE_CLOUD_REGION: z.string().optional(),
@@ -91,7 +95,13 @@ const EnvSchema = z.object({
   GREPTIME_SQL_PORT: z.coerce.number().int().positive().default(4002),
   // Optional dedicated read-only MySQL host; falls back to GREPTIME_SQL_HOST.
   GREPTIME_SQL_READ_ONLY_HOST: z.string().optional(),
-  GREPTIME_DB: z.string().default("openfuse"),
+  GREPTIME_DB: z
+    .string()
+    .default("openfuse")
+    .refine(isValidGreptimeDatabaseName, {
+      message:
+        "GREPTIME_DB must be an unquoted GreptimeDB identifier (a lowercase letter or underscore, then lowercase letters, digits, or underscores) so ALTER DATABASE retention can target it",
+    }),
   GREPTIME_USER: z.string().default(""),
   GREPTIME_PASSWORD: z.string().default(""),
   GREPTIME_SQL_MAX_OPEN_CONNECTIONS: z.coerce.number().int().default(25),
@@ -100,7 +110,13 @@ const EnvSchema = z.object({
   // projections, EAV) with one shared expiry; default 730d (2 years). humantime duration, e.g.
   // "730d", "104w", "2y". Applied idempotently at schema bootstrap (greptime:migrate). Change
   // retention for the whole store at any time with a single `ALTER DATABASE ... SET 'ttl'`.
-  LANGFUSE_GREPTIME_TTL: z.string().default("730d"),
+  LANGFUSE_GREPTIME_TTL: z
+    .string()
+    .default("730d")
+    .refine(isValidGreptimeDuration, {
+      message:
+        "LANGFUSE_GREPTIME_TTL must be a humantime duration such as '730d', '104w', or '2y'",
+    }),
   LANGFUSE_ENABLE_SINGLE_LEVEL_QUERY_OPTIMIZATION: z
     .enum(["true", "false"])
     .default("false"),
