@@ -156,6 +156,12 @@ COPY --chown=nextjs:nodejs ./web/entrypoint.sh ./web/entrypoint.sh
 COPY --chown=nextjs:nodejs ./packages/shared/scripts/cleanup.sql ./packages/shared/scripts/cleanup.sql
 RUN chmod +x ./web/entrypoint.sh
 
+# Pre-create the default local blob-store mount points owned by the app user so a fresh named volume
+# (LANGFUSE_MEDIA_LOCAL_PATH / LANGFUSE_EVENT_LOCAL_PATH in docker-compose) inherits writable
+# ownership. A root-owned volume mount otherwise makes the non-root runtime user fail to mkdir.
+RUN mkdir -p /langfuse_media_data /langfuse_event_data && \
+    chown nextjs:nodejs /langfuse_media_data /langfuse_event_data
+
 USER nextjs
 
 # Default port to 3000
