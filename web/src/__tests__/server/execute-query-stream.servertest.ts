@@ -36,20 +36,6 @@ function createPostMocks(body: unknown) {
   return { req, res };
 }
 
-function parseSSEEvents(raw: string): Array<{ event: string; data: string }> {
-  return raw
-    .split("\n\n")
-    .filter(Boolean)
-    .map((block) => {
-      const eventMatch = block.match(/^event: (.+)$/m);
-      const dataMatch = block.match(/^data: (.+)$/m);
-      return {
-        event: eventMatch?.[1] ?? "",
-        data: dataMatch?.[1] ?? "",
-      };
-    });
-}
-
 // --- Test setup ---
 
 describe("execute-query-stream handler", () => {
@@ -93,14 +79,12 @@ describe("execute-query-stream handler", () => {
   function makeSession(overrides?: {
     admin?: boolean;
     projects?: Array<{ id: string }>;
-    v4BetaEnabled?: boolean;
   }) {
     return {
       user: {
         id: "user-1",
         email: "test@example.com",
         admin: overrides?.admin ?? false,
-        v4BetaEnabled: overrides?.v4BetaEnabled ?? true,
         organizations: [
           {
             id: orgId,
@@ -128,17 +112,15 @@ describe("execute-query-stream handler", () => {
     };
   }
 
-  it("should return 400 when v4 beta is disabled", async () => {
-    mockGetServerAuthSession.mockResolvedValue(
-      makeSession({ v4BetaEnabled: false }),
-    );
+  it("should return 400 because streaming dashboard queries are no longer supported", async () => {
+    mockGetServerAuthSession.mockResolvedValue(makeSession());
     const { req, res } = createPostMocks(makeBody());
 
     await handler(req, res);
 
     expect(res._getStatusCode()).toBe(400);
     expect(JSON.parse(res._getData())).toMatchObject({
-      message: "Streaming is only supported for v4-enabled dashboard queries",
+      message: "Streaming dashboard queries are no longer supported",
     });
   });
 
@@ -222,79 +204,5 @@ describe("execute-query-stream handler", () => {
       projectId,
       orgId,
     });
-    // Should still stream data successfully
-    const events = parseSSEEvents(res._getData());
-    expect(events.some((e) => e.event === "done")).toBe(true);
-  });
-
-  // --- Integration tests (real ClickHouse) ---
-
-  it("should stream real trace count from ClickHouse and end with done", async () => {
-    mockGetServerAuthSession.mockResolvedValue(makeSession());
-    const { req, res } = createPostMocks(makeBody());
-
-    await handler(req, res);
-
-    const events = parseSSEEvents(res._getData());
-
-    const rowEvents = events.filter((e) => e.event === "row");
-    expect(rowEvents.length).toBeGreaterThanOrEqual(1);
-
-    // The count query returns count_count (measure_aggregation naming)
-    const firstRow = JSON.parse(rowEvents[0].data);
-    expect(Number(firstRow.count_count)).toBe(5);
-
-    const doneEvents = events.filter((e) => e.event === "done");
-    expect(doneEvents).toHaveLength(1);
-  });
-
-  it("should stream rows with dimension grouping", async () => {
-    mockGetServerAuthSession.mockResolvedValue(makeSession());
-    const { req, res } = createPostMocks(
-      makeBody({
-        dimensions: [{ field: "name" }],
-        orderBy: null,
-      }),
-    );
-
-    await handler(req, res);
-
-    const events = parseSSEEvents(res._getData());
-    const rowEvents = events.filter((e) => e.event === "row");
-
-    // 5 distinct trace names (test-trace-0 through test-trace-4)
-    expect(rowEvents).toHaveLength(5);
-
-    const rows = rowEvents.map((e) => JSON.parse(e.data));
-    for (const row of rows) {
-      expect(row).toHaveProperty("name");
-      expect(row).toHaveProperty("count_count");
-      expect(Number(row.count_count)).toBe(1);
-    }
-
-    expect(events.some((e) => e.event === "done")).toBe(true);
-  });
-
-  it("should return empty result for non-matching time range", async () => {
-    mockGetServerAuthSession.mockResolvedValue(makeSession());
-    const { req, res } = createPostMocks(
-      makeBody({
-        fromTimestamp: "2020-01-01T00:00:00.000Z",
-        toTimestamp: "2020-01-02T00:00:00.000Z",
-      }),
-    );
-
-    await handler(req, res);
-
-    const events = parseSSEEvents(res._getData());
-    const rowEvents = events.filter((e) => e.event === "row");
-
-    // Should get one row with count = 0 (aggregate with no matching data)
-    expect(rowEvents.length).toBeLessThanOrEqual(1);
-    if (rowEvents.length === 1) {
-      expect(Number(JSON.parse(rowEvents[0].data).count_count)).toBe(0);
-    }
-
-    expect(events.some((e) => e.event === "done")).toBe(true);
   });
 });

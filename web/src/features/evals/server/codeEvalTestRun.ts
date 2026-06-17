@@ -25,7 +25,6 @@ import {
   type ObservationVariableMapping,
 } from "@langfuse/shared";
 import { EvalTemplateType, type PrismaClient } from "@langfuse/shared/src/db";
-import { env } from "@/src/env.mjs";
 import { getExperimentEvalPreviewFilters } from "@/src/features/evals/utils/experiment-eval-preview-utils";
 import {
   isEventTarget,
@@ -254,51 +253,7 @@ async function getObservationForEvalById(params: {
   startTime: Date;
   shouldReadFromObservationsTable?: boolean;
 }): Promise<ObservationForEval> {
-  if (
-    env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN !== "true" ||
-    params.shouldReadFromObservationsTable
-  ) {
-    return getObservationForEvalByIdFromLegacyObservations(params);
-  }
-
-  const startTimeUpperBound = new Date(params.startTime.getTime() + 1);
-
-  const stream = await getEventsStreamForEval({
-    projectId: params.projectId,
-    filter: [
-      {
-        type: "string",
-        column: "traceId",
-        operator: "=",
-        value: params.traceId,
-      },
-      {
-        type: "datetime",
-        column: "startTime",
-        operator: ">=",
-        value: params.startTime,
-      },
-      {
-        type: "datetime",
-        column: "startTime",
-        operator: "<",
-        value: startTimeUpperBound,
-      },
-      {
-        type: "stringOptions",
-        column: "id",
-        operator: "any of",
-        value: [params.id],
-      },
-    ],
-    rowLimit: 1,
-  });
-
-  for await (const row of stream) {
-    return observationForEvalSchema.parse(row);
-  }
-
-  throwObservationNotFound();
+  return getObservationForEvalByIdFromLegacyObservations(params);
 }
 
 async function getObservationForEvalByIdFromLegacyObservations(params: {

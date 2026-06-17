@@ -19,8 +19,6 @@ import {
   eventTypes,
   logger,
   traceDeletionProcessor,
-  getTracesFromEventsTableForPublicApi,
-  getTracesCountFromEventsTableForPublicApi,
 } from "@langfuse/shared/src/server";
 import { v4 } from "uuid";
 import { telemetry } from "@/src/features/telemetry";
@@ -123,34 +121,6 @@ export default withMiddlewares(
           toTimestamp: query.toTimestamp ?? undefined,
         };
 
-        if (query.useEventsTable) {
-          const [items, count] = await Promise.all([
-            getTracesFromEventsTableForPublicApi({
-              ...filterProps,
-              advancedFilters: query.filter,
-              orderBy: query.orderBy ?? null,
-            }),
-            getTracesCountFromEventsTableForPublicApi({
-              ...filterProps,
-              advancedFilters: query.filter,
-            }),
-          ]);
-
-          return {
-            data: items.map((item) => ({
-              ...item,
-              externalId: null,
-            })),
-            meta: {
-              page: query.page,
-              limit: query.limit,
-              totalItems: count,
-              totalPages: Math.ceil(count / query.limit),
-            },
-          };
-        }
-
-        // Legacy code path using traces table
         const [items, count] = await Promise.all([
           generateTracesForPublicApi({
             props: filterProps,

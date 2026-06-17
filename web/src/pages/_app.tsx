@@ -79,7 +79,6 @@ import { InAppAiAgentProvider } from "@/src/ee/features/in-app-agent/components/
 import { useLangfuseCloudRegion } from "@/src/features/organizations/hooks";
 import { ScoreCacheProvider } from "@/src/features/scores/contexts/ScoreCacheContext";
 import { CorrectionCacheProvider } from "@/src/features/corrections/contexts/CorrectionCacheContext";
-import { V4_BETA_ENABLED_POSTHOG_PROPERTY } from "@/src/features/posthog-analytics/usePostHogClientCapture";
 
 // Check that PostHog is client-side (used to handle Next.js SSR) and that env vars are set
 if (
@@ -203,12 +202,6 @@ function UserTracking() {
               })),
             ) ?? undefined,
           LANGFUSE_CLOUD_REGION: region,
-          [V4_BETA_ENABLED_POSTHOG_PROPERTY]:
-            sessionUser.v4BetaEnabled ?? false,
-        });
-        posthog.register({
-          [V4_BETA_ENABLED_POSTHOG_PROPERTY]:
-            sessionUser.v4BetaEnabled ?? false,
         });
       }
 
@@ -219,7 +212,6 @@ function UserTracking() {
       });
     } else if (session.status === "unauthenticated") {
       lastIdentifiedUser.current = null;
-      posthog.unregister(V4_BETA_ENABLED_POSTHOG_PROPERTY);
       // Sentry
       setUser(null);
     }

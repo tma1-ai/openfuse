@@ -38,7 +38,6 @@ import {
   getChartLoadingProgress,
   getChartLoadingStateProps,
 } from "@/src/features/widgets/chart-library/chartLoadingStateUtils";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { useScheduledDashboardExecuteQuery } from "@/src/hooks/useDashboardQueryScheduler";
 
 export interface WidgetPlacement {
@@ -72,7 +71,6 @@ export function DashboardWidget({
 }) {
   const router = useRouter();
   const utils = api.useUtils();
-  const { isBetaEnabled } = useV4Beta();
   const widget = api.dashboardWidgets.get.useQuery(
     {
       widgetId: placement.widgetId,
@@ -90,13 +88,8 @@ export function DashboardWidget({
     filters: widget.data?.filters ?? [],
   });
   // If widget requires v2 features (minVersion >= 2), must use v2.
-  // Otherwise follow the beta toggle.
   const metricsVersion: ViewVersion =
-    widgetRequiresV2 || (widget.data?.minVersion ?? 1) >= 2
-      ? "v2"
-      : isBetaEnabled && (widget.data?.view ?? "traces") !== "traces"
-        ? "v2"
-        : "v1";
+    widgetRequiresV2 || (widget.data?.minVersion ?? 1) >= 2 ? "v2" : "v1";
   const hasCUDAccess =
     useHasProjectAccess({ projectId, scope: "dashboards:CUD" }) &&
     dashboardOwner !== "LANGFUSE";
@@ -214,7 +207,7 @@ export function DashboardWidget({
       },
       refreshKey: retryCount,
       useSSE: shouldUseWidgetSSE({
-        isV4Enabled: isBetaEnabled,
+        isV4Enabled: false,
         version: metricsVersion,
       }),
       enabled:
@@ -228,7 +221,7 @@ export function DashboardWidget({
     errorMessage: queryResult.error,
   });
   const usesBackendProgress = shouldUseWidgetSSE({
-    isV4Enabled: isBetaEnabled,
+    isV4Enabled: false,
     version: metricsVersion,
   });
   const loadingStateLayout =

@@ -81,7 +81,6 @@ const buildSession = ({
       excludeClickhouseRead: false,
     },
     admin: false,
-    v4BetaEnabled: false,
   },
   environment: {} as any,
 });

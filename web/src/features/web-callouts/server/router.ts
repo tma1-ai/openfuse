@@ -170,7 +170,7 @@ export const webCalloutsRouter = createTRPCRouter({
       return invokeWebCalloutEndpoint({
         prisma: ctx.prisma,
         input,
-        useEventsTable: ctx.session.user.v4BetaEnabled === true,
+        useEventsTable: false,
       });
     }),
 });

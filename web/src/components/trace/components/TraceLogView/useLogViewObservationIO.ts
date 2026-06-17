@@ -9,7 +9,6 @@ import { useMemo } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { api } from "@/src/utils/api";
 import { type FlatLogItem } from "./log-view-types";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 
 export interface UseLogViewObservationIOParams {
   observationId: string;
@@ -33,10 +32,7 @@ export function useLogViewObservationIO({
   startTime,
   enabled,
 }: UseLogViewObservationIOParams) {
-  const { isBetaEnabled } = useV4Beta();
-
-  // Old path: fetch from observations table (beta OFF)
-  const observationsQuery = api.observations.byId.useQuery(
+  return api.observations.byId.useQuery(
     {
       observationId,
       traceId,
@@ -44,39 +40,11 @@ export function useLogViewObservationIO({
       startTime,
     },
     {
-      enabled: enabled && !isBetaEnabled,
+      enabled,
       staleTime: Infinity,
       refetchOnWindowFocus: false,
     },
   );
-
-  // New path: fetch from events table (beta ON)
-  const eventsQuery = api.events.batchIO.useQuery(
-    {
-      projectId,
-      observations: [{ id: observationId, traceId }],
-      minStartTime: startTime,
-      maxStartTime: startTime,
-      truncated: false,
-    },
-    {
-      enabled: enabled && isBetaEnabled,
-      staleTime: Infinity,
-      refetchOnWindowFocus: false,
-      select: (data) => data[0], // Extract single result from batch
-    },
-  );
-
-  if (isBetaEnabled) {
-    return {
-      data: eventsQuery.data,
-      isLoading: eventsQuery.isLoading,
-      error: eventsQuery.error,
-      isError: eventsQuery.isError,
-    };
-  }
-
-  return observationsQuery;
 }
 
 /**

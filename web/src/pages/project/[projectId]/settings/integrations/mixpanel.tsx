@@ -37,7 +37,6 @@ import {
   EXPORT_SOURCE_OPTIONS,
   isLegacyBlobExportAllowed,
 } from "@langfuse/shared";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { useLangfuseCloudRegion } from "@/src/features/organizations/hooks";
 import { useQueryProject } from "@/src/features/projects/hooks";
 import { useHasProjectAccess } from "@/src/features/rbac/utils/checkProjectAccess";
@@ -146,7 +145,6 @@ const MixpanelIntegrationSettingsForm = ({
   isLoading: boolean;
 }) => {
   const capture = usePostHogClientCapture();
-  const { isBetaEnabled } = useV4Beta();
   const { isLangfuseCloud } = useLangfuseCloudRegion();
   const { project } = useQueryProject();
 
@@ -156,7 +154,7 @@ const MixpanelIntegrationSettingsForm = ({
   const isPostCutoffCloud =
     project?.createdAt != null &&
     !isLegacyBlobExportAllowed(new Date(project.createdAt), isLangfuseCloud);
-  const showExportSourceField = isBetaEnabled && !isPostCutoffCloud;
+  const showExportSourceField = false;
 
   const mixpanelForm = useForm({
     resolver: zodResolver(mixpanelIntegrationFormSchema),
@@ -169,9 +167,7 @@ const MixpanelIntegrationSettingsForm = ({
       exportSource: isPostCutoffCloud
         ? AnalyticsIntegrationExportSource.EVENTS
         : (state?.exportSource ??
-          (isBetaEnabled
-            ? AnalyticsIntegrationExportSource.EVENTS
-            : AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS)),
+          AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS),
     },
     disabled: isLoading,
   });
@@ -186,9 +182,7 @@ const MixpanelIntegrationSettingsForm = ({
       exportSource: isPostCutoffCloud
         ? AnalyticsIntegrationExportSource.EVENTS
         : (state?.exportSource ??
-          (isBetaEnabled
-            ? AnalyticsIntegrationExportSource.EVENTS
-            : AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS)),
+          AnalyticsIntegrationExportSource.TRACES_OBSERVATIONS),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);

@@ -24,7 +24,6 @@ import { EvaluatorSelectionStep } from "./EvaluatorSelectionStep";
 import { ConfirmationStep } from "./ConfirmationStep";
 import { CreateEvaluatorDialog } from "./CreateEvaluatorDialog";
 import { buildQueryWithSelectedIds } from "./utils";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 
 type RunEvaluationDialogProps = {
   projectId: string;
@@ -45,7 +44,6 @@ type RunEvaluationDialogProps = {
 type DialogStep = "select-evaluator" | "confirm";
 
 export function RunEvaluationDialog(props: RunEvaluationDialogProps) {
-  const { isBetaEnabled } = useV4Beta();
   const {
     projectId,
     selectedObservationIds,
@@ -97,35 +95,9 @@ export function RunEvaluationDialog(props: RunEvaluationDialogProps) {
       startTime: props.exampleObservation?.startTime ?? null,
     },
     {
-      enabled:
-        !isBetaEnabled &&
-        Boolean(
-          props.exampleObservation?.id && props.exampleObservation?.traceId,
-        ),
-    },
-  );
-
-  const previewEventQuery = api.events.batchIO.useQuery(
-    {
-      projectId,
-      observations: [
-        {
-          id: props.exampleObservation?.id as string,
-          traceId: props.exampleObservation?.traceId as string,
-        },
-      ],
-      minStartTime: props.exampleObservation?.startTime as Date,
-      maxStartTime: props.exampleObservation?.startTime as Date,
-      truncated: false,
-    },
-    {
-      enabled:
-        isBetaEnabled &&
-        Boolean(
-          props.exampleObservation?.id &&
-          props.exampleObservation?.traceId &&
-          props.exampleObservation?.startTime,
-        ),
+      enabled: Boolean(
+        props.exampleObservation?.id && props.exampleObservation?.traceId,
+      ),
     },
   );
 
@@ -216,15 +188,8 @@ export function RunEvaluationDialog(props: RunEvaluationDialogProps) {
                 isQueryLoading={evaluatorsQuery.isLoading}
                 isQueryError={evaluatorsQuery.isError}
                 queryErrorMessage={evaluatorsQuery.error?.message}
-                previewObservation={
-                  isBetaEnabled
-                    ? previewEventQuery.data?.[0]
-                    : previewObservationQuery.data
-                }
-                isPreviewLoading={
-                  previewObservationQuery.isLoading ||
-                  previewEventQuery.isLoading
-                }
+                previewObservation={previewObservationQuery.data}
+                isPreviewLoading={previewObservationQuery.isLoading}
                 evaluatorScopeLabel={evaluatorScopeLabel}
                 selectedEvaluatorIds={selectedEvaluatorIds}
                 evaluatorSearchQuery={evaluatorSearchQuery}

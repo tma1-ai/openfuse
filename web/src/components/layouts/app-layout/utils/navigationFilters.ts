@@ -73,11 +73,8 @@ export const filters = {
     if (route.featureFlag === undefined) return route;
 
     if (route.featureFlag === "experimentsV4Enabled") {
-      return ctx.session?.user?.v4BetaEnabled === true ? route : null;
-    }
-
-    if (route.featureFlag === "v4BetaToggleVisible") {
-      return ctx.session?.user?.canToggleV4 === true ? route : null;
+      // V4 experiments are off by default; the route stays hidden.
+      return null;
     }
 
     const hasFlag =

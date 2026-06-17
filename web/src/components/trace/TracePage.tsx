@@ -13,10 +13,6 @@ import { Button } from "@/src/components/ui/button";
 import Link from "next/link";
 import { stripBasePath } from "@/src/utils/redirect";
 import { Badge } from "@/src/components/ui/badge";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
-import { useEventsTraceData } from "@/src/features/events/hooks/useEventsTraceData";
-import { showErrorToast } from "@/src/features/notifications/showErrorToast";
-import { useEffect } from "react";
 
 export function TracePage({
   traceId,
@@ -28,17 +24,14 @@ export function TracePage({
   const router = useRouter();
   const session = useSession();
   const routeProjectId = (router.query.projectId as string) ?? "";
-  const { isBetaEnabled } = useV4Beta();
 
-  // Old path: fetch from traces table (beta OFF)
-  const tracesQuery = api.traces.byIdWithObservationsAndScores.useQuery(
+  const trace = api.traces.byIdWithObservationsAndScores.useQuery(
     {
       traceId,
       timestamp,
       projectId: routeProjectId,
     },
     {
-      enabled: !isBetaEnabled,
       retry(failureCount, error) {
         if (
           error.data?.code === "UNAUTHORIZED" ||
@@ -50,60 +43,19 @@ export function TracePage({
     },
   );
 
-  // New path: fetch from events table (beta ON)
-  const eventsData = useEventsTraceData({
-    projectId: routeProjectId,
-    traceId,
-    timestamp,
-    enabled: isBetaEnabled,
-  });
-
-  // Use the appropriate data source based on beta toggle
-  const trace = isBetaEnabled
-    ? {
-        data: eventsData.data,
-        isLoading: eventsData.isLoading,
-        error: eventsData.error as typeof tracesQuery.error,
-      }
-    : tracesQuery;
-
   const projectIdForAccessCheck = trace.data?.projectId ?? routeProjectId;
   const hasProjectAccess = useIsAuthenticatedAndProjectMember(
     projectIdForAccessCheck,
   );
 
-  useEffect(() => {
-    if (isBetaEnabled && eventsData.cutoffObservationsAfterMaxCount) {
-      showErrorToast(
-        "Trace truncated",
-        "This trace has too many observations for the detail view. Only a subset is shown.",
-        "WARNING",
-      );
-    }
-  }, [isBetaEnabled, eventsData.cutoffObservationsAfterMaxCount]);
-
-  // Handle errors - for events path, we check if there's no data after loading
-  if (!isBetaEnabled && tracesQuery.error?.data?.code === "UNAUTHORIZED")
+  if (trace.error?.data?.code === "UNAUTHORIZED")
     return <ErrorPage message="You do not have access to this trace." />;
 
-  if (!isBetaEnabled && tracesQuery.error?.data?.code === "NOT_FOUND")
+  if (trace.error?.data?.code === "NOT_FOUND")
     return (
       <ErrorPage
         title="Trace not found"
         message="The trace is either still being processed or has been deleted."
-        additionalButton={{
-          label: "Retry",
-          onClick: () => window.location.reload(),
-        }}
-      />
-    );
-
-  // For events path: show not found if no observations found after loading
-  if (isBetaEnabled && !eventsData.isLoading && !eventsData.data)
-    return (
-      <ErrorPage
-        title="Trace not found"
-        message="No observations found for this trace. The trace may still be processing or has been deleted."
         additionalButton={{
           label: "Retry",
           onClick: () => window.location.reload(),

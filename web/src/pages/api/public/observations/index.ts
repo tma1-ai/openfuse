@@ -1,8 +1,4 @@
 import { prisma } from "@langfuse/shared/src/db";
-import {
-  getObservationsFromEventsTableForPublicApi,
-  getObservationsCountFromEventsTableForPublicApi,
-} from "@langfuse/shared/src/server";
 
 import {
   LEGACY_PUBLIC_API_OBSERVATIONS_RESOURCE_ERROR_MESSAGE,
@@ -45,24 +41,6 @@ export default withMiddlewares(
           advancedFilters: query.filter,
         };
 
-        if (query.useEventsTable) {
-          const [items, count] = await Promise.all([
-            getObservationsFromEventsTableForPublicApi(filterProps),
-            getObservationsCountFromEventsTableForPublicApi(filterProps),
-          ]);
-
-          return {
-            data: items.map(transformDbToApiObservation),
-            meta: {
-              page: query.page,
-              limit: query.limit,
-              totalItems: count,
-              totalPages: Math.ceil(count / query.limit),
-            },
-          };
-        }
-
-        // Legacy code path using observations table
         const [items, count] = await Promise.all([
           generateObservationsForPublicApi(filterProps),
           getObservationsCountForPublicApi(filterProps),

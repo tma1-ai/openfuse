@@ -12,7 +12,6 @@
 
 import { toolRegistry } from "./registry";
 import { promptsFeature } from "../features/prompts";
-import { observationsFeature } from "../features/observations";
 import { annotationQueuesFeature } from "../features/annotationQueues";
 import { commentsFeature } from "../features/comments";
 import { datasetsFeature } from "../features/datasets";
@@ -34,7 +33,6 @@ import { evalsFeature } from "../features/evals";
 export function bootstrapMcpFeatures(): void {
   // Register all feature modules
   toolRegistry.register(promptsFeature);
-  toolRegistry.register(observationsFeature);
   toolRegistry.register(annotationQueuesFeature);
   toolRegistry.register(commentsFeature);
   toolRegistry.register(datasetsFeature);

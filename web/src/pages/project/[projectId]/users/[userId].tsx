@@ -11,8 +11,6 @@ import { Badge } from "@/src/components/ui/badge";
 import { ActionButton } from "@/src/components/ActionButton";
 import { LayoutDashboard } from "lucide-react";
 import Page from "@/src/components/layouts/page";
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
-import { ObservationsEventsTable } from "@/src/features/events/components";
 
 const tabs = ["Traces", "Sessions", "Scores"] as const;
 
@@ -20,25 +18,11 @@ export default function UserPage() {
   const router = useRouter();
   const userId = router.query.userId as string;
   const projectId = router.query.projectId as string;
-  const { isBetaEnabled } = useV4Beta();
 
-  const userV3 = api.users.byId.useQuery(
-    {
-      projectId: projectId,
-      userId,
-    },
-    { enabled: !isBetaEnabled },
-  );
-
-  const userV4 = api.users.byIdFromEvents.useQuery(
-    {
-      projectId: projectId,
-      userId,
-    },
-    { enabled: isBetaEnabled },
-  );
-
-  const user = isBetaEnabled ? userV4 : userV3;
+  const user = api.users.byId.useQuery({
+    projectId: projectId,
+    userId,
+  });
 
   const [currentTab, setCurrentTab] = useQueryParam(
     "tab",
@@ -116,9 +100,7 @@ export default function UserPage() {
               Active:{" "}
               {user.data.firstTrace
                 ? `${user.data.firstTrace.toLocaleString()} - ${user.data.lastTrace?.toLocaleString()}`
-                : isBetaEnabled
-                  ? "No activity yet"
-                  : "No traces yet"}
+                : "No traces yet"}
             </Badge>
           </div>
         )}
@@ -186,18 +168,6 @@ function ScoresTab({ userId, projectId }: TabProps) {
 }
 
 function TracesTab({ userId, projectId }: TabProps) {
-  const { isBetaEnabled } = useV4Beta();
-
-  if (isBetaEnabled) {
-    return (
-      <ObservationsEventsTable
-        projectId={projectId}
-        userId={userId}
-        omittedFilter={["userId"]}
-      />
-    );
-  }
-
   return (
     <TracesTable
       projectId={projectId}
@@ -208,14 +178,11 @@ function TracesTab({ userId, projectId }: TabProps) {
 }
 
 function SessionsTab({ userId, projectId }: TabProps) {
-  const { isBetaEnabled } = useV4Beta();
-
   return (
     <SessionsTable
       projectId={projectId}
       userId={userId}
       omittedFilter={["userIds"]}
-      isBetaEnabled={isBetaEnabled}
     />
   );
 }

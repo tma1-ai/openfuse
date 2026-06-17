@@ -1,15 +1,10 @@
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
-
 export function useExperimentAccess() {
-  const { isBetaEnabled: isV4BetaEnabled, isInitializing } = useV4Beta();
-
+  // Experiments were gated behind the v4 beta, which is now removed.
   return {
-    canAccessExperiments: isV4BetaEnabled,
-    canSeeExperimentsNav: isV4BetaEnabled,
-    // Experiments beta now follows the v4 / fast-preview beta flag directly.
-    // There is no separate opt-in toggle anymore.
-    isExperimentsBetaActive: isV4BetaEnabled,
-    isInitializing,
-    isV4BetaEnabled,
+    canAccessExperiments: false,
+    canSeeExperimentsNav: false,
+    isExperimentsBetaActive: false,
+    isInitializing: false,
+    isV4BetaEnabled: false,
   };
 }

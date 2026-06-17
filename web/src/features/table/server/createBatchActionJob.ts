@@ -28,7 +28,6 @@ type CreateBatchActionJob = {
   session: {
     user: {
       id: string;
-      v4BetaEnabled?: boolean | null;
     };
     orgId: string;
     orgRole: Role;
@@ -57,11 +56,12 @@ export const createBatchActionJob = async ({
     tableName,
   });
 
-  // Snapshot the user's v4 beta flag so the worker reads from the same data
-  // source as the UI table; overrides any client-sent value.
+  // v4 events-table preview is gone; the worker always reads legacy data
+  // sources. Hard-force the persisted snapshot to false so a stale client-sent
+  // useEventsTable value can never be stored on the job.
   const queryWithSnapshot: BatchActionQuery = {
     ...query,
-    useEventsTable: session.user.v4BetaEnabled ?? false,
+    useEventsTable: false,
   };
 
   const batchActionId = generateBatchActionId(projectId, actionId, tableName);

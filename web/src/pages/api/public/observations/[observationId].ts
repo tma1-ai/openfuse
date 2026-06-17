@@ -13,7 +13,6 @@ import { LangfuseNotFoundError } from "@langfuse/shared";
 import {
   enrichObservationWithModelData,
   getObservationById,
-  getObservationByIdFromEventsTable,
 } from "@langfuse/shared/src/server";
 
 export default withMiddlewares(
@@ -24,17 +23,11 @@ export default withMiddlewares(
       querySchema: GetObservationV1Query,
       responseSchema: GetObservationV1Response,
       fn: async ({ query, auth }) => {
-        const clickhouseObservation = query.useEventsTable
-          ? await getObservationByIdFromEventsTable({
-              id: query.observationId,
-              projectId: auth.scope.projectId,
-              fetchWithInputOutput: true,
-            })
-          : await getObservationById({
-              id: query.observationId,
-              projectId: auth.scope.projectId,
-              fetchWithInputOutput: true,
-            });
+        const clickhouseObservation = await getObservationById({
+          id: query.observationId,
+          projectId: auth.scope.projectId,
+          fetchWithInputOutput: true,
+        });
 
         if (!clickhouseObservation) {
           throw new LangfuseNotFoundError(

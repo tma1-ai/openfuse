@@ -2125,11 +2125,7 @@ describe("/api/public/traces API Endpoint", () => {
       });
     };
 
-    // Run test suite twice - once for each implementation
     runTestSuite(false); // old traces table
-    if (env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true") {
-      runTestSuite(true); // Events table
-    }
   });
 
   // Dual-path tests for events table migration
@@ -2473,11 +2469,7 @@ describe("/api/public/traces API Endpoint", () => {
       });
     };
 
-    // Run test suite twice - once for each implementation
     runTestSuite(false); // Good old traces table
-    if (env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true") {
-      runTestSuite(true); // Events table
-    }
   });
 
   describe.skip("GET /api/public/traces env var controls", () => {
@@ -2688,10 +2680,6 @@ describe("/api/public/traces API Endpoint", () => {
       });
     };
 
-    // Run for both table implementations
     runFilterTests(false);
-    if (env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true") {
-      runFilterTests(true);
-    }
   });
 });

@@ -42,8 +42,6 @@ import { Label } from "@/src/components/ui/label";
 import { Alert, AlertDescription, AlertTitle } from "@/src/components/ui/alert";
 
 import { type z } from "zod";
-
-import { useV4Beta } from "@/src/features/events/hooks/useV4Beta";
 import { Input } from "@/src/components/ui/input";
 import startCase from "lodash/startCase";
 import { DatePickerWithRange } from "@/src/components/date-picker";
@@ -303,8 +301,6 @@ export function WidgetForm({
   }) => void;
   widgetId?: string;
 }) {
-  const { isBetaEnabled } = useV4Beta();
-
   // State for form fields
   const [widgetName, setWidgetName] = useState<string>(initialValues.name);
   const [widgetDescription, setWidgetDescription] = useState<string>(
@@ -340,11 +336,7 @@ export function WidgetForm({
     initialWidgetRequiresV2 ? 2 : (initialValues.minVersion ?? 1),
   );
   const viewVersion: ViewVersion =
-    initialWidgetRequiresV2 ||
-    widgetMinVersion >= 2 ||
-    (isBetaEnabled && selectedView !== "traces")
-      ? "v2"
-      : "v1";
+    initialWidgetRequiresV2 || widgetMinVersion >= 2 ? "v2" : "v1";
   const availableViewOptions = viewVersion === "v2" ? viewsV2 : views;
 
   // For regular charts: single metric selection
@@ -379,9 +371,6 @@ export function WidgetForm({
   const [selectedDimension, setSelectedDimension] = useState<string>(
     initialValues.dimension,
   );
-
-  const selectedViewRef = useRef(selectedView);
-  selectedViewRef.current = selectedView;
 
   // Pivot table dimensions state (for PIVOT_TABLE chart type)
   const [pivotDimensions, setPivotDimensions] = useState<string[]>(
@@ -484,32 +473,6 @@ export function WidgetForm({
     () => mapWidgetUiTableFilterToView(selectedView, userFilterState),
     [selectedView, userFilterState],
   );
-
-  // When beta is toggled on while "traces" is selected (and not editing an
-  // existing widget), auto-switch to "observations" and reset dependent fields.
-  // selectedView is read via ref to avoid re-triggering on view changes.
-  useEffect(() => {
-    if (
-      isBetaEnabled &&
-      selectedViewRef.current === "traces" &&
-      !isExistingWidget
-    ) {
-      setSelectedView("observations");
-      setSelectedMeasure("count");
-      setSelectedAggregation("count");
-      setSelectedDimension("none");
-      setPivotDimensions([]);
-      setSelectedMetrics([
-        {
-          id: "count_count",
-          measure: "count",
-          aggregation: "count" as z.infer<typeof metricAggregations>,
-          label: "Count Count",
-        },
-      ]);
-      setUserFilterState([]);
-    }
-  }, [isBetaEnabled, isExistingWidget]);
 
   // Static sort state for pivot table preview (non-interactive)
   const previewSortState = useMemo(
@@ -1230,7 +1193,7 @@ export function WidgetForm({
             (option) => option.value,
           ),
         },
-        isBetaEnabled,
+        isBetaEnabled: false,
       });
 
       setAutoLocked(true);
@@ -1501,47 +1464,12 @@ export function WidgetForm({
           <CardHeader>
             <div className="flex items-start justify-between gap-3">
               <CardTitle>Widget Configuration</CardTitle>
-              {!widgetId && isBetaEnabled && (
-                <>
-                  <input
-                    ref={importInputRef}
-                    type="file"
-                    accept="application/json,.json"
-                    className="hidden"
-                    onChange={handleImportWidget}
-                  />
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => importInputRef.current?.click()}
-                  >
-                    <Upload className="mr-2 h-4 w-4" />
-                    Import
-                  </Button>
-                </>
-              )}
             </div>
             <CardDescription>
               Configure your widget by selecting data and visualization options
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 overflow-y-auto">
-            {isBetaEnabled && selectedView === "traces" && (
-              <Alert
-                variant="default"
-                className="border-yellow-500/50 bg-yellow-50 dark:bg-yellow-950/20"
-              >
-                <AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-500" />
-                <AlertTitle className="text-yellow-800 dark:text-yellow-400">
-                  Traces view is not available in v4
-                </AlertTitle>
-                <AlertDescription className="text-yellow-700 dark:text-yellow-500">
-                  This widget uses the traces view which is not supported in v4.
-                  It will continue to use v3 definitions. To use v4, change the
-                  view to observations or scores.
-                </AlertDescription>
-              </Alert>
-            )}
             {/* Data Selection Section */}
             <div className="space-y-4">
               <div className="flex items-center justify-between">

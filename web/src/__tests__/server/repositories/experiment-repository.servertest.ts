@@ -1,5 +1,4 @@
 import { randomUUID } from "crypto";
-import { env } from "@/src/env.mjs";
 import {
   createEvent,
   createExperimentEventsAsGreptime,
@@ -15,18 +14,8 @@ import {
 
 const projectId = "7a88fb47-b4e2-43b8-a06c-a5ce950dc53a";
 
-const maybe =
-  env.LANGFUSE_MIGRATION_V4_ALLOW_PREVIEW_OPT_IN === "true"
-    ? describe
-    : describe.skip;
-
 describe("Clickhouse Experiment Repository Test", () => {
-  it("should kill redis connection", () => {
-    // we need at least one test case to avoid hanging
-    // redis connection when everything else is skipped.
-  });
-
-  maybe("get", () => {
+  describe("get", () => {
     it("should return 0 for non-existent project", async () => {
       const nonExistentProjectId = randomUUID();
 
@@ -1164,7 +1153,7 @@ describe("Clickhouse Experiment Repository Test", () => {
     });
   });
 
-  maybe("getExperimentItemsFilterOptions", () => {
+  describe("getExperimentItemsFilterOptions", () => {
     it("should return empty arrays when no experiment IDs provided", async () => {
       const result = await getExperimentItemsFilterOptions({
         projectId,
@@ -1507,7 +1496,7 @@ describe("Clickhouse Experiment Repository Test", () => {
     });
   });
 
-  maybe("getExperimentScoreOptions", () => {
+  describe("getExperimentScoreOptions", () => {
     it("should return empty arrays when no experiment IDs provided", async () => {
       const result = await getExperimentScoreOptions({
         projectId,
