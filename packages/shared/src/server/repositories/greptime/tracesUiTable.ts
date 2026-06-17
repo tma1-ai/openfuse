@@ -18,12 +18,6 @@ import {
 import { tracesTableGreptimeColumnDefinitions } from "../../greptime/sql/columnMappings";
 import { greptimeOrderBySql } from "../../greptime/sql/orderby";
 import { greptimeSearchCondition } from "../../greptime/sql/search";
-import {
-  greptimeAggregatedLevelString,
-  greptimeKnownKeySum,
-  greptimeLatencyMs,
-  greptimeLevelCounts,
-} from "../../greptime/sql/fragments";
 import { selectJsonColumn } from "../../greptime/sql/rowContract";
 import { quoteIdent } from "../../greptime/schemaUtils";
 import {
@@ -35,6 +29,7 @@ import {
 } from "../../greptime/sql/rowContract";
 import { reduceUsageOrCostDetails } from "../observations_converters";
 import { mergeUsageOrCostMaps } from "./rollup";
+import { buildObservationsStatsCte } from "./obsStatsCte";
 import { greptimeInClause, greptimeTsParam, notDeleted } from "./queryHelpers";
 
 /**
@@ -176,26 +171,10 @@ const buildShared = (props: GreptimeTracesTableProps): AssembledQuery => {
   const tracesFilterRes = tracesFilter.apply();
   const obsFilterRes = observationsFilter.apply();
 
-  const cteSql = `observations_stats AS (
-      SELECT
-        trace_id,
-        project_id,
-        count(*) AS observation_count,
-        ${greptimeLatencyMs()} AS latency_milliseconds,
-        ${greptimeLevelCounts()},
-        ${greptimeAggregatedLevelString()},
-        sum(total_cost) AS cost_total,
-        ${greptimeKnownKeySum("cost_details", "input", undefined, "cost_input")},
-        ${greptimeKnownKeySum("cost_details", "output", undefined, "cost_output")},
-        ${greptimeKnownKeySum("usage_details", "input", undefined, "usage_input")},
-        ${greptimeKnownKeySum("usage_details", "output", undefined, "usage_output")},
-        ${greptimeKnownKeySum("usage_details", "total", undefined, "usage_total")}
-      FROM observations
-      WHERE project_id = :projectId AND ${notDeleted()}
-        ${obsLookback ? "AND start_time >= :obsLookback" : ""}
-        ${obsFilterRes.query ? `AND ${obsFilterRes.query}` : ""}
-      GROUP BY trace_id, project_id
-    )`;
+  const cteSql = buildObservationsStatsCte({
+    lookbackParam: obsLookback ? "obsLookback" : undefined,
+    extraFilterSql: obsFilterRes.query || undefined,
+  });
 
   return {
     tracesFilterSql: tracesFilterRes.query,

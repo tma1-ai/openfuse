@@ -14,10 +14,10 @@ import {
 /**
  * GreptimeDB deletion (02-write-path.md, step 6).
  *
- * IMPORTANT: raw_events is `append_mode=true`, which the engine forbids `DELETE` on. The source of
- * truth is therefore retired by TTL only (invariant 6: raw_events TTL >= projection TTL). Explicit
- * entity deletion (GDPR / project delete) targets the projection + EAV subtables, which are normal
- * merge tables and accept `DELETE`.
+ * IMPORTANT: raw_events is `append_mode=true`, which the engine forbids `DELETE` on. Time-based
+ * retirement of raw_events is therefore TTL-only and optional (see `retention.ts`; invariant 6:
+ * raw_events TTL >= projection TTL). Explicit entity deletion (project / entity delete) targets the
+ * projection + EAV subtables, which are normal merge tables and accept `DELETE`.
  */
 
 const projectionDeletableTables = (

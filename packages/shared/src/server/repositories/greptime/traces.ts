@@ -43,7 +43,11 @@ import {
   type FilterList as ChFilterList,
   DateTimeFilter as ChDateTimeFilter,
 } from "../../queries";
-import { translateChFilterList } from "./translateChFilter";
+import {
+  remapObsAggregateFilter,
+  translateChFilterList,
+} from "./translateChFilter";
+import { buildObservationsStatsCte } from "./obsStatsCte";
 import { type ScoreGrain } from "../../greptime/sql/greptime-filter";
 
 /**
@@ -635,7 +639,9 @@ export const checkTraceExistsAndGetTimestamp = async ({
       traceLevelFilter.push(f);
       continue;
     }
-    if (findUiColumnMapping(observationsTableGreptimeColumnDefinitions, f.column)) {
+    if (
+      findUiColumnMapping(observationsTableGreptimeColumnDefinitions, f.column)
+    ) {
       obsLevelFilter.push(f);
       continue;
     }
@@ -925,12 +931,40 @@ const ALL_TRACE_FIELDS = [
 ] as const;
 
 /**
+ * Split a public-API trace filter into its observation-aggregate predicates (remapped onto the
+ * `observations_stats` CTE) and the rest (trace columns + rollup-score EXISTS via
+ * `translateChFilterList`). Both generators below share this so list and count filter identically.
+ */
+const splitTraceFilters = (
+  filter: ChFilterList,
+): {
+  hasObsFilter: boolean;
+  obs: { query: string; params: Record<string, unknown> };
+  rest: { query: string; params: Record<string, unknown> };
+} => {
+  const obs = new FilterList();
+  filter
+    .filter((f) => f.clickhouseTable === "observations")
+    .forEach((f) => obs.push(remapObsAggregateFilter(f)));
+  const rest = translateChFilterList(
+    filter.filter((f) => f.clickhouseTable !== "observations"),
+    { scoreGrain: TRACE_SCORE_GRAIN },
+  );
+  return {
+    hasObsFilter: obs.length() > 0,
+    obs: obs.apply(),
+    rest: rest.apply(),
+  };
+};
+
+/**
  * Public-API trace list. Mirrors the CH `buildTracesBaseQuery` field-group contract on the merged
- * projection: optional observation/score CTEs supply the `observations` / `scores` id arrays and the
- * `latency` / `totalCost` metrics; rollup-score advanced filters route to a correlated score-grain
- * EXISTS (TRACE_SCORE_GRAIN). Observation-aggregate advanced filtering (CH `observation_stats` column
- * filters) has no per-row projection column and is a documented narrow gap — it throws loud rather
- * than silently mis-filter. Returns the same domain shape as `convertDbRecordTracesListToDomain`.
+ * projection: the shared `observations_stats` CTE supplies the `observations` id array and the
+ * `latency` / `totalCost` metrics, an optional `score_stats` CTE supplies the `scores` id array,
+ * rollup-score advanced filters route to a correlated score-grain EXISTS (TRACE_SCORE_GRAIN), and
+ * observation-aggregate advanced filters (level / level counts / token & cost sums / latency) are
+ * remapped onto the same `observations_stats` CTE (`splitTraceFilters`). Returns the same domain
+ * shape as `convertDbRecordTracesListToDomain`.
  */
 export const generateTracesForPublicApi = async ({
   projectId,
@@ -945,13 +979,6 @@ export const generateTracesForPublicApi = async ({
   pagination?: { limit: number; page: number };
   fields?: readonly string[];
 }) => {
-  if (filter.some((f) => f.clickhouseTable === "observations")) {
-    throw new Error(
-      "Observation-aggregate filtering is not supported on the GreptimeDB public traces API; " +
-        "filter on trace columns (or score categories/values) instead.",
-    );
-  }
-
   const requested = fields ?? ALL_TRACE_FIELDS;
   const includeIo = requested.includes("io");
   const includeScores = requested.includes("scores");
@@ -959,9 +986,9 @@ export const generateTracesForPublicApi = async ({
   const includeMetrics = requested.includes("metrics");
   const needObsCte = includeObservations || includeMetrics;
 
-  const applied = translateChFilterList(filter, {
-    scoreGrain: TRACE_SCORE_GRAIN,
-  }).apply();
+  const { hasObsFilter, obs, rest } = splitTraceFilters(filter);
+  const joinObs = needObsCte || hasObsFilter;
+
   const fromTime = findFromTimeFilter(filter);
   const obsLowerBound = fromTime
     ? greptimeTsParam(
@@ -970,19 +997,14 @@ export const generateTracesForPublicApi = async ({
     : undefined;
 
   const ctes: string[] = [];
-  if (needObsCte) {
-    ctes.push(`obs_stats AS (
-      SELECT
-        trace_id,
-        project_id,
-        array_to_string(array_agg(id), :idsep) AS observation_ids,
-        sum(coalesce(total_cost, 0)) AS total_cost,
-        CAST((to_unixtime(greatest(max(start_time), max(end_time))) - to_unixtime(least(min(start_time), min(end_time)))) * 1000 AS BIGINT) AS latency_ms
-      FROM observations
-      WHERE project_id = :projectId AND ${notDeleted()}
-        ${obsLowerBound ? "AND start_time >= :obsLowerBound" : ""}
-      GROUP BY project_id, trace_id
-    )`);
+  if (joinObs) {
+    ctes.push(
+      buildObservationsStatsCte({
+        includeIds: needObsCte,
+        idSepParam: "idsep",
+        lookbackParam: obsLowerBound ? "obsLowerBound" : undefined,
+      }),
+    );
   }
   if (includeScores) {
     ctes.push(`score_stats AS (
@@ -1005,13 +1027,14 @@ export const generateTracesForPublicApi = async ({
     query: `
       ${ctes.length ? `WITH ${ctes.join(",\n")}` : ""}
       SELECT ${greptimeTraceSelect({ prefix: "t", excludeIo: !includeIo, excludeMetadata: !includeIo })}
-        ${needObsCte ? ", o.observation_ids AS observation_ids, o.total_cost AS rollup_total_cost, o.latency_ms AS rollup_latency_ms" : ""}
+        ${needObsCte ? ", o.observation_ids AS observation_ids, o.cost_total AS rollup_total_cost, o.latency_milliseconds AS rollup_latency_ms" : ""}
         ${includeScores ? ", sc.score_ids AS score_ids" : ""}
       FROM traces t
-      ${needObsCte ? "LEFT JOIN obs_stats o ON t.id = o.trace_id AND t.project_id = o.project_id" : ""}
+      ${joinObs ? "LEFT JOIN observations_stats o ON t.id = o.trace_id AND t.project_id = o.project_id" : ""}
       ${includeScores ? "LEFT JOIN score_stats sc ON t.id = sc.trace_id AND t.project_id = sc.project_id" : ""}
       WHERE t.project_id = :projectId AND ${notDeleted("t")}
-        ${applied.query ? `AND ${applied.query}` : ""}
+        ${rest.query ? `AND ${rest.query}` : ""}
+        ${obs.query ? `AND ${obs.query}` : ""}
       ${orderByClause}
       ${pagination ? "LIMIT :limit OFFSET :offset" : ""}`,
     params: {
@@ -1028,7 +1051,8 @@ export const generateTracesForPublicApi = async ({
             offset: (pagination.page - 1) * pagination.limit,
           }
         : {}),
-      ...applied.params,
+      ...rest.params,
+      ...obs.params,
     },
     readOnly: true,
   });
@@ -1053,22 +1077,31 @@ export const getTracesCountForPublicApi = async ({
   projectId: string;
   filter: ChFilterList;
 }): Promise<number> => {
-  if (filter.some((f) => f.clickhouseTable === "observations")) {
-    throw new Error(
-      "Observation-aggregate filtering is not supported on the GreptimeDB public traces API; " +
-        "filter on trace columns (or score categories/values) instead.",
-    );
-  }
-  const applied = translateChFilterList(filter, {
-    scoreGrain: TRACE_SCORE_GRAIN,
-  }).apply();
+  const { hasObsFilter, obs, rest } = splitTraceFilters(filter);
+  const fromTime = findFromTimeFilter(filter);
+  // Bound the obs scan the same way the list path does so count and list filter identically.
+  const obsLowerBound =
+    hasObsFilter && fromTime
+      ? greptimeTsParam(
+          new Date(fromTime.value.getTime() - TRACE_TO_OBS_LOOKBACK_MS),
+        )
+      : undefined;
+
   const rows = await greptimeQuery<{ count: string | number }>({
     query: `
+      ${hasObsFilter ? `WITH ${buildObservationsStatsCte({ lookbackParam: obsLowerBound ? "obsLowerBound" : undefined })}` : ""}
       SELECT count(*) AS count
       FROM traces t
+      ${hasObsFilter ? "LEFT JOIN observations_stats o ON t.id = o.trace_id AND t.project_id = o.project_id" : ""}
       WHERE t.project_id = :projectId AND ${notDeleted("t")}
-        ${applied.query ? `AND ${applied.query}` : ""}`,
-    params: { projectId, ...applied.params },
+        ${rest.query ? `AND ${rest.query}` : ""}
+        ${obs.query ? `AND ${obs.query}` : ""}`,
+    params: {
+      projectId,
+      ...rest.params,
+      ...obs.params,
+      ...(obsLowerBound ? { obsLowerBound } : {}),
+    },
     readOnly: true,
   });
   return rows.length > 0 ? Number(rows[0].count) : 0;

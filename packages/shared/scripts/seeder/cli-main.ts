@@ -11,7 +11,7 @@
  */
 import { parseArgs } from "node:util";
 import { prisma } from "../../src/db";
-import { logger, redis } from "../../src/server";
+import { closeGreptimeConnections, logger, redis } from "../../src/server";
 import { preflight, runDoctor } from "./doctor";
 import { scenarios } from "./scenarios";
 import { ScenarioContext, ScenarioFlag, SeedError } from "./scenarios/types";
@@ -315,6 +315,14 @@ export const run = async (): Promise<void> => {
     }
     process.exitCode = 1;
   } finally {
+    // Release the GreptimeDB ingest gRPC client + SQL pools, otherwise their open
+    // handles keep the event loop alive and the CLI hangs after writing (esp. large batches).
+    await closeGreptimeConnections().catch((error) => {
+      logger.warn(
+        "failed to close GreptimeDB connections during cleanup",
+        error,
+      );
+    });
     await prisma.$disconnect().catch(() => {});
     redis?.disconnect();
   }

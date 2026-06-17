@@ -298,52 +298,6 @@ export type DatasetRunItemRecordInsertType = z.infer<
   typeof datasetRunItemRecordInsertSchema
 >;
 
-export const convertTraceReadToInsert = (
-  record: TraceRecordReadType,
-): TraceRecordInsertType => {
-  return {
-    ...record,
-    created_at: new Date(record.created_at).getTime(),
-    updated_at: new Date(record.updated_at).getTime(),
-    timestamp: new Date(record.timestamp).getTime(),
-    event_ts: new Date(record.event_ts).getTime(),
-  };
-};
-
-export const convertObservationReadToInsert = (
-  record: ObservationRecordReadType,
-): ObservationRecordInsertType => {
-  const convertDate = (date: string) => new Date(date).getTime();
-
-  return {
-    ...record,
-    created_at: convertDate(record.created_at),
-    updated_at: convertDate(record.updated_at),
-    start_time: convertDate(record.start_time),
-    end_time: record.end_time ? convertDate(record.end_time) : undefined,
-    completion_start_time: record.completion_start_time
-      ? convertDate(record.completion_start_time)
-      : undefined,
-    event_ts: convertDate(record.event_ts),
-    provided_usage_details: record.provided_usage_details,
-    provided_cost_details: record.provided_cost_details,
-    usage_details: record.usage_details,
-    cost_details: record.cost_details,
-  };
-};
-
-export const convertScoreReadToInsert = (
-  record: ScoreRecordReadType,
-): ScoreRecordInsertType => {
-  return {
-    ...record,
-    created_at: new Date(record.created_at).getTime(),
-    updated_at: new Date(record.updated_at).getTime(),
-    timestamp: new Date(record.timestamp).getTime(),
-    event_ts: new Date(record.event_ts).getTime(),
-  };
-};
-
 /**
  * Converts a trace record to a staging observation record.
  * The trace is treated as a synthetic "SPAN" where span_id = trace_id.

@@ -591,6 +591,115 @@ describe("/api/public/traces API Endpoint", () => {
     expect(trace.scores?.length).toBe(1);
   });
 
+  describe("observation-aggregate advanced filtering (F4)", () => {
+    // F4: obs-aggregate `?filter=` predicates (level / level counts / token & cost sums / latency)
+    // used to 500 on the GreptimeDB traces API; they now remap onto the observations_stats CTE.
+    const tracesWithFilter = (filter: unknown[]) =>
+      makeZodVerifiedAPICall(
+        GetTracesV1Response,
+        "GET",
+        `/api/public/traces?filter=${encodeURIComponent(JSON.stringify(filter))}`,
+        undefined,
+        auth,
+      );
+
+    // withError: 2 obs (1 ERROR, 1 DEFAULT); noError: 1 DEFAULT obs; noObs: no observations.
+    // Each seeded observation defaults to total_cost 300, so withError sums to 600.
+    const seedThreeTraces = async () => {
+      const withError = randomUUID();
+      const noError = randomUUID();
+      const noObs = randomUUID();
+      await createTracesGreptime([
+        createTrace({ id: withError, project_id: projectId }),
+        createTrace({ id: noError, project_id: projectId }),
+        createTrace({ id: noObs, project_id: projectId }),
+      ]);
+      await createObservationsGreptime([
+        createObservation({
+          trace_id: withError,
+          project_id: projectId,
+          level: "ERROR",
+        }),
+        createObservation({
+          trace_id: withError,
+          project_id: projectId,
+          level: "DEFAULT",
+        }),
+        createObservation({
+          trace_id: noError,
+          project_id: projectId,
+          level: "DEFAULT",
+        }),
+      ]);
+      return { withError, noError, noObs };
+    };
+
+    it("filters by error-level count (> 0)", async () => {
+      const { withError } = await seedThreeTraces();
+      const res = await tracesWithFilter([
+        { column: "errorCount", type: "number", operator: ">", value: 0 },
+      ]);
+      const ids = res.body.data.map((t) => t.id);
+      expect(ids).toEqual([withError]);
+      expect(res.body.meta.totalItems).toBe(1);
+    });
+
+    it("COALESCEs zero-observation traces into `= 0`", async () => {
+      const { withError, noError, noObs } = await seedThreeTraces();
+      const res = await tracesWithFilter([
+        { column: "errorCount", type: "number", operator: "=", value: 0 },
+      ]);
+      const ids = res.body.data.map((t) => t.id).sort();
+      expect(ids).toEqual([noError, noObs].sort());
+      expect(ids).not.toContain(withError);
+      expect(res.body.meta.totalItems).toBe(2);
+    });
+
+    it("filters by aggregated level (any of), excluding zero-observation traces", async () => {
+      const { withError, noError, noObs } = await seedThreeTraces();
+      const res = await tracesWithFilter([
+        {
+          column: "level",
+          type: "stringOptions",
+          operator: "any of",
+          value: ["ERROR"],
+        },
+      ]);
+      const ids = res.body.data.map((t) => t.id);
+      expect(ids).toEqual([withError]);
+      expect(ids).not.toContain(noError);
+      expect(ids).not.toContain(noObs);
+    });
+
+    it("filters by aggregated level (none of), including zero-observation traces (CH parity)", async () => {
+      const { withError, noError, noObs } = await seedThreeTraces();
+      const res = await tracesWithFilter([
+        {
+          column: "level",
+          type: "stringOptions",
+          operator: "none of",
+          value: ["ERROR"],
+        },
+      ]);
+      const ids = res.body.data.map((t) => t.id).sort();
+      // noError (DEFAULT-only) and noObs (no observations -> NULL aggregated_level) are included;
+      // withError (aggregated level ERROR) is excluded.
+      expect(ids).toEqual([noError, noObs].sort());
+      expect(ids).not.toContain(withError);
+      expect(res.body.meta.totalItems).toBe(2);
+    });
+
+    it("filters by total cost sum with list/count agreement", async () => {
+      const { withError } = await seedThreeTraces();
+      const res = await tracesWithFilter([
+        { column: "totalCost", type: "number", operator: ">", value: 400 },
+      ]);
+      const ids = res.body.data.map((t) => t.id);
+      expect(ids).toEqual([withError]);
+      expect(res.body.meta.totalItems).toBe(1);
+    });
+  });
+
   it("should fetch traces with trace scores only", async () => {
     const environment = randomUUID();
     const traceId = randomUUID();
