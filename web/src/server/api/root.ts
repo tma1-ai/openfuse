@@ -11,8 +11,6 @@ import { membersRouter } from "@/src/features/rbac/server/membersRouter";
 import { userRouter } from "@/src/server/api/routers/users";
 import { userAccountRouter } from "@/src/server/api/routers/userAccount";
 import { datasetRouter } from "@/src/features/datasets/server/dataset-router";
-import { cloudBillingRouter } from "@/src/ee/features/billing/server/cloudBillingRouter";
-import { spendAlertRouter } from "@/src/ee/features/billing/server/spendAlertRouter";
 import { observationsRouter } from "@/src/server/api/routers/observations";
 import { sessionRouter } from "@/src/server/api/routers/sessions";
 import { promptRouter } from "@/src/features/prompts/server/routers/promptRouter";
@@ -87,8 +85,6 @@ export const appRouter = createTRPCRouter({
   projectApiKeys: projectApiKeysRouter,
   members: membersRouter,
   datasets: datasetRouter,
-  cloudBilling: cloudBillingRouter,
-  spendAlerts: spendAlertRouter,
   observations: observationsRouter,
   prompts: promptRouter,
   models: modelRouter,
