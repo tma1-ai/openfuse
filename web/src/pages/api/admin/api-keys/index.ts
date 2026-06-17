@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "@langfuse/shared/src/db";
 import { logger, redis } from "@langfuse/shared/src/server";
 import { ApiAuthService } from "@/src/features/public-api/server/apiAuth";
-import { AdminApiAuthService } from "@/src/ee/features/admin-api/server/adminApiAuth";
+import { AdminApiAuthService } from "@/src/server/api/adminApiAuth";
 
 /* 
 This API route is used by Langfuse Cloud to delete API keys for a project.
