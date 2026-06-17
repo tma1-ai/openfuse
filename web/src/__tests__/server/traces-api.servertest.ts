@@ -671,6 +671,24 @@ describe("/api/public/traces API Endpoint", () => {
       expect(ids).not.toContain(noObs);
     });
 
+    it("filters by aggregated level (none of), including zero-observation traces (CH parity)", async () => {
+      const { withError, noError, noObs } = await seedThreeTraces();
+      const res = await tracesWithFilter([
+        {
+          column: "level",
+          type: "stringOptions",
+          operator: "none of",
+          value: ["ERROR"],
+        },
+      ]);
+      const ids = res.body.data.map((t) => t.id).sort();
+      // noError (DEFAULT-only) and noObs (no observations -> NULL aggregated_level) are included;
+      // withError (aggregated level ERROR) is excluded.
+      expect(ids).toEqual([noError, noObs].sort());
+      expect(ids).not.toContain(withError);
+      expect(res.body.meta.totalItems).toBe(2);
+    });
+
     it("filters by total cost sum with list/count agreement", async () => {
       const { withError } = await seedThreeTraces();
       const res = await tracesWithFilter([

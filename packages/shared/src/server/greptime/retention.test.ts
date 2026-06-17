@@ -52,6 +52,17 @@ describe("buildRetentionStatements", () => {
     expect(stmts.every((s) => s.includes("SET 'ttl'="))).toBe(true);
   });
 
+  it("emits the normalized (lowercased) duration into SQL, not the raw input", () => {
+    const stmts = buildRetentionStatements({
+      rawEventsTable: RAW_TABLE,
+      rawEventsTtl: " 400D ",
+      projectionTtl: "365D",
+    });
+    expect(stmts[0]).toBe("ALTER TABLE `raw_events` SET 'ttl'='400d'");
+    expect(stmts).toContain("ALTER TABLE `traces` SET 'ttl'='365d'");
+    expect(stmts.every((s) => !/'ttl'='\d+[A-Z]/.test(s))).toBe(true);
+  });
+
   it("allows projection TTL with raw_events left forever (forever >= anything)", () => {
     const stmts = buildRetentionStatements({
       rawEventsTable: RAW_TABLE,

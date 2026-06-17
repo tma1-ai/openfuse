@@ -58,8 +58,16 @@ const DURATION_TOKEN = /(\d+)\s*([a-z]+)/g;
  * validation: anything that does not parse cleanly throws, so a bad/injection-y TTL string fails
  * loud rather than skipping the invariant-6 guard or reaching SQL.
  */
+/**
+ * Normalize a TTL string to the exact form `parseDurationSeconds` validates: trimmed + lowercased.
+ * Emitting this (rather than the raw input) into SQL keeps the stored TTL canonical, e.g. "400D" ->
+ * "400d", so GreptimeDB sees the same unit casing the validator accepted.
+ */
+export const normalizeDuration = (raw: string): string =>
+  raw.trim().toLowerCase();
+
 export const parseDurationSeconds = (raw: string): number => {
-  const normalized = raw.trim().toLowerCase();
+  const normalized = normalizeDuration(raw);
   if (!normalized) throw new Error("empty GreptimeDB TTL duration");
 
   let total = 0;
@@ -123,10 +131,15 @@ export const buildRetentionStatements = (cfg: RetentionConfig): string[] => {
   }
 
   const statements: string[] = [];
-  if (rawEventsTtl) statements.push(ttlAlter(cfg.rawEventsTable, rawEventsTtl));
+  // Emit the normalized duration (the exact form parseDurationSeconds validated), not the raw input.
+  if (rawEventsTtl)
+    statements.push(
+      ttlAlter(cfg.rawEventsTable, normalizeDuration(rawEventsTtl)),
+    );
   if (projectionTtl) {
+    const normalizedProjectionTtl = normalizeDuration(projectionTtl);
     for (const table of projectionRetentionTables()) {
-      statements.push(ttlAlter(table, projectionTtl));
+      statements.push(ttlAlter(table, normalizedProjectionTtl));
     }
   }
   return statements;

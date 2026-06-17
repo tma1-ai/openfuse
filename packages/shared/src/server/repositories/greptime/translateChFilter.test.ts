@@ -277,7 +277,7 @@ describe("remapObsAggregateFilter", () => {
     }
   });
 
-  it("leaves the level column un-COALESCEd (no observations -> no level match)", () => {
+  it("leaves the level column un-COALESCEd and keeps NULL excluded for 'any of'", () => {
     const out = remapObsAggregateFilter(
       new ChStringOptionsFilter({
         clickhouseTable: "observations",
@@ -288,6 +288,26 @@ describe("remapObsAggregateFilter", () => {
     );
     const q = out.apply().query;
     expect(q).toContain("o.aggregated_level IN (");
+    expect(q).not.toContain("COALESCE");
+    // A zero-observation trace has no level: 'any of' must NOT include the LEFT-JOIN NULL.
+    expect(q).not.toContain("IS NULL");
+  });
+
+  it("includes zero-observation (NULL) traces for 'level none of' (CH parity)", () => {
+    const out = remapObsAggregateFilter(
+      new ChStringOptionsFilter({
+        clickhouseTable: "observations",
+        field: chSelectFor("level"),
+        operator: "none of",
+        values: ["ERROR"],
+      }),
+    );
+    const q = out.apply().query;
+    expect(q).toContain("o.aggregated_level NOT IN (");
+    expect(q).toContain("o.aggregated_level IS NULL");
+    expect(q).toMatch(
+      /\(o\.aggregated_level NOT IN \(:[^)]+\) OR o\.aggregated_level IS NULL\)/,
+    );
     expect(q).not.toContain("COALESCE");
   });
 
