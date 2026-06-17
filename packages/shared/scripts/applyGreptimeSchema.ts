@@ -7,11 +7,10 @@
  * target database and apply every migration over the MySQL wire.
  *
  * The migrations are idempotent (`CREATE TABLE IF NOT EXISTS`, `CREATE DATABASE
- * IF NOT EXISTS`), so re-running is safe. `0002_retention.sql` (the global TTL)
- * is opt-in and is NOT applied by this CLI: it ships fully commented out, and
- * `applyGreptimeMigrations` strips comments before executing, so retention is a
- * no-op unless an operator uncomments those statements (or applies retention
- * separately via `applyGreptimeRetention`).
+ * IF NOT EXISTS`), so re-running is safe. After the schema is in place,
+ * `applyGreptimeMigrations` also applies the database-level retention TTL
+ * (idempotent `ALTER DATABASE ... SET 'ttl'`, default 730d via
+ * LANGFUSE_GREPTIME_TTL); see `retention.ts`.
  *
  * Connection target comes from the GREPTIME_* env vars (see
  * packages/shared/src/env.ts); all have local-dev defaults, so this runs

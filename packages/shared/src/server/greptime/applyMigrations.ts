@@ -5,6 +5,7 @@ import mysql from "mysql2/promise";
 
 import { env } from "../../env";
 import { logger } from "../logger";
+import { applyGreptimeRetention } from "./retention";
 
 /**
  * Apply the GreptimeDB schema migrations (`packages/shared/greptime/migrations/*.sql`) to a
@@ -15,8 +16,9 @@ import { logger } from "../logger";
  * `CREATE DATABASE`, so we create + select the target database first. Statements are separated by
  * stripping comments (`-- ...`, including trailing comments that contain `;`) and splitting on
  * `;` — the migration files are plain DDL with no `--` or `;` inside string literals, so this is
- * safe. `0002_retention.sql` is fully commented (opt-in global TTL), so it contributes no
- * statements and is a no-op here.
+ * safe. `0002_retention.sql` is fully commented (operator documentation), so it contributes no
+ * statements; the database-level retention TTL is instead applied programmatically by
+ * `applyGreptimeRetention` after the migrations run (see the end of this function).
  */
 
 const MIGRATIONS_DIR = path.resolve(__dirname, "../../../greptime/migrations");
@@ -70,6 +72,10 @@ export const applyGreptimeMigrations = async (
         );
       }
     }
+
+    // Database-level retention. Idempotent `ALTER DATABASE ... SET 'ttl'`; one shared horizon for
+    // every table (raw_events, projections, EAV). Default 730d via LANGFUSE_GREPTIME_TTL.
+    await applyGreptimeRetention(connection, database);
   } finally {
     await connection.end();
   }

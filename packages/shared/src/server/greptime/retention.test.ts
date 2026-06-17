@@ -1,18 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  buildRetentionStatements,
+  buildDatabaseRetentionStatement,
   parseDurationSeconds,
-  projectionRetentionTables,
 } from "./retention";
-
-const RAW_TABLE = "raw_events";
 
 describe("parseDurationSeconds", () => {
   it("parses single- and multi-unit humantime durations", () => {
-    expect(parseDurationSeconds("400d")).toBe(400 * 86400);
-    expect(parseDurationSeconds("52w")).toBe(52 * 604800);
-    expect(parseDurationSeconds("1y")).toBe(365 * 86400);
+    expect(parseDurationSeconds("730d")).toBe(730 * 86400);
+    expect(parseDurationSeconds("104w")).toBe(104 * 604800);
+    expect(parseDurationSeconds("2y")).toBe(2 * 365 * 86400);
     expect(parseDurationSeconds("1h30m")).toBe(3600 + 30 * 60);
     expect(parseDurationSeconds(" 365days ")).toBe(365 * 86400);
   });
@@ -25,79 +22,35 @@ describe("parseDurationSeconds", () => {
   });
 });
 
-describe("buildRetentionStatements", () => {
-  it("returns no statements when nothing is configured", () => {
-    expect(buildRetentionStatements({ rawEventsTable: RAW_TABLE })).toEqual([]);
-    expect(
-      buildRetentionStatements({
-        rawEventsTable: RAW_TABLE,
-        rawEventsTtl: "  ",
-        projectionTtl: "",
-      }),
-    ).toEqual([]);
+describe("buildDatabaseRetentionStatement", () => {
+  it("emits a database-level ALTER for the given db and ttl", () => {
+    expect(buildDatabaseRetentionStatement("openfuse", "730d")).toBe(
+      "ALTER DATABASE openfuse SET 'ttl'='730d'",
+    );
   });
 
-  it("emits SET 'ttl' for raw_events + every projection/EAV table when raw >= projection", () => {
-    const stmts = buildRetentionStatements({
-      rawEventsTable: RAW_TABLE,
-      rawEventsTtl: "400d",
-      projectionTtl: "365d",
-    });
-    // raw_events + 3 projections + 3 metadata + 3 tags = 10 tables.
-    expect(stmts).toHaveLength(1 + projectionRetentionTables().length);
-    expect(stmts).toHaveLength(10);
-    expect(stmts[0]).toBe("ALTER TABLE `raw_events` SET 'ttl'='400d'");
-    expect(stmts).toContain("ALTER TABLE `traces` SET 'ttl'='365d'");
-    expect(stmts).toContain("ALTER TABLE `scores_tags` SET 'ttl'='365d'");
-    expect(stmts.every((s) => s.includes("SET 'ttl'="))).toBe(true);
+  it("normalizes (trims + lowercases) the duration into SQL", () => {
+    expect(buildDatabaseRetentionStatement("openfuse", " 730D ")).toBe(
+      "ALTER DATABASE openfuse SET 'ttl'='730d'",
+    );
   });
 
-  it("emits the normalized (lowercased) duration into SQL, not the raw input", () => {
-    const stmts = buildRetentionStatements({
-      rawEventsTable: RAW_TABLE,
-      rawEventsTtl: " 400D ",
-      projectionTtl: "365D",
-    });
-    expect(stmts[0]).toBe("ALTER TABLE `raw_events` SET 'ttl'='400d'");
-    expect(stmts).toContain("ALTER TABLE `traces` SET 'ttl'='365d'");
-    expect(stmts.every((s) => !/'ttl'='\d+[A-Z]/.test(s))).toBe(true);
+  it("rejects database names that would require quoting in ALTER DATABASE", () => {
+    expect(() => buildDatabaseRetentionStatement("weird`db", "1y")).toThrow(
+      /invalid GreptimeDB database name/,
+    );
+    expect(() => buildDatabaseRetentionStatement("prod-db", "1y")).toThrow(
+      /invalid GreptimeDB database name/,
+    );
   });
 
-  it("allows projection TTL with raw_events left forever (forever >= anything)", () => {
-    const stmts = buildRetentionStatements({
-      rawEventsTable: RAW_TABLE,
-      projectionTtl: "365d",
-    });
-    expect(stmts).toHaveLength(projectionRetentionTables().length);
-    expect(stmts.some((s) => s.includes("raw_events"))).toBe(false);
-  });
-
-  it("rejects raw_events TTL shorter than projection TTL (invariant 6)", () => {
+  it("rejects an invalid / injection-y duration before it reaches SQL", () => {
     expect(() =>
-      buildRetentionStatements({
-        rawEventsTable: RAW_TABLE,
-        rawEventsTtl: "30d",
-        projectionTtl: "365d",
-      }),
-    ).toThrow(/Invariant 6/);
-  });
-
-  it("rejects a finite raw_events TTL with projections left forever (invariant 6)", () => {
+      buildDatabaseRetentionStatement("openfuse", "1y'; DROP"),
+    ).toThrow();
     expect(() =>
-      buildRetentionStatements({
-        rawEventsTable: RAW_TABLE,
-        rawEventsTtl: "400d",
-      }),
-    ).toThrow(/Invariant 6/);
-  });
-
-  it("accepts equal raw and projection TTLs", () => {
-    expect(() =>
-      buildRetentionStatements({
-        rawEventsTable: RAW_TABLE,
-        rawEventsTtl: "365d",
-        projectionTtl: "1y",
-      }),
-    ).not.toThrow();
+      buildDatabaseRetentionStatement("openfuse", "forever"),
+    ).toThrow();
+    expect(() => buildDatabaseRetentionStatement("openfuse", "")).toThrow();
   });
 });

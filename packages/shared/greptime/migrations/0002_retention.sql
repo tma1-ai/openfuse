@@ -1,35 +1,28 @@
--- GreptimeDB retention / TTL (02-write-path.md, invariant 6).
+-- GreptimeDB retention / TTL.
 --
--- OPTIONAL, OPT-IN. The base schema (0001_init.sql) sets no TTL, so a fresh install keeps data
--- forever and projection rebuilds are always complete. A self-hosted operator who wants to cap
--- disk usage can enable a GLOBAL table-level TTL here (GreptimeDB has no per-project / per-row TTL).
+-- Retention is database-level and applied programmatically, not from this file. The schema
+-- bootstrap (`applyGreptimeMigrations`, run via `pnpm --filter=@langfuse/shared run greptime:migrate`)
+-- emits an idempotent `ALTER DATABASE <db> SET 'ttl'='<duration>'` after the schema is in place.
+-- The duration comes from LANGFUSE_GREPTIME_TTL (default 730d / 2 years). A single database TTL
+-- applies to every table — raw_events, the projection snapshots, and the EAV tables — so the whole
+-- store shares one expiry horizon.
 --
--- Prefer the helper over editing this file: set LANGFUSE_GREPTIME_RAW_EVENTS_TTL +
--- LANGFUSE_GREPTIME_PROJECTION_TTL and run `applyGreptimeRetention`
--- (packages/shared/src/server/greptime/retention.ts), which validates invariant 6 before applying.
--- The statements below mirror what that helper emits, for manual / out-of-band application.
+-- Change retention for everything at once, at any time:
+--   ALTER DATABASE openfuse SET 'ttl'='365d';   -- or clear with SET 'ttl'=NULL
+-- NOTE: schema bootstrap (greptime:migrate) re-applies LANGFUSE_GREPTIME_TTL, so a manual ALTER is
+-- reverted on the next bootstrap. To persist a change, set LANGFUSE_GREPTIME_TTL accordingly.
 --
--- INVARIANT 6 (hard): raw_events TTL MUST be >= the projection TTL. The worker rebuilds each
--- projection snapshot by replaying the entity's FULL raw_events history; if a `create` event
--- expires from raw_events while its projection survives, the rebuild loses immutable fields /
--- metadata / tags and silently corrupts the projection. raw_events is append-only (no DELETE), so
--- it relies solely on this TTL — size it from the maximum entity-update / reprocess window, not as
--- a cost knob. (deletion.ts still hard-deletes projection + EAV rows for EXPLICIT project / entity
--- deletion; that is a separate concern from time-based retention and is not driven from here.)
+-- One shared horizon keeps the projection-rebuild contract simple: each projection snapshot is
+-- rebuilt by replaying the entity's raw_events history, and with raw_events and projections
+-- expiring at the same age a projection does not outlive raw_events written at the same time.
+-- GreptimeDB measures TTL per row from the row timestamp, so a raw `create` event written earlier
+-- than the entity's latest projection update can expire slightly sooner; operators who need a
+-- strict raw_events >= projection margin can override raw_events with a longer table-level TTL,
+-- which takes precedence over the database TTL:
+--   ALTER TABLE raw_events SET 'ttl'='1095d';
 --
--- Syntax (GreptimeDB 1.x): `ALTER TABLE t SET 'ttl'='<duration>'`; clear with `SET 'ttl'=NULL`.
--- Apply: mysql -h127.0.0.1 -P4002 -uroot openfuse < 0002_retention.sql
-
--- Backstop: keep raw_events (source of truth) at least as long as any projection horizon.
--- ALTER TABLE raw_events SET 'ttl'='400d';
-
--- Projection + EAV retention (each MUST be <= the raw_events TTL above).
--- ALTER TABLE traces                SET 'ttl'='365d';
--- ALTER TABLE observations          SET 'ttl'='365d';
--- ALTER TABLE scores                SET 'ttl'='365d';
--- ALTER TABLE traces_metadata       SET 'ttl'='365d';
--- ALTER TABLE observations_metadata SET 'ttl'='365d';
--- ALTER TABLE scores_metadata       SET 'ttl'='365d';
--- ALTER TABLE traces_tags           SET 'ttl'='365d';
--- ALTER TABLE observations_tags     SET 'ttl'='365d';
--- ALTER TABLE scores_tags           SET 'ttl'='365d';
+-- (deletion.ts still hard-deletes projection + EAV rows for EXPLICIT project / entity deletion;
+-- that is a separate concern from time-based retention and is not driven from here.)
+--
+-- This file intentionally contains no executable statements; the database TTL is applied by the
+-- bootstrap step described above.
