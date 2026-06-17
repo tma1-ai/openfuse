@@ -68,9 +68,9 @@ export const env = createEnv({
     DATABASE_URL: z.string().url(),
     NEXTAUTH_SECRET: z.string().min(1),
     SALT: z.string(),
-    GREPTIME_SQL_HOST: z.string().default("localhost"),
-    GREPTIME_SQL_PORT: z.coerce.number().default(4002),
-    // ... 100+ server variables
+    // ... 100+ server variables. NOTE: the web app defines no GREPTIME_* vars —
+    // GreptimeDB connection config lives in the shared/worker env; web reaches
+    // GreptimeDB only through @langfuse/shared server code.
   },
 
   // Client-side variables (exposed to browser)
@@ -135,8 +135,8 @@ const EnvSchema = z.object({
   GREPTIME_SQL_HOST: z.string().default("localhost"),
   GREPTIME_SQL_PORT: z.coerce.number().default(4002),
   GREPTIME_DB: z.string().default("openfuse"),
-  GREPTIME_USER: z.string().optional(),
-  GREPTIME_PASSWORD: z.string().optional(),
+  GREPTIME_USER: z.string().default(""),
+  GREPTIME_PASSWORD: z.string().default(""),
 
   // S3 Event Upload (required)
   LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string({
@@ -207,8 +207,8 @@ const EnvSchema = z.object({
   GREPTIME_SQL_PORT: z.coerce.number().default(4002),
   GREPTIME_SQL_READ_ONLY_HOST: z.string().optional(),
   GREPTIME_DB: z.string().default("openfuse"),
-  GREPTIME_USER: z.string().optional(),
-  GREPTIME_PASSWORD: z.string().optional(),
+  GREPTIME_USER: z.string().default(""),
+  GREPTIME_PASSWORD: z.string().default(""),
   GREPTIME_SQL_MAX_OPEN_CONNECTIONS: z.coerce.number().int().default(25),
   GREPTIME_RAW_EVENTS_TABLE: z.string().default("raw_events"),
 
