@@ -201,8 +201,8 @@ const EnvSchema = z.object({
     .max(10)
     .default(3),
   // Optional: ingestion and eval-generated scores persist to GreptimeDB raw_events, not S3. A bucket
-  // is only needed for the eval observation blob store (when its backend is "s3") and for OTel
-  // ingestion (until the OTel de-S3 migration). Self-hosted deployments can run with no object store.
+  // is only needed when LANGFUSE_EVENT_STORAGE_BACKEND is "s3" (the OTel ingestion carrier and the
+  // eval observation blob store). With the default "local" backend, no object store is required.
   LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string().optional(),
   LANGFUSE_S3_EVENT_UPLOAD_PREFIX: z.string().default(""),
   LANGFUSE_S3_EVENT_UPLOAD_REGION: z.string().optional(),
@@ -227,8 +227,9 @@ const EnvSchema = z.object({
   LANGFUSE_S3_MEDIA_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
   LANGFUSE_MEDIA_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
   LANGFUSE_MEDIA_LOCAL_PATH: z.string().optional(),
-  // Backend for the eval observation blob store (snapshots that observation-eval scheduling writes
-  // and execution reads). "local" persists to the filesystem so no object store is required.
+  // Backend for the event blob store: the OTel ingestion carrier (resourceSpans passed from the API
+  // to the worker) and the eval observation blob store. "local" persists to a shared filesystem
+  // volume so neither needs an object store.
   LANGFUSE_EVENT_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
   LANGFUSE_EVENT_LOCAL_PATH: z.string().optional(),
   LANGFUSE_USE_AZURE_BLOB: z.enum(["true", "false"]).default("false"),

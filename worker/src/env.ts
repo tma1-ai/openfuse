@@ -38,8 +38,8 @@ const EnvSchema = z.object({
   LANGFUSE_S3_BATCH_EXPORT_SSE: z.enum(["AES256", "aws:kms"]).optional(),
   LANGFUSE_S3_BATCH_EXPORT_SSE_KMS_KEY_ID: z.string().optional(),
 
-  // Optional: ingestion + eval scores persist to GreptimeDB raw_events. Only the eval observation
-  // blob store ("s3" backend) and OTel ingestion still need a bucket.
+  // Optional: ingestion + eval scores persist to GreptimeDB raw_events. A bucket is only needed when
+  // LANGFUSE_EVENT_STORAGE_BACKEND is "s3" (OTel ingestion carrier + eval observation blob store).
   LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string().optional(),
   LANGFUSE_S3_EVENT_UPLOAD_PREFIX: z.string().default(""),
   LANGFUSE_S3_EVENT_UPLOAD_REGION: z.string().optional(),
@@ -330,7 +330,8 @@ const EnvSchema = z.object({
   LANGFUSE_S3_MEDIA_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
   LANGFUSE_MEDIA_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
   LANGFUSE_MEDIA_LOCAL_PATH: z.string().optional(),
-  // Eval observation blob store backend; "local" persists to the filesystem (no object store).
+  // Event blob store backend (OTel ingestion carrier + eval observation blobs); "local" persists to
+  // the filesystem (no object store).
   LANGFUSE_EVENT_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
   LANGFUSE_EVENT_LOCAL_PATH: z.string().optional(),
 

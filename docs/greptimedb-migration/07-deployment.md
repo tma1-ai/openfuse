@@ -39,20 +39,23 @@ section.
 ### Object storage is optional
 
 Ingestion and eval-generated scores persist to GreptimeDB `raw_events`, not to a
-blob store. The only remaining object-storage consumers are media uploads, the
-eval observation blob store, batch/blob exports, and OTel ingestion. Media and
-the eval observation blob store both support a local-file backend, so a stock
-deployment needs **no** MinIO/S3:
+blob store. The remaining object-storage consumers — media uploads, the OTel
+ingestion carrier, and the eval observation blob store — all support a local-file
+backend, so a stock deployment needs **no** MinIO/S3 (only opt-in batch/blob
+exports still require an S3-compatible bucket):
 
-| Variable                        | Default | Set to `local` for no object storage |
-| ------------------------------- | ------- | ------------------------------------ |
+| Variable                         | Default | Set to `local` for no object storage  |
+| -------------------------------- | ------- | ------------------------------------- |
 | `LANGFUSE_MEDIA_STORAGE_BACKEND` | `s3`    | `local` + `LANGFUSE_MEDIA_LOCAL_PATH` |
 | `LANGFUSE_EVENT_STORAGE_BACKEND` | `s3`    | `local` + `LANGFUSE_EVENT_LOCAL_PATH` |
 
-`LANGFUSE_S3_EVENT_UPLOAD_BUCKET` is now optional; it is only required for OTel
-ingestion. The Compose files default both backends to `local` and put MinIO
-behind a `s3` profile (`docker compose --profile s3 up`), so the default stack
-starts no object store.
+`LANGFUSE_EVENT_STORAGE_BACKEND` covers both the OTel carrier and the eval blob
+store; with `local` they share a filesystem volume, so the API and worker must
+mount the same `LANGFUSE_EVENT_LOCAL_PATH` (the Compose files wire a shared
+`langfuse_event_data` volume). `LANGFUSE_S3_EVENT_UPLOAD_BUCKET` is only required
+when that backend is `s3`. The Compose files default both backends to `local` and
+put MinIO behind a `s3` profile (`docker compose --profile s3 up`), so the default
+stack starts no object store.
 
 ## 2. Bootstrap the GreptimeDB schema (run before first start)
 

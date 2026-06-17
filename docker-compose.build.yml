@@ -42,9 +42,9 @@ services:
       GREPTIME_DB: ${GREPTIME_DB:-openfuse}
       GREPTIME_USER: ${GREPTIME_USER:-}
       GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-}
-      # Object storage is OPTIONAL: media and the eval observation blob store default to a local-file
-      # backend (shared volumes below), so no MinIO is started. Enable the optional `minio` service
-      # with `docker compose -f docker-compose.build.yml --profile s3 up` for S3-backed storage / OTel.
+      # Object storage is OPTIONAL: media, the OTel ingestion carrier, and the eval observation blob
+      # store default to a local-file backend (shared volumes below), so no MinIO is started. Enable
+      # the optional `minio` service with `--profile s3` for S3-backed storage / batch exports.
       LANGFUSE_MEDIA_STORAGE_BACKEND: ${LANGFUSE_MEDIA_STORAGE_BACKEND:-local}
       LANGFUSE_MEDIA_LOCAL_PATH: ${LANGFUSE_MEDIA_LOCAL_PATH:-/langfuse_media_data}
       LANGFUSE_EVENT_STORAGE_BACKEND: ${LANGFUSE_EVENT_STORAGE_BACKEND:-local}
@@ -139,7 +139,7 @@ services:
       start_period: 2s
 
   minio:
-    # Optional, off by default. Enable with `--profile s3` for S3-backed media/exports or OTel.
+    # Optional, off by default. Enable with `--profile s3` for S3-backed media/event stores or exports.
     profiles: ["s3"]
     image: cgr.dev/chainguard/minio
     entrypoint: sh

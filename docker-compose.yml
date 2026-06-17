@@ -44,10 +44,11 @@ services:
       LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: ${LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE:-false}
       LANGFUSE_OCI_AUTH_TYPE: ${LANGFUSE_OCI_AUTH_TYPE:-workload_identity}
       # Object storage is OPTIONAL. Ingestion and eval-generated scores persist to GreptimeDB
-      # raw_events; media and the eval observation blob store default to a local-file backend backed
-      # by the shared docker volumes declared below, so a stock `docker compose up` needs no MinIO/S3.
-      # To use S3/MinIO instead, start the optional `minio` service (`docker compose --profile s3 up`)
-      # or point at your own bucket, set the *_STORAGE_BACKEND vars to "s3", and provide credentials.
+      # raw_events; media, the OTel ingestion carrier, and the eval observation blob store default to
+      # a local-file backend backed by the shared docker volumes declared below, so a stock
+      # `docker compose up` needs no MinIO/S3. To use S3/MinIO instead, start the optional `minio`
+      # service (`docker compose --profile s3 up`) or point at your own bucket, set the
+      # *_STORAGE_BACKEND vars to "s3", and provide credentials.
       LANGFUSE_MEDIA_STORAGE_BACKEND: ${LANGFUSE_MEDIA_STORAGE_BACKEND:-local}
       LANGFUSE_MEDIA_LOCAL_PATH: ${LANGFUSE_MEDIA_LOCAL_PATH:-/langfuse_media_data}
       LANGFUSE_EVENT_STORAGE_BACKEND: ${LANGFUSE_EVENT_STORAGE_BACKEND:-local}
@@ -141,9 +142,9 @@ services:
       start_period: 2s
 
   minio:
-    # Optional S3-compatible store, off by default. Enable with `docker compose --profile s3 up`
-    # (and set LANGFUSE_MEDIA_STORAGE_BACKEND / LANGFUSE_EVENT_STORAGE_BACKEND back to "s3"), or for
-    # OTel ingestion / batch export. Not required for standard ingestion, media, or eval scores.
+    # Optional S3-compatible store, off by default. Enable with `docker compose --profile s3 up` (and
+    # set LANGFUSE_MEDIA_STORAGE_BACKEND / LANGFUSE_EVENT_STORAGE_BACKEND back to "s3"), or for
+    # batch/blob exports. Not required for ingestion, media, eval scores, eval blobs, or OTel.
     profiles: ["s3"]
     image: cgr.dev/chainguard/minio
     restart: always
