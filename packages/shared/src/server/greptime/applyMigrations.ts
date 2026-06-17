@@ -5,6 +5,7 @@ import mysql from "mysql2/promise";
 
 import { env } from "../../env";
 import { logger } from "../logger";
+import { applyGreptimeRetention } from "./retention";
 
 /**
  * Apply the GreptimeDB schema migrations (`packages/shared/greptime/migrations/*.sql`) to a
@@ -70,6 +71,10 @@ export const applyGreptimeMigrations = async (
         );
       }
     }
+
+    // Database-level retention. Idempotent `ALTER DATABASE ... SET 'ttl'`; one shared horizon for
+    // every table (raw_events, projections, EAV). Default 730d via LANGFUSE_GREPTIME_TTL.
+    await applyGreptimeRetention(connection, database);
   } finally {
     await connection.end();
   }

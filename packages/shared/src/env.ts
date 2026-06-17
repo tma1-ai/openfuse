@@ -96,12 +96,11 @@ const EnvSchema = z.object({
   GREPTIME_PASSWORD: z.string().default(""),
   GREPTIME_SQL_MAX_OPEN_CONNECTIONS: z.coerce.number().int().default(25),
   GREPTIME_RAW_EVENTS_TABLE: z.string().default("raw_events"),
-  // Optional bounded-retention TTLs (humantime durations, e.g. "400d", "52w", "1y"). Unset =
-  // "forever" (the default). Applied out of band by `applyGreptimeRetention`, not on boot.
-  // Invariant 6: a finite raw_events TTL requires a projection TTL <= it, because each projection
-  // snapshot is rebuilt from the full raw_events history.
-  LANGFUSE_GREPTIME_RAW_EVENTS_TTL: z.string().optional(),
-  LANGFUSE_GREPTIME_PROJECTION_TTL: z.string().optional(),
+  // GreptimeDB database-level retention (TTL). Applies to every table in the database (raw_events,
+  // projections, EAV) with one shared expiry; default 730d (2 years). humantime duration, e.g.
+  // "730d", "104w", "2y". Applied idempotently at schema bootstrap (greptime:migrate). Change
+  // retention for the whole store at any time with a single `ALTER DATABASE ... SET 'ttl'`.
+  LANGFUSE_GREPTIME_TTL: z.string().default("730d"),
   LANGFUSE_ENABLE_SINGLE_LEVEL_QUERY_OPTIMIZATION: z
     .enum(["true", "false"])
     .default("false"),
