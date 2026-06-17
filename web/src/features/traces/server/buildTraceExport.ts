@@ -6,6 +6,7 @@ import {
 } from "@langfuse/shared";
 import {
   getScoresAndCorrectionsForTraces,
+  getObservationCountForTrace,
   getObservationsForTrace,
   getTraceById,
 } from "@langfuse/shared/src/server";
@@ -76,16 +77,9 @@ const getObservationRecordCountForTrace = async (params: {
 }) => {
   const { traceId, projectId, timestamp } = params;
 
-  // Lightweight count: fetch the trace's observations without IO/metadata and
-  // measure the result size. Mirrors the trace-to-observations lookback window.
-  const observations = await getObservationsForTrace({
-    traceId,
-    projectId,
-    timestamp,
-    includeIO: false,
-  });
-
-  return observations.length;
+  // Lightweight COUNT over the same trace-to-observations lookback window as the row fetch,
+  // instead of fetching every observation just to read its length.
+  return getObservationCountForTrace({ traceId, projectId, timestamp });
 };
 
 async function getAuthorizedTrace(params: {
