@@ -11,6 +11,7 @@ import {
   buildGreptimeRowsForRecord,
   observationRow,
   traceRow,
+  usageCostRows,
 } from "./rowBuilders";
 
 const tablesOf = (rows: { table: string }[]) => rows.map((r) => r.table);
@@ -91,17 +92,47 @@ describe("buildGreptimeRowsForRecord", () => {
     expect(tablesOf(out)).toEqual(["traces"]);
   });
 
-  it("fans an observation out to projection + metadata only (no tags table)", () => {
+  it("fans an observation out to projection + metadata + usage/cost EAV", () => {
     const obs = createObservation({
       project_id: "p1",
       id: "o1",
       start_time: 2000,
       metadata: { k: "v" },
+      usage_details: { input: 10, output: 20, total: 30, cache_read: 5 },
+      cost_details: { input: 1, total: 1 },
+      is_deleted: 0,
     });
     const out = buildGreptimeRowsForRecord(GreptimeTable.Observations, obs);
-    expect(tablesOf(out)).toEqual(["observations", "observations_metadata"]);
+    expect(tablesOf(out)).toEqual([
+      "observations",
+      "observations_metadata",
+      "observations_usage_cost",
+    ]);
     // EAV timestamp for observations uses start_time, not timestamp.
     expect(out[1].rows[0]).toMatchObject({ timestamp: 2000, key: "k" });
+
+    const usageCost = out.find((o) => o.table === "observations_usage_cost")!;
+    // One row per usage key then per cost key, carrying the observation start_time and kind tag.
+    expect(usageCost.rows).toEqual([
+      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "usage", key: "input", value: 10, is_deleted: false }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "usage", key: "output", value: 20, is_deleted: false }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "usage", key: "total", value: 30, is_deleted: false }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "usage", key: "cache_read", value: 5, is_deleted: false }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "cost", key: "input", value: 1, is_deleted: false }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "cost", key: "total", value: 1, is_deleted: false }, // prettier-ignore
+    ]);
+  });
+
+  it("omits the usage/cost EAV group when an observation has no usage or cost", () => {
+    const obs = createObservation({
+      project_id: "p1",
+      id: "o2",
+      metadata: {},
+      usage_details: {},
+      cost_details: {},
+    });
+    const out = buildGreptimeRowsForRecord(GreptimeTable.Observations, obs);
+    expect(tablesOf(out)).toEqual(["observations"]);
   });
 
   it("fans a score out to projection + metadata only", () => {
@@ -144,5 +175,35 @@ describe("row mappers", () => {
   it("coerces is_deleted to a boolean", () => {
     expect(traceRow(createTrace({ is_deleted: 1 })).is_deleted).toBe(true);
     expect(traceRow(createTrace({ is_deleted: 0 })).is_deleted).toBe(false);
+  });
+});
+
+describe("usageCostRows", () => {
+  it("drops non-finite values and propagates is_deleted", () => {
+    const rows = usageCostRows({
+      usageDetails: { input: 10, bad: NaN, worse: Infinity },
+      costDetails: { total: 0.5 },
+      projectId: "p1",
+      entityId: "o1",
+      timestamp: 1234,
+      isDeleted: true,
+    });
+    expect(rows).toEqual([
+      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "usage", key: "input", value: 10, is_deleted: true }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "cost", key: "total", value: 0.5, is_deleted: true }, // prettier-ignore
+    ]);
+  });
+
+  it("returns no rows for empty/absent maps", () => {
+    expect(
+      usageCostRows({
+        usageDetails: undefined,
+        costDetails: {},
+        projectId: "p1",
+        entityId: "o1",
+        timestamp: 1,
+        isDeleted: false,
+      }),
+    ).toEqual([]);
   });
 });

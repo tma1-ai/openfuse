@@ -176,6 +176,43 @@ export const tagRows = (params: {
   }));
 
 /**
+ * Explode an observation's usage_details / cost_details maps into observations_usage_cost EAV rows
+ * (one row per dynamic key, tagged by `kind`). This is what lets the dashboard aggregate any
+ * custom usage/cost key with a server-side GROUP BY instead of the hardcoded input/output/total
+ * narrowing GreptimeDB SQL forced before (F5). Non-finite values are dropped, mirroring
+ * `mergeUsageOrCostMaps`. `timestamp` carries the observation start_time, matching the EAV
+ * convention used by `metadataRows`.
+ */
+export const usageCostRows = (params: {
+  usageDetails: Record<string, number> | undefined;
+  costDetails: Record<string, number> | undefined;
+  projectId: string;
+  entityId: string;
+  timestamp: number;
+  isDeleted: boolean;
+}): GreptimeRow[] => {
+  const rowsForKind = (
+    kind: "usage" | "cost",
+    map: Record<string, number> | undefined,
+  ): GreptimeRow[] =>
+    Object.entries(map ?? {})
+      .filter(([, value]) => Number.isFinite(Number(value)))
+      .map(([key, value]) => ({
+        project_id: params.projectId,
+        entity_id: params.entityId,
+        timestamp: params.timestamp,
+        kind,
+        key,
+        value: Number(value),
+        is_deleted: params.isDeleted,
+      }));
+  return [
+    ...rowsForKind("usage", params.usageDetails),
+    ...rowsForKind("cost", params.costDetails),
+  ];
+};
+
+/**
  * Map a logical record to all physical rows it produces: the projection row plus its EAV
  * subtable rows (traces -> traces + traces_metadata + traces_tags; observations -> observations
  * + observations_metadata; scores -> scores + scores_metadata; dataset_run_items -> projection
@@ -228,6 +265,17 @@ export const buildGreptimeRowsForRecord = (
         "observations_metadata",
         metadataRows({
           metadata: r.metadata,
+          projectId: r.project_id,
+          entityId: r.id,
+          timestamp: r.start_time,
+          isDeleted: Boolean(r.is_deleted),
+        }),
+      );
+      pushRows(
+        "observations_usage_cost",
+        usageCostRows({
+          usageDetails: r.usage_details,
+          costDetails: r.cost_details,
           projectId: r.project_id,
           entityId: r.id,
           timestamp: r.start_time,

@@ -9,6 +9,7 @@ import {
   projectionTableForEntity,
   quoteIdent,
   tagsTableForEntity,
+  usageCostTableForEntity,
 } from "./schemaUtils";
 
 /**
@@ -26,6 +27,11 @@ const projectionDeletableTables = (
   projectionTableForEntity[entityType],
   metadataTableForEntity[entityType],
   tagsTableForEntity[entityType],
+  // observations are the only entity with a usage/cost EAV table; skip the others (the table does
+  // not exist for traces/scores, so DELETE would error).
+  ...(usageCostTableForEntity[entityType]
+    ? [usageCostTableForEntity[entityType]!]
+    : []),
 ];
 
 const tombstoneInput = (

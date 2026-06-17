@@ -103,12 +103,20 @@ describe("Greptime deletion", () => {
     await deleteProjectFromGreptime("project-1");
 
     expect(mocks.greptimeWrite).toHaveBeenCalledOnce();
-    expect(mocks.greptimeQuery).toHaveBeenCalledTimes(10);
+    // 3 trace + 4 observation (incl. observations_usage_cost) + 3 score + 1 dataset_run_items.
+    expect(mocks.greptimeQuery).toHaveBeenCalledTimes(11);
     expect(mocks.greptimeQuery.mock.calls).toEqual(
       expect.arrayContaining([
         [
           {
             query: "DELETE FROM `traces` WHERE `project_id` = ?",
+            params: ["project-1"],
+          },
+        ],
+        [
+          {
+            query:
+              "DELETE FROM `observations_usage_cost` WHERE `project_id` = ?",
             params: ["project-1"],
           },
         ],
