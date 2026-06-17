@@ -17,11 +17,11 @@ Complete guide to database access patterns in Langfuse using PostgreSQL (Prisma 
 
 Langfuse uses a **dual database architecture**:
 
-| Database       | Technology         | Purpose                                                       | Access Pattern                          |
-| -------------- | ------------------ | ------------------------------------------------------------- | --------------------------------------- |
-| **PostgreSQL** | Prisma ORM         | Transactional data, relational data, CRUD operations          | Type-safe ORM with migrations           |
-| **GreptimeDB** | Direct SQL (mysql2) | Analytics data, high-volume traces/observations, aggregations | Raw SQL queries with streaming support  |
-| **Redis**      | ioredis            | Queues (BullMQ), caching, rate limiting                       | Direct client access                    |
+| Database       | Technology          | Purpose                                                       | Access Pattern                         |
+| -------------- | ------------------- | ------------------------------------------------------------- | -------------------------------------- |
+| **PostgreSQL** | Prisma ORM          | Transactional data, relational data, CRUD operations          | Type-safe ORM with migrations          |
+| **GreptimeDB** | Direct SQL (mysql2) | Analytics data, high-volume traces/observations, aggregations | Raw SQL queries with streaming support |
+| **Redis**      | ioredis             | Queues (BullMQ), caching, rate limiting                       | Direct client access                   |
 
 **Key Principle**: Use PostgreSQL for transactional data and relationships. Use GreptimeDB for high-volume analytics and time-series data.
 
@@ -241,7 +241,6 @@ const rows = await greptimeQuery<{ id: string; name: string }>({
     limit: 100,
   },
   readOnly: true,
-  tags: { feature: "tracing", type: "trace" },
 });
 
 // ❌ BAD: Missing project_id filter
@@ -362,12 +361,16 @@ merged latest state, so there is **no** ClickHouse-style `FINAL` /
 `LIMIT 1 BY id, project_id` to write. Query the projection table directly:
 
 ```typescript
+// mysql2 does NOT splice arrays into named placeholders. The greptime repos build
+// the IN-list with greptimeInClause (repositories/greptime/queryHelpers).
+const idList = greptimeInClause("id", traceIds, "tid"); // -> { sql: "`id` IN (:tid_0, ...)", params }
 const query = `
   SELECT *
   FROM traces
   WHERE project_id = :projectId
-  AND id IN (:traceIds)
+  AND ${idList.sql}
 `;
+// params: { projectId, ...idList.params }
 ```
 
 **3. Filtering by metadata or tags uses EAV subtables.**
@@ -437,10 +440,7 @@ GreptimeDB queries automatically retry on transient network errors. Custom
 error handling for resource limits:
 
 ```typescript
-import {
-  greptimeQuery,
-  DbResourceError,
-} from "@langfuse/shared/src/server";
+import { greptimeQuery, DbResourceError } from "@langfuse/shared/src/server";
 
 try {
   const rows = await greptimeQuery({ query, params, readOnly: true });
@@ -483,26 +483,35 @@ GreptimeDB query builders under `repositories/greptime/*`.
 **Trace repository (GreptimeDB):**
 
 ```typescript
-// packages/shared/src/server/repositories/traces.ts
-export const getTracesByIds = async (
-  projectId: string,
-  traceIds: string[],
-): Promise<TraceRecordReadType[]> => {
-  // Projection table already holds merged latest state — no FINAL / LIMIT 1 BY.
-  const rows = await greptimeQuery<TraceRecordReadType>({
+// packages/shared/src/server/repositories/greptime/traces.ts
+import {
+  convertGreptimeTraceRowToDomain,
+  greptimeTraceSelect,
+} from "./converters";
+import { greptimeInClause, notDeleted } from "./queryHelpers";
+
+export const getTracesByIds = async (traceIds: string[], projectId: string) => {
+  if (traceIds.length === 0) return [];
+  // mysql2 does not splice arrays into named placeholders — build the IN-list.
+  const idList = greptimeInClause("id", traceIds, "tid");
+  const rows = await greptimeQuery<Record<string, unknown>>({
+    // Explicit select builder (never SELECT *) + is_deleted guard on the merged
+    // projection (no FINAL / LIMIT 1 BY).
     query: `
-      SELECT *
+      SELECT ${greptimeTraceSelect()}
       FROM traces
-      WHERE project_id = :projectId
-      AND id IN (:traceIds)
+      WHERE ${idList.sql} AND project_id = :projectId AND ${notDeleted()}
     `,
-    params: { projectId, traceIds },
+    params: { projectId, ...idList.params },
     readOnly: true,
-    tags: { feature: "tracing", type: "trace" },
   });
 
-  return rows.map(convertGreptimeToDomain);
+  return rows.map((r) =>
+    convertGreptimeTraceRowToDomain(r, DEFAULT_RENDERING_PROPS),
+  );
 };
+// Per-query metrics/tags are added by wrapping greptimeQuery in measureAndReturn
+// (storage/measureAndReturn); greptimeQuery itself takes only { query, params, readOnly }.
 ```
 
 **Score repository (PostgreSQL + GreptimeDB):**
@@ -652,10 +661,7 @@ try {
 ### GreptimeDB Errors
 
 ```typescript
-import {
-  greptimeQuery,
-  DbResourceError,
-} from "@langfuse/shared/src/server";
+import { greptimeQuery, DbResourceError } from "@langfuse/shared/src/server";
 
 try {
   const rows = await greptimeQuery({ query, params, readOnly: true });

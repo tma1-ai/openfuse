@@ -393,12 +393,12 @@ Fern API definitions in `fern/apis/server/definition/`.
 
 **Zod to Fern Type Mapping:**
 
-| Zod Type       | Fern Type               | Example                                                   |
-| -------------- | ----------------------- | --------------------------------------------------------- |
-| `.nullish()`   | `optional<nullable<T>>` | `z.string().nullish()` -> `optional<nullable<string>>`    |
-| `.nullable()`  | `nullable<T>`           | `z.string().nullable()` -> `nullable<string>`             |
-| `.optional()`  | `optional<T>`           | `z.string().optional()` -> `optional<string>`             |
-| Always present | `T`                     | `z.string()` -> `string`                                  |
+| Zod Type       | Fern Type               | Example                                                |
+| -------------- | ----------------------- | ------------------------------------------------------ |
+| `.nullish()`   | `optional<nullable<T>>` | `z.string().nullish()` -> `optional<nullable<string>>` |
+| `.nullable()`  | `nullable<T>`           | `z.string().nullable()` -> `nullable<string>`          |
+| `.optional()`  | `optional<T>`           | `z.string().optional()` -> `optional<string>`          |
+| Always present | `T`                     | `z.string()` -> `string`                               |
 
 Add a source comment at the top of each Fern type that references the
 TypeScript source:
@@ -554,30 +554,34 @@ packages/shared/src/server/repositories/
 ```typescript
 import { greptimeQuery } from "@langfuse/shared/src/server";
 import { upsertTraceToGreptime } from "./greptime/mutations";
-import { TraceRecordReadType } from "./definitions";
-import { convertGreptimeToDomain } from "./traces_converters";
+import {
+  convertGreptimeTraceRowToDomain,
+  greptimeTraceSelect,
+} from "./greptime/converters";
+import { greptimeInClause, notDeleted } from "./greptime/queryHelpers";
 
 /**
  * Get traces by IDs
  */
-export const getTracesByIds = async (
-  projectId: string,
-  traceIds: string[],
-): Promise<TraceRecordReadType[]> => {
-  // Projection table holds merged latest state — no FINAL / LIMIT 1 BY.
-  const rows = await greptimeQuery<TraceRecordReadType>({
+export const getTracesByIds = async (traceIds: string[], projectId: string) => {
+  if (traceIds.length === 0) return [];
+  // mysql2 does not splice arrays into named placeholders — build the IN-list.
+  const idList = greptimeInClause("id", traceIds, "tid");
+  const rows = await greptimeQuery<Record<string, unknown>>({
+    // Explicit select builder (never SELECT *) + is_deleted guard on the merged
+    // projection (no FINAL / LIMIT 1 BY).
     query: `
-      SELECT *
+      SELECT ${greptimeTraceSelect()}
       FROM traces
-      WHERE project_id = :projectId
-      AND id IN (:traceIds)
+      WHERE ${idList.sql} AND project_id = :projectId AND ${notDeleted()}
     `,
-    params: { projectId, traceIds },
+    params: { projectId, ...idList.params },
     readOnly: true,
-    tags: { feature: "tracing", type: "trace" },
   });
 
-  return rows.map(convertGreptimeToDomain);
+  return rows.map((r) =>
+    convertGreptimeTraceRowToDomain(r, DEFAULT_RENDERING_PROPS),
+  );
 };
 
 /**
@@ -599,8 +603,10 @@ export const upsertTrace = async (
   bulk ingestion goes through the worker's `GreptimeWriter`
 - Schema/DDL is static SQL applied by `applyGreptimeMigrations`, not a runtime
   helper
-- Include data converters (`convertGreptimeToDomain`)
-- Add OpenTelemetry tags for observability
+- Map rows back to domain with the row converters
+  (`convertGreptimeTraceRowToDomain` and friends)
+- Add OpenTelemetry tags by wrapping the query in `measureAndReturn`
+  (`storage/measureAndReturn`); `greptimeQuery` itself has no `tags` option
 - Repositories should NOT contain business logic
 
 ### When to Use Repositories
