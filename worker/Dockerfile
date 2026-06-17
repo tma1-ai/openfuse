@@ -89,6 +89,12 @@ RUN adduser --system --uid ${UID} expressjs
 # Copy only production worker payload instead of full builder workspace (just /prod/worker not entire /app)
 COPY --from=prod-deps --chown=expressjs:expressjs /prod/worker ./worker
 RUN chmod +x ./worker/entrypoint.sh
+
+# Pre-create the default local blob-store mount points owned by the app user so a fresh named volume
+# inherits writable ownership (see web/Dockerfile); a root-owned mount blocks the non-root user.
+RUN mkdir -p /langfuse_media_data /langfuse_event_data && \
+    chown expressjs:expressjs /langfuse_media_data /langfuse_event_data
+
 USER expressjs
 
 EXPOSE 3030
