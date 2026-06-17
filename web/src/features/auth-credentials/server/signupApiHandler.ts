@@ -1,8 +1,6 @@
 import { env } from "@/src/env.mjs";
 import { createUserEmailPassword } from "@/src/features/auth-credentials/lib/credentialsServerUtils";
 import { signupSchema } from "@/src/features/auth/lib/signupSchema";
-import { getSsoAuthProviderIdForDomain } from "@/src/ee/features/multi-tenant-sso/utils";
-import { ENTERPRISE_SSO_REQUIRED_MESSAGE } from "@/src/features/auth/constants";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { logger } from "@langfuse/shared/src/server";
 import { isEmailVerificationRequired } from "@/src/features/auth-credentials/lib/credentialsUtils";
@@ -40,12 +38,6 @@ export async function validateSignupEligibility({
   const domain = email.split("@")[1]?.toLowerCase();
   if (domain && blockedDomains.includes(domain)) {
     return "Sign up with email and password is disabled for this domain. Please use SSO.";
-  }
-
-  // EE: check if custom SSO configuration is enabled for this domain
-  const multiTenantSsoProvider = await getSsoAuthProviderIdForDomain(domain);
-  if (multiTenantSsoProvider) {
-    return ENTERPRISE_SSO_REQUIRED_MESSAGE;
   }
 
   return null;

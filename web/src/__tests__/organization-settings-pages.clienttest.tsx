@@ -45,10 +45,6 @@ vi.mock("@/src/features/entitlements/hooks", () => ({
   usePlan: vi.fn(),
 }));
 
-vi.mock("@/src/ee/features/sso-settings/components/SSOSettings", () => ({
-  SSOSettings: () => null,
-}));
-
 vi.mock("@langfuse/shared", () => ({
   isCloudPlan: vi.fn(() => false),
 }));

@@ -8,10 +8,8 @@ import { useQueryOrganization } from "@/src/features/organizations/hooks";
 import { useRouter } from "next/router";
 import { SettingsDangerZone } from "@/src/components/SettingsDangerZone";
 import { DeleteOrganizationButton } from "@/src/features/organizations/components/DeleteOrganizationButton";
-import { useHasEntitlement, usePlan } from "@/src/features/entitlements/hooks";
+import { useHasEntitlement } from "@/src/features/entitlements/hooks";
 import ContainerPage from "@/src/components/layouts/container-page";
-import { SSOSettings } from "@/src/ee/features/sso-settings/components/SSOSettings";
-import { isCloudPlan } from "@langfuse/shared";
 import { useQueryProjectOrOrganization } from "@/src/features/projects/hooks";
 import { ApiKeyList } from "@/src/features/public-api/components/ApiKeyList";
 import AIFeatureSwitch from "@/src/features/organizations/components/AIFeatureSwitch";
@@ -35,8 +33,6 @@ export function useOrganizationSettingsPages(): OrganizationSettingsPage[] {
   });
   const showOrgApiKeySettings = hasAdminApiEntitlement && hasOrgApiKeyAccess;
   const showAuditLogs = useHasEntitlement("audit-logs");
-  const plan = usePlan();
-  const isLangfuseCloud = isCloudPlan(plan) ?? false;
 
   if (!organization) return [];
 
@@ -44,7 +40,6 @@ export function useOrganizationSettingsPages(): OrganizationSettingsPage[] {
     organization,
     showOrgApiKeySettings,
     showAuditLogs,
-    isLangfuseCloud,
   });
 }
 
@@ -52,12 +47,10 @@ export const getOrganizationSettingsPages = ({
   organization,
   showOrgApiKeySettings,
   showAuditLogs,
-  isLangfuseCloud,
 }: {
   organization: { id: string; name: string; metadata: Record<string, unknown> };
   showOrgApiKeySettings: boolean;
   showAuditLogs: boolean;
-  isLangfuseCloud: boolean;
 }): OrganizationSettingsPage[] => [
   {
     title: "General",
@@ -126,24 +119,6 @@ export const getOrganizationSettingsPages = ({
     cmdKKeywords: ["audit", "logs", "history", "changes"],
     content: <OrgAuditLogsSettingsPage orgId={organization.id} />,
     show: showAuditLogs,
-  },
-  {
-    title: "SSO",
-    slug: "sso",
-    cmdKKeywords: [
-      "sso",
-      "login",
-      "auth",
-      "okta",
-      "saml",
-      "azure",
-      "domain",
-      "dns",
-      "txt",
-      "verify",
-    ],
-    content: <SSOSettings orgId={organization.id} />,
-    show: isLangfuseCloud,
   },
   {
     title: "Projects",

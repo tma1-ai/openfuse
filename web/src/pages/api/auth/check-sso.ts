@@ -1,10 +1,12 @@
 /**
  * This API endpoint checks if a custom SSO provider is configured for a given domain.
  *
- * If no custom SSO provider is configured or EE is not available, this API will return a 404 response.
+ * Database-backed multi-tenant SSO is an enterprise feature that is not part of
+ * this OSS build, so no per-domain provider is ever configured and this endpoint
+ * always returns a 404. The route is kept because the sign-in/sign-up pages probe
+ * it during the auth flow and treat 404 as "no enforced SSO".
  */
 
-import { getSsoAuthProviderIdForDomain } from "@/src/ee/features/multi-tenant-sso/utils";
 import type { NextApiRequest, NextApiResponse } from "next";
 import { z } from "zod";
 
@@ -24,11 +26,5 @@ export default async function handler(
     return res.status(400).json({ message: "Invalid request body" });
   }
 
-  const providerId = await getSsoAuthProviderIdForDomain(validBody.data.domain);
-
-  if (!providerId) {
-    return res.status(404).json({ message: "No SSO provider configured" });
-  }
-
-  return res.status(200).json({ providerId });
+  return res.status(404).json({ message: "No SSO provider configured" });
 }

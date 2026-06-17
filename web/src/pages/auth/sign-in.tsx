@@ -34,7 +34,6 @@ import * as z from "zod";
 import { CloudPrivacyNotice } from "@/src/features/auth/components/AuthCloudPrivacyNotice";
 import { CloudRegionSwitch } from "@/src/features/auth/components/AuthCloudRegionSwitch";
 import { PasswordInput } from "@/src/components/ui/password-input";
-import { isAnySsoConfigured } from "@/src/ee/features/multi-tenant-sso/utils";
 import { isEmailVerificationRequired } from "@/src/features/auth-credentials/lib/credentialsUtils";
 import { Code, Key } from "lucide-react";
 import { useRouter } from "next/router";
@@ -97,7 +96,9 @@ export type PageProps = {
 // Also used in src/pages/auth/sign-up.tsx
 
 export const getServerSideProps: GetServerSideProps<PageProps> = async () => {
-  const sso: boolean = await isAnySsoConfigured();
+  // Database-backed multi-tenant SSO is an enterprise feature not bundled in
+  // this OSS build; env-var SSO providers are still surfaced via authProviders.
+  const sso = false;
   return {
     props: {
       authProviders: {
