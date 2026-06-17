@@ -44,24 +44,6 @@ export const filters = {
   },
 
   /**
-   * Filter routes based on UI customization settings (enterprise feature)
-   * Hides routes if their product module is not in visible modules list
-   */
-  uiCustomization: (
-    route: Route,
-    ctx: NavigationFilterContext,
-  ): Route | null => {
-    if (
-      route.productModule &&
-      ctx.uiCustomization &&
-      !ctx.uiCustomization.visibleModules.includes(route.productModule)
-    ) {
-      return null;
-    }
-    return route;
-  },
-
-  /**
    * Filter routes based on feature flags
    * Shows route if:
    * - No flag requirement
@@ -184,7 +166,6 @@ function applyFiltersToRoute(
   const filterChain = [
     filters.projectScope,
     filters.organizationScope,
-    filters.uiCustomization,
     filters.featureFlags,
     filters.entitlements,
     filters.projectRbac,

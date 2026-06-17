@@ -22,7 +22,6 @@ import { SettingsDangerZone } from "@/src/components/SettingsDangerZone";
 import { ActionButton } from "@/src/components/ActionButton";
 import { BatchExportsSettingsPage } from "@/src/features/batch-exports/components/BatchExportsSettingsPage";
 import { BatchActionsSettingsPage } from "@/src/features/batch-actions/components/BatchActionsSettingsPage";
-import { AuditLogsSettingsPage } from "@/src/ee/features/audit-log-viewer/AuditLogsSettingsPage";
 import { ModelsSettings } from "@/src/features/models/components/ModelSettings";
 import ConfigureRetention from "@/src/features/projects/components/ConfigureRetention";
 import ContainerPage from "@/src/components/layouts/container-page";
@@ -44,7 +43,6 @@ type ProjectSettingsPage = {
 export function useProjectSettingsPages(): ProjectSettingsPage[] {
   const router = useRouter();
   const { project, organization } = useQueryProject();
-  const showBillingSettings = useHasEntitlement("cloud-billing");
   const showRetentionSettings = useHasEntitlement("data-retention");
   const showProtectedLabelsSettings = useHasEntitlement(
     "prompt-protected-labels",
@@ -57,7 +55,6 @@ export function useProjectSettingsPages(): ProjectSettingsPage[] {
   return getProjectSettingsPages({
     project,
     organization,
-    showBillingSettings,
     showRetentionSettings,
     showLLMConnectionsSettings: true,
     showProtectedLabelsSettings,
@@ -67,14 +64,12 @@ export function useProjectSettingsPages(): ProjectSettingsPage[] {
 export const getProjectSettingsPages = ({
   project,
   organization,
-  showBillingSettings,
   showRetentionSettings,
   showLLMConnectionsSettings,
   showProtectedLabelsSettings,
 }: {
   project: { id: string; name: string; metadata: Record<string, unknown> };
   organization: { id: string; name: string; metadata: Record<string, unknown> };
-  showBillingSettings: boolean;
   showRetentionSettings: boolean;
   showLLMConnectionsSettings: boolean;
   showProtectedLabelsSettings: boolean;
@@ -233,22 +228,10 @@ export const getProjectSettingsPages = ({
     content: <BatchActionsSettingsPage projectId={project.id} />,
   },
   {
-    title: "Audit Logs",
-    slug: "audit-logs",
-    cmdKKeywords: ["trail"],
-    content: <AuditLogsSettingsPage projectId={project.id} />,
-  },
-  {
     title: "Notifications",
     slug: "notifications",
     cmdKKeywords: ["inbox", "email", "mention", "alert"],
     content: <NotificationSettings />,
-  },
-  {
-    title: "Billing",
-    slug: "billing",
-    href: `/organization/${organization.id}/settings/billing`,
-    show: showBillingSettings,
   },
   {
     title: "Organization Settings",

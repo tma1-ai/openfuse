@@ -11,8 +11,6 @@ import { membersRouter } from "@/src/features/rbac/server/membersRouter";
 import { userRouter } from "@/src/server/api/routers/users";
 import { userAccountRouter } from "@/src/server/api/routers/userAccount";
 import { datasetRouter } from "@/src/features/datasets/server/dataset-router";
-import { cloudBillingRouter } from "@/src/ee/features/billing/server/cloudBillingRouter";
-import { spendAlertRouter } from "@/src/ee/features/billing/server/spendAlertRouter";
 import { observationsRouter } from "@/src/server/api/routers/observations";
 import { sessionRouter } from "@/src/server/api/routers/sessions";
 import { promptRouter } from "@/src/features/prompts/server/routers/promptRouter";
@@ -26,14 +24,11 @@ import { llmSchemaRouter } from "@/src/features/llm-schemas/server/router";
 import { llmToolRouter } from "@/src/features/llm-tools/server/router";
 import { organizationsRouter } from "@/src/features/organizations/server/organizationRouter";
 import { organizationApiKeysRouter } from "@/src/features/public-api/server/organizationApiKeyRouter";
-import { verifiedDomainRouter } from "@/src/ee/features/verified-domains/server/verifiedDomainRouter";
-import { ssoConfigRouter } from "@/src/ee/features/multi-tenant-sso/server/ssoConfigRouter";
 import { scoreConfigsRouter } from "@/src/server/api/routers/scoreConfigs";
 import { publicRouter } from "@/src/server/api/routers/public";
 import { credentialsRouter } from "@/src/features/auth-credentials/server/credentialsRouter";
 import { batchExportRouter } from "@/src/features/batch-exports/server/batchExport";
 import { utilsRouter } from "@/src/server/api/routers/utilities";
-import { uiCustomizationRouter } from "@/src/ee/features/ui-customization/uiCustomizationRouter";
 import { commentsRouter } from "@/src/server/api/routers/comments";
 import { commentReactionsRouter } from "@/src/server/api/routers/commentReactions";
 import { queueRouter } from "@/src/features/annotation-queues/server/annotationQueuesRouter";
@@ -57,7 +52,6 @@ import { surveysRouter } from "@/src/server/api/routers/surveys";
 import { naturalLanguageFilterRouter } from "@/src/features/natural-language-filters/server/router";
 import { notificationPreferencesRouter } from "@/src/server/api/routers/notificationPreferences";
 import { webCalloutsRouter } from "@/src/features/web-callouts/server/router";
-import { inAppAgentRouter } from "@/src/ee/features/in-app-agent/server/router";
 
 /**
  * This is the primary router for your server.
@@ -79,16 +73,12 @@ export const appRouter = createTRPCRouter({
   dashboard: dashboardRouter,
   organizations: organizationsRouter,
   organizationApiKeys: organizationApiKeysRouter,
-  verifiedDomain: verifiedDomainRouter,
-  ssoConfig: ssoConfigRouter,
   projects: projectsRouter,
   users: userRouter,
   userAccount: userAccountRouter,
   projectApiKeys: projectApiKeysRouter,
   members: membersRouter,
   datasets: datasetRouter,
-  cloudBilling: cloudBillingRouter,
-  spendAlerts: spendAlertRouter,
   observations: observationsRouter,
   prompts: promptRouter,
   models: modelRouter,
@@ -104,7 +94,6 @@ export const appRouter = createTRPCRouter({
   public: publicRouter,
   credentials: credentialsRouter,
   utilities: utilsRouter,
-  uiCustomization: uiCustomizationRouter,
   comments: commentsRouter,
   commentReactions: commentReactionsRouter,
   media: mediaRouter,
@@ -123,7 +112,6 @@ export const appRouter = createTRPCRouter({
   naturalLanguageFilters: naturalLanguageFilterRouter,
   notificationPreferences: notificationPreferencesRouter,
   webCallouts: webCalloutsRouter,
-  inAppAgent: inAppAgentRouter,
 });
 
 // export type definition of API

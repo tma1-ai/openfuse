@@ -1,4 +1,3 @@
-import { mapStripeProductIdToPlan } from "@/src/ee/features/billing/utils/stripeCatalogue";
 import { env } from "@/src/env.mjs";
 import { type Plan } from "@langfuse/shared";
 import { type CloudConfigSchema } from "@langfuse/shared";
@@ -31,15 +30,6 @@ export function getOrganizationPlanServerSide(
           default:
             const exhaustiveCheck: never = cloudConfig.plan;
             throw new Error(`Unhandled plan case: ${exhaustiveCheck}`);
-        }
-      }
-      // stripe plan via product id
-      if (cloudConfig.stripe?.activeProductId) {
-        const stripePlan = mapStripeProductIdToPlan(
-          cloudConfig.stripe.activeProductId,
-        );
-        if (stripePlan) {
-          return stripePlan;
         }
       }
     }
