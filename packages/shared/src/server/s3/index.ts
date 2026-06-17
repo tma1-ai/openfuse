@@ -25,7 +25,17 @@ export const getS3MediaStorageClient = (bucketName: string): StorageService => {
   return s3MediaStorageClient;
 };
 
-export const getS3EventStorageClient = (bucketName: string): StorageService => {
+export const getS3EventStorageClient = (
+  bucketName: string | undefined,
+): StorageService => {
+  if (!bucketName) {
+    // The event bucket is optional now that ingestion uses GreptimeDB raw_events. The only
+    // remaining consumer of this S3 client is OTel ingestion (until the OTel de-S3 migration), so a
+    // missing bucket there is a misconfiguration, not the default path.
+    throw new Error(
+      "LANGFUSE_S3_EVENT_UPLOAD_BUCKET must be set to use the event blob store (required for OTel ingestion).",
+    );
+  }
   if (!s3EventStorageClient) {
     s3EventStorageClient = StorageServiceFactory.getInstance({
       bucketName,

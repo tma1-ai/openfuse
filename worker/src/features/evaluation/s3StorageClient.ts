@@ -5,22 +5,21 @@ import {
 import { env } from "../../env";
 
 /**
- * Singleton S3 storage client for eval operations.
- * Used by both eval execution (score upload) and observation eval scheduling (observation upload).
+ * Singleton storage client for the eval observation blob store.
+ * Used by observation-eval scheduling (writes the observation snapshot) and execution (reads it).
+ * Reuses the event-upload storage config and supports a local-file backend so no object store is
+ * required (LANGFUSE_EVENT_STORAGE_BACKEND="local").
  */
 let s3StorageServiceClient: StorageService | null = null;
 
 /**
- * Gets the singleton S3 storage client for eval operations.
+ * Gets the singleton storage client for eval observation blobs.
  * Creates the client on first call using environment configuration.
- *
- * @param bucketName - The S3 bucket name to use
- * @returns The S3 storage service client
  */
 export function getEvalS3StorageClient(): StorageService {
   if (!s3StorageServiceClient) {
     s3StorageServiceClient = StorageServiceFactory.getInstance({
-      bucketName: env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET,
+      bucketName: env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET ?? "",
       accessKeyId: env.LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID,
       secretAccessKey: env.LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY,
       endpoint: env.LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT,
@@ -28,6 +27,8 @@ export function getEvalS3StorageClient(): StorageService {
       forcePathStyle: env.LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE === "true",
       awsSse: env.LANGFUSE_S3_EVENT_UPLOAD_SSE,
       awsSseKmsKeyId: env.LANGFUSE_S3_EVENT_UPLOAD_SSE_KMS_KEY_ID,
+      useLocalFileStorage: env.LANGFUSE_EVENT_STORAGE_BACKEND === "local",
+      localFileStoragePath: env.LANGFUSE_EVENT_LOCAL_PATH,
     });
   }
 

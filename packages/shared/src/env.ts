@@ -200,7 +200,10 @@ const EnvSchema = z.object({
     .min(1)
     .max(10)
     .default(3),
-  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string(), // Langfuse requires a bucket name for S3 Event Uploads.
+  // Optional: ingestion and eval-generated scores persist to GreptimeDB raw_events, not S3. A bucket
+  // is only needed for the eval observation blob store (when its backend is "s3") and for OTel
+  // ingestion (until the OTel de-S3 migration). Self-hosted deployments can run with no object store.
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string().optional(),
   LANGFUSE_S3_EVENT_UPLOAD_PREFIX: z.string().default(""),
   LANGFUSE_S3_EVENT_UPLOAD_REGION: z.string().optional(),
   LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: z.string().optional(),
@@ -224,6 +227,10 @@ const EnvSchema = z.object({
   LANGFUSE_S3_MEDIA_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
   LANGFUSE_MEDIA_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
   LANGFUSE_MEDIA_LOCAL_PATH: z.string().optional(),
+  // Backend for the eval observation blob store (snapshots that observation-eval scheduling writes
+  // and execution reads). "local" persists to the filesystem so no object store is required.
+  LANGFUSE_EVENT_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
+  LANGFUSE_EVENT_LOCAL_PATH: z.string().optional(),
   LANGFUSE_USE_AZURE_BLOB: z.enum(["true", "false"]).default("false"),
   LANGFUSE_AZURE_SKIP_CONTAINER_CHECK: z
     .enum(["true", "false"])
@@ -249,13 +256,6 @@ const EnvSchema = z.object({
   STRIPE_SECRET_KEY: z.string().optional(),
 
   LANGFUSE_S3_LIST_MAX_KEYS: z.coerce.number().positive().default(200),
-  LANGFUSE_S3_RATE_ERROR_SLOWDOWN_ENABLED: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_S3_RATE_ERROR_SLOWDOWN_TTL_SECONDS: z.coerce
-    .number()
-    .positive()
-    .default(3600), // 1 hour
   LANGFUSE_S3_CORE_DATA_EXPORT_IS_ENABLED: z
     .enum(["true", "false"])
     .default("false"),
@@ -271,7 +271,6 @@ const EnvSchema = z.object({
   LANGFUSE_API_TRACE_OBSERVATIONS_SIZE_LIMIT_BYTES: z.coerce
     .number()
     .default(80e6), // 80MB
-  LANGFUSE_SKIP_S3_LIST_FOR_OBSERVATIONS_PROJECT_IDS: z.string().optional(),
   LANGFUSE_INGESTION_PROCESSING_SAMPLED_PROJECTS: z
     .string()
     .optional()
@@ -450,6 +449,17 @@ const EnvSchema = z.object({
       path: ["LANGFUSE_MEDIA_LOCAL_PATH"],
       message:
         "LANGFUSE_MEDIA_LOCAL_PATH is required when LANGFUSE_MEDIA_STORAGE_BACKEND is 'local'",
+    });
+  }
+  if (
+    env.LANGFUSE_EVENT_STORAGE_BACKEND === "local" &&
+    !env.LANGFUSE_EVENT_LOCAL_PATH
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["LANGFUSE_EVENT_LOCAL_PATH"],
+      message:
+        "LANGFUSE_EVENT_LOCAL_PATH is required when LANGFUSE_EVENT_STORAGE_BACKEND is 'local'",
     });
   }
 });

@@ -38,9 +38,9 @@ const EnvSchema = z.object({
   LANGFUSE_S3_BATCH_EXPORT_SSE: z.enum(["AES256", "aws:kms"]).optional(),
   LANGFUSE_S3_BATCH_EXPORT_SSE_KMS_KEY_ID: z.string().optional(),
 
-  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string({
-    error: "Langfuse requires a bucket name for S3 Event Uploads.",
-  }),
+  // Optional: ingestion + eval scores persist to GreptimeDB raw_events. Only the eval observation
+  // blob store ("s3" backend) and OTel ingestion still need a bucket.
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string().optional(),
   LANGFUSE_S3_EVENT_UPLOAD_PREFIX: z.string().default(""),
   LANGFUSE_S3_EVENT_UPLOAD_REGION: z.string().optional(),
   LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: z.string().optional(),
@@ -330,6 +330,9 @@ const EnvSchema = z.object({
   LANGFUSE_S3_MEDIA_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
   LANGFUSE_MEDIA_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
   LANGFUSE_MEDIA_LOCAL_PATH: z.string().optional(),
+  // Eval observation blob store backend; "local" persists to the filesystem (no object store).
+  LANGFUSE_EVENT_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
+  LANGFUSE_EVENT_LOCAL_PATH: z.string().optional(),
 
   // Metering data Postgres export - Langfuse Cloud
   LANGFUSE_POSTGRES_METERING_DATA_EXPORT_IS_ENABLED: z
@@ -342,7 +345,6 @@ const EnvSchema = z.object({
     .enum(["true", "false"])
     .default("false"),
 
-  LANGFUSE_S3_CONCURRENT_READS: z.coerce.number().positive().default(50),
   LANGFUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS: z.coerce
     .number()
     .positive()
