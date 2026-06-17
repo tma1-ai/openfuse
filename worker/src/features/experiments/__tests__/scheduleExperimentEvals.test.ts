@@ -508,7 +508,7 @@ describe("scheduleExperimentObservationEvals", () => {
     vi.clearAllMocks();
     mockFetchObservationEvalConfigs.mockResolvedValue([{ id: "config-1" }]);
     mockCreateObservationEvalSchedulerDeps.mockReturnValue({
-      uploadObservationToS3: vi.fn(),
+      uploadObservationBlob: vi.fn(),
       upsertJobExecution: vi.fn(),
       enqueueEvalJob: vi.fn(),
     });

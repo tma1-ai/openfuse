@@ -6,12 +6,12 @@ import {
   QueueName,
 } from "@langfuse/shared/src/server";
 import { env } from "../../../env";
-import { getEvalS3StorageClient } from "../s3StorageClient";
+import { getEvalBlobStorageClient } from "../evalBlobStorageClient";
 import { type ObservationEvalSchedulerDeps } from "./types";
 
 /**
  * Creates production dependencies for the observation eval scheduler.
- * Wires up real implementations for Prisma, S3, and BullMQ.
+ * Wires up real implementations for Prisma, blob storage, and BullMQ.
  */
 export function createObservationEvalSchedulerDeps(): ObservationEvalSchedulerDeps {
   return {
@@ -49,11 +49,11 @@ export function createObservationEvalSchedulerDeps(): ObservationEvalSchedulerDe
       return { id: jobExecution.id };
     },
 
-    uploadObservationToS3: async (params) => {
+    uploadObservationBlob: async (params) => {
       const path = `${env.LANGFUSE_S3_EVENT_UPLOAD_PREFIX}evals/${params.projectId}/traces/${params.traceId}/observations/${params.observationId}.json`;
-      const s3Client = getEvalS3StorageClient();
+      const blobClient = getEvalBlobStorageClient();
 
-      await s3Client.uploadJson(path, params.data);
+      await blobClient.uploadJson(path, params.data);
 
       return path;
     },
@@ -63,7 +63,7 @@ export function createObservationEvalSchedulerDeps(): ObservationEvalSchedulerDe
       const payload = {
         projectId: params.projectId,
         jobExecutionId: params.jobExecutionId,
-        observationS3Path: params.observationS3Path,
+        observationBlobPath: params.observationBlobPath,
         ...(params.executionMode
           ? { executionMode: params.executionMode }
           : {}),

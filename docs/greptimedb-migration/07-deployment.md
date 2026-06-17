@@ -31,9 +31,31 @@ GreptimeDB-specific variables:
 | `GREPTIME_RAW_EVENTS_TABLE`         | `raw_events`     | Write-path source-of-truth table.                                                      |
 
 For a Compose deployment the hosts point at the `greptimedb` service name. The
-non-Greptime requirements (Postgres, Redis, S3/MinIO, `NEXTAUTH_SECRET`, `SALT`,
+non-Greptime requirements (Postgres, Redis, `NEXTAUTH_SECRET`, `SALT`,
 `ENCRYPTION_KEY`, …) are unchanged from upstream Langfuse and are also in
-`.env.prod.example`.
+`.env.prod.example`. Object storage (S3/MinIO) is **optional** — see the next
+section.
+
+### Object storage is optional
+
+Ingestion and eval-generated scores persist to GreptimeDB `raw_events`, not to a
+blob store. The remaining object-storage consumers — media uploads, the OTel
+ingestion carrier, and the eval observation blob store — all support a local-file
+backend, so a stock deployment needs **no** MinIO/S3 (only opt-in batch/blob
+exports still require an S3-compatible bucket):
+
+| Variable                         | Default | Set to `local` for no object storage  |
+| -------------------------------- | ------- | ------------------------------------- |
+| `LANGFUSE_MEDIA_STORAGE_BACKEND` | `s3`    | `local` + `LANGFUSE_MEDIA_LOCAL_PATH` |
+| `LANGFUSE_EVENT_STORAGE_BACKEND` | `s3`    | `local` + `LANGFUSE_EVENT_LOCAL_PATH` |
+
+`LANGFUSE_EVENT_STORAGE_BACKEND` covers both the OTel carrier and the eval blob
+store; with `local` they share a filesystem volume, so the API and worker must
+mount the same `LANGFUSE_EVENT_LOCAL_PATH` (the Compose files wire a shared
+`langfuse_event_data` volume). `LANGFUSE_S3_EVENT_UPLOAD_BUCKET` is only required
+when that backend is `s3`. The Compose files default both backends to `local` and
+put MinIO behind a `s3` profile (`docker compose --profile s3 up`), so the default
+stack starts no object store.
 
 ## 2. Bootstrap the GreptimeDB schema (run before first start)
 
@@ -64,8 +86,9 @@ via `applyGreptimeRetention`).
 ## 3. The Docker Compose stack
 
 [`docker-compose.yml`](../../docker-compose.yml) is the production stack:
-`langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, `redis`, and
-`minio`. By default it builds the web and worker images from this repository so
+`langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, and `redis`. `minio`
+is defined but gated behind the `s3` profile, so it does not start by default
+(media and the eval blob store use local volumes). By default it builds the web and worker images from this repository so
 the running containers include the fork's GreptimeDB code. Set
 `OPENFUSE_WEB_IMAGE` and `OPENFUSE_WORKER_IMAGE` if you publish prebuilt fork
 images and want Compose to tag/pull those instead. The web/worker services
@@ -81,7 +104,7 @@ Typical first-run sequence:
 ```bash
 cp .env.prod.example .env          # then edit every # CHANGEME value
 
-docker compose up -d greptimedb postgres redis minio   # bring up infra first
+docker compose up -d greptimedb postgres redis   # bring up infra first (add `minio` only if using S3)
 # wait for greptimedb /health, then bootstrap the schema (section 2)
 pnpm --filter=@langfuse/shared run greptime:migrate
 

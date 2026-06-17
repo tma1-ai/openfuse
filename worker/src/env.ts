@@ -38,9 +38,9 @@ const EnvSchema = z.object({
   LANGFUSE_S3_BATCH_EXPORT_SSE: z.enum(["AES256", "aws:kms"]).optional(),
   LANGFUSE_S3_BATCH_EXPORT_SSE_KMS_KEY_ID: z.string().optional(),
 
-  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string({
-    error: "Langfuse requires a bucket name for S3 Event Uploads.",
-  }),
+  // Optional: ingestion + eval scores persist to GreptimeDB raw_events. A bucket is only needed when
+  // LANGFUSE_EVENT_STORAGE_BACKEND is "s3" (OTel ingestion carrier + eval observation blob store).
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string().optional(),
   LANGFUSE_S3_EVENT_UPLOAD_PREFIX: z.string().default(""),
   LANGFUSE_S3_EVENT_UPLOAD_REGION: z.string().optional(),
   LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: z.string().optional(),
@@ -330,6 +330,10 @@ const EnvSchema = z.object({
   LANGFUSE_S3_MEDIA_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
   LANGFUSE_MEDIA_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
   LANGFUSE_MEDIA_LOCAL_PATH: z.string().optional(),
+  // Event blob store backend (OTel ingestion carrier + eval observation blobs); "local" persists to
+  // the filesystem (no object store).
+  LANGFUSE_EVENT_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
+  LANGFUSE_EVENT_LOCAL_PATH: z.string().optional(),
 
   // Metering data Postgres export - Langfuse Cloud
   LANGFUSE_POSTGRES_METERING_DATA_EXPORT_IS_ENABLED: z
@@ -342,7 +346,6 @@ const EnvSchema = z.object({
     .enum(["true", "false"])
     .default("false"),
 
-  LANGFUSE_S3_CONCURRENT_READS: z.coerce.number().positive().default(50),
   LANGFUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS: z.coerce
     .number()
     .positive()
@@ -435,6 +438,29 @@ const EnvSchema = z.object({
     .default(0.3), // Probability for recording sharded queue depth metrics
   LANGFUSE_QUEUE_METRICS_INTERVAL_MS: z.coerce.number().min(100).default(1000),
   LANGFUSE_QUEUE_METRICS_ENABLED: z.enum(["true", "false"]).default("true"),
+}).superRefine((env, ctx) => {
+  if (
+    env.LANGFUSE_MEDIA_STORAGE_BACKEND === "local" &&
+    !env.LANGFUSE_MEDIA_LOCAL_PATH
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["LANGFUSE_MEDIA_LOCAL_PATH"],
+      message:
+        "LANGFUSE_MEDIA_LOCAL_PATH is required when LANGFUSE_MEDIA_STORAGE_BACKEND is 'local'",
+    });
+  }
+  if (
+    env.LANGFUSE_EVENT_STORAGE_BACKEND === "local" &&
+    !env.LANGFUSE_EVENT_LOCAL_PATH
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["LANGFUSE_EVENT_LOCAL_PATH"],
+      message:
+        "LANGFUSE_EVENT_LOCAL_PATH is required when LANGFUSE_EVENT_STORAGE_BACKEND is 'local'",
+    });
+  }
 });
 
 type ParsedEnv = z.infer<typeof EnvSchema>;

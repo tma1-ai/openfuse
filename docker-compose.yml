@@ -1,6 +1,10 @@
 # Make sure to update the credential placeholders with your own secrets.
 # We mark them with # CHANGEME in the file below.
-# In addition, we recommend to restrict inbound traffic on the host to langfuse-web (port 3000) and minio (port 9090) only.
+# Object storage (MinIO/S3) is OPTIONAL: by default media, the eval observation blob store, and the
+# OTel ingestion carrier use a local-file backend and ingestion persists to GreptimeDB, so no MinIO
+# is started. Enable it with `docker compose --profile s3 up` only if you want S3-backed media/event
+# stores or batch/blob exports.
+# We recommend restricting inbound traffic on the host to langfuse-web (port 3000) only.
 # All other components are bound to localhost (127.0.0.1) to only accept connections from the local machine.
 # External connections from other machines will not be able to reach these services directly.
 services:
@@ -15,14 +19,15 @@ services:
     depends_on: &langfuse-depends-on
       postgres:
         condition: service_healthy
-      minio:
-        condition: service_healthy
       redis:
         condition: service_healthy
       greptimedb:
         condition: service_healthy
     ports:
       - 127.0.0.1:3030:3030
+    volumes: &langfuse-blob-volumes
+      - langfuse_media_data:/langfuse_media_data
+      - langfuse_event_data:/langfuse_event_data
     environment: &langfuse-worker-env
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
       DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postgres} # CHANGEME
@@ -39,6 +44,16 @@ services:
       LANGFUSE_USE_AZURE_BLOB: ${LANGFUSE_USE_AZURE_BLOB:-false}
       LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: ${LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE:-false}
       LANGFUSE_OCI_AUTH_TYPE: ${LANGFUSE_OCI_AUTH_TYPE:-workload_identity}
+      # Object storage is OPTIONAL. Ingestion and eval-generated scores persist to GreptimeDB
+      # raw_events; media, the OTel ingestion carrier, and the eval observation blob store default to
+      # a local-file backend backed by the shared docker volumes declared below, so a stock
+      # `docker compose up` needs no MinIO/S3. To use S3/MinIO instead, start the optional `minio`
+      # service (`docker compose --profile s3 up`) or point at your own bucket, set the
+      # *_STORAGE_BACKEND vars to "s3", and provide credentials.
+      LANGFUSE_MEDIA_STORAGE_BACKEND: ${LANGFUSE_MEDIA_STORAGE_BACKEND:-local}
+      LANGFUSE_MEDIA_LOCAL_PATH: ${LANGFUSE_MEDIA_LOCAL_PATH:-/langfuse_media_data}
+      LANGFUSE_EVENT_STORAGE_BACKEND: ${LANGFUSE_EVENT_STORAGE_BACKEND:-local}
+      LANGFUSE_EVENT_LOCAL_PATH: ${LANGFUSE_EVENT_LOCAL_PATH:-/langfuse_event_data}
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse}
       LANGFUSE_S3_EVENT_UPLOAD_REGION: ${LANGFUSE_S3_EVENT_UPLOAD_REGION:-auto}
       LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID:-minio}
@@ -86,6 +101,7 @@ services:
     depends_on: *langfuse-depends-on
     ports:
       - 3000:3000
+    volumes: *langfuse-blob-volumes
     environment:
       <<: *langfuse-worker-env
       NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-mysecret} # CHANGEME
@@ -127,6 +143,10 @@ services:
       start_period: 2s
 
   minio:
+    # Optional S3-compatible store, off by default. Enable with `docker compose --profile s3 up` (and
+    # set LANGFUSE_MEDIA_STORAGE_BACKEND / LANGFUSE_EVENT_STORAGE_BACKEND back to "s3"), or for
+    # batch/blob exports. Not required for ingestion, media, eval scores, eval blobs, or OTel.
+    profiles: ["s3"]
     image: cgr.dev/chainguard/minio
     restart: always
     entrypoint: sh
@@ -187,6 +207,10 @@ volumes:
   langfuse_postgres_data:
     driver: local
   langfuse_greptimedb_data:
+    driver: local
+  langfuse_media_data:
+    driver: local
+  langfuse_event_data:
     driver: local
   langfuse_minio_data:
     driver: local

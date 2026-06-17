@@ -80,7 +80,7 @@ import { isUnrecoverableError } from "../../errors/UnrecoverableError";
 describe("codeEvalExecutionQueueProcessor", () => {
   const projectId = "test-project-123";
   const jobExecutionId = "job-exec-456";
-  const observationS3Path = "evals/test/observation.json";
+  const observationBlobPath = "evals/test/observation.json";
   const queueName = `${QueueName.CodeEvalExecution}-1`;
   let codeEvalExecutionQueueProcessor: (job: Job<any>) => Promise<unknown>;
 
@@ -99,7 +99,7 @@ describe("codeEvalExecutionQueueProcessor", () => {
         payload: {
           projectId,
           jobExecutionId,
-          observationS3Path,
+          observationBlobPath,
         },
         retryBaggage: { attempt: 0 },
         ...overrides.data,
@@ -130,7 +130,7 @@ describe("codeEvalExecutionQueueProcessor", () => {
       event: {
         projectId,
         jobExecutionId,
-        observationS3Path,
+        observationBlobPath,
       },
       executionType: EvalTemplateType.CODE,
     });

@@ -24,35 +24,9 @@ import {
   createIngestionEventSchema,
   IngestionEventType,
 } from "./types";
-import {
-  StorageService,
-  StorageServiceFactory,
-} from "../services/StorageService";
 import { writeRawEvents } from "../greptime/rawEvents";
 import { ingestionEventToRawEvent } from "../greptime/converters";
 import { isTraceIdInSample } from "./sampling";
-import {
-  isS3SlowDownError,
-  markProjectS3Slowdown,
-} from "../redis/s3SlowdownTracking";
-
-let s3StorageServiceClient: StorageService;
-
-const getS3StorageServiceClient = (bucketName: string): StorageService => {
-  if (!s3StorageServiceClient) {
-    s3StorageServiceClient = StorageServiceFactory.getInstance({
-      bucketName,
-      accessKeyId: env.LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID,
-      secretAccessKey: env.LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY,
-      endpoint: env.LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT,
-      region: env.LANGFUSE_S3_EVENT_UPLOAD_REGION,
-      forcePathStyle: env.LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE === "true",
-      awsSse: env.LANGFUSE_S3_EVENT_UPLOAD_SSE,
-      awsSseKmsKeyId: env.LANGFUSE_S3_EVENT_UPLOAD_SSE_KMS_KEY_ID,
-    });
-  }
-  return s3StorageServiceClient;
-};
 
 /**
  * Get the delay for the event based on the event type. Uses delay if set, 0 if current UTC timestamp is not between
@@ -181,15 +155,14 @@ export const processEventBatch = async (
 
   const sortedBatch = sortBatch(batch);
 
-  // We group events by eventBodyId which allows us to store and process them
-  // as one which reduces infra interactions per event. Only used in the S3 case.
+  // Group events by eventBodyId so each entity's same-request events are written to raw_events
+  // and enqueued together, which reduces per-event infra interactions.
   const sortedBatchByEventBodyId = sortedBatch.reduce(
     (
       acc: Record<
         string,
         {
           data: IngestionEventType[];
-          key: string;
           eventBodyId: string;
           type: (typeof eventTypes)[keyof typeof eventTypes];
         }
@@ -203,7 +176,6 @@ export const processEventBatch = async (
       if (!acc[key]) {
         acc[key] = {
           data: [],
-          key: event.id,
           type: event.type,
           eventBodyId: event.body.id,
         };
@@ -217,53 +189,8 @@ export const processEventBatch = async (
   /********************
    * ASYNC PROCESSING *
    ********************/
-  let s3UploadErrored = false;
-  await instrumentAsync({ name: "s3-upload-events" }, async () => {
-    // S3 Event Upload is blocking, but non-failing.
-    // If a promise rejects, we log it below, but do not throw an error.
-    // In this case, we upload the full batch into the Redis queue.
-    const results = await Promise.allSettled(
-      Object.keys(sortedBatchByEventBodyId).map(async (id) => {
-        // We upload the event in an array to the S3 bucket grouped by the eventBodyId.
-        // That way we batch updates from the same invocation into a single file and reduce
-        // write operations on S3.
-        const { data, key, type, eventBodyId } = sortedBatchByEventBodyId[id];
-        const bucketPath = `${env.LANGFUSE_S3_EVENT_UPLOAD_PREFIX}${authCheck.scope.projectId}/${getIngestionEntityType(type)}/${eventBodyId}/${key}.json`;
-        return getS3StorageServiceClient(
-          env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET,
-        ).uploadJson(bucketPath, data);
-      }),
-    );
-    results.forEach((result) => {
-      if (result.status === "rejected") {
-        s3UploadErrored = true;
-
-        // Check if this is a SlowDown error and mark the project for secondary queue
-        if (isS3SlowDownError(result.reason)) {
-          logger.warn(
-            "S3 SlowDown error during upload, marking project for secondary queue",
-            {
-              projectId: authCheck.scope.projectId,
-              error: result.reason,
-            },
-          );
-          // Fire and forget - don't await, don't block the error flow
-          markProjectS3Slowdown(authCheck.scope.projectId!).catch(() => {});
-        }
-
-        logger.error("Failed to upload event to S3", {
-          error: result.reason,
-        });
-      }
-    });
-  });
-
-  // Send each event individually to IngestionQueue for ClickHouse processing
-  if (s3UploadErrored) {
-    throw new Error(
-      "Failed to upload events to blob storage, aborting event processing",
-    );
-  }
+  // raw_events (GreptimeDB) is the durable source of truth; it is written per entity below after
+  // sampling. There is no separate blob-storage upload on the ingestion path.
 
   // One batch id for the whole request — scopes the worker's Redis seen-cache at batch level.
   const batchId = randomUUID();
@@ -272,27 +199,11 @@ export const processEventBatch = async (
     throw new Error("Redis not initialized, aborting event processing");
   }
 
-  const projectIdsToSkipS3List =
-    env.LANGFUSE_SKIP_S3_LIST_FOR_OBSERVATIONS_PROJECT_IDS?.split(",") ?? [];
-
   await Promise.all(
     Object.keys(sortedBatchByEventBodyId).map(async (id) => {
       const eventData = sortedBatchByEventBodyId[id];
       const shardingKey = `${authCheck.scope.projectId}-${eventData.eventBodyId}`;
       const queue = IngestionQueue.getInstance({ shardingKey });
-
-      const isDatasetRunItemEvent =
-        getIngestionEntityType(eventData.type) === "dataset_run_item";
-      const isObservationEvent =
-        getIngestionEntityType(eventData.type) === "observation";
-
-      const isOtelOrSkipS3Project =
-        authCheck.scope.projectId !== null &&
-        (source === "otel" ||
-          projectIdsToSkipS3List.includes(authCheck.scope.projectId));
-
-      const shouldSkipS3List =
-        isDatasetRunItemEvent || (isObservationEvent && isOtelOrSkipS3Project);
 
       const { isSampled, isSamplingConfigured } = isTraceIdInSample({
         projectId: authCheck.scope.projectId,
@@ -347,8 +258,6 @@ export const processEventBatch = async (
                   eventBodyId: eventData.eventBodyId,
                   entityType: getIngestionEntityType(eventData.type),
                   batchId,
-                  fileKey: eventData.key,
-                  skipS3List: shouldSkipS3List,
                 },
                 authCheck: authCheck as {
                   validKey: true;

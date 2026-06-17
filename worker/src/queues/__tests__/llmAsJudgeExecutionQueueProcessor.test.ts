@@ -116,14 +116,14 @@ import { isUnrecoverableError } from "../../errors/UnrecoverableError";
 describe("llmAsJudgeExecutionQueueProcessor", () => {
   const projectId = "test-project-123";
   const jobExecutionId = "job-exec-456";
-  const observationS3Path = "evals/test/observation.json";
+  const observationBlobPath = "evals/test/observation.json";
   const queueName = `${QueueName.LLMAsJudgeExecution}-1`;
   let llmAsJudgeExecutionQueueProcessor: (
     job: Job<{
       payload: {
         projectId: string;
         jobExecutionId: string;
-        observationS3Path: string;
+        observationBlobPath: string;
       };
       retryBaggage?: { attempt: number };
     }>,
@@ -138,7 +138,7 @@ describe("llmAsJudgeExecutionQueueProcessor", () => {
         payload: {
           projectId,
           jobExecutionId,
-          observationS3Path,
+          observationBlobPath,
         },
         retryBaggage: { attempt: 0 },
         ...overrides,
@@ -171,7 +171,7 @@ describe("llmAsJudgeExecutionQueueProcessor", () => {
         event: {
           projectId,
           jobExecutionId,
-          observationS3Path,
+          observationBlobPath,
         },
         executionType: "LLM_AS_JUDGE",
       });

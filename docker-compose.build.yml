@@ -8,14 +8,15 @@ services:
     depends_on: &langfuse-depends-on
       postgres:
         condition: service_healthy
-      minio:
-        condition: service_healthy
       redis:
         condition: service_healthy
       greptimedb:
         condition: service_healthy
     ports:
       - "3000:3000"
+    volumes: &langfuse-blob-volumes
+      - langfuse_media_data:/langfuse_media_data
+      - langfuse_event_data:/langfuse_event_data
     environment:
       &langfuse-web-env # Docker injects HOSTNAME=<container-id>; override it so app servers bind on all interfaces.
       HOSTNAME: 0.0.0.0
@@ -41,6 +42,13 @@ services:
       GREPTIME_DB: ${GREPTIME_DB:-openfuse}
       GREPTIME_USER: ${GREPTIME_USER:-}
       GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-}
+      # Object storage is OPTIONAL: media, the OTel ingestion carrier, and the eval observation blob
+      # store default to a local-file backend (shared volumes below), so no MinIO is started. Enable
+      # the optional `minio` service with `--profile s3` for S3-backed storage / batch exports.
+      LANGFUSE_MEDIA_STORAGE_BACKEND: ${LANGFUSE_MEDIA_STORAGE_BACKEND:-local}
+      LANGFUSE_MEDIA_LOCAL_PATH: ${LANGFUSE_MEDIA_LOCAL_PATH:-/langfuse_media_data}
+      LANGFUSE_EVENT_STORAGE_BACKEND: ${LANGFUSE_EVENT_STORAGE_BACKEND:-local}
+      LANGFUSE_EVENT_LOCAL_PATH: ${LANGFUSE_EVENT_LOCAL_PATH:-/langfuse_event_data}
       LANGFUSE_S3_EVENT_UPLOAD_BUCKET: ${LANGFUSE_S3_EVENT_UPLOAD_BUCKET:-langfuse}
       LANGFUSE_S3_EVENT_UPLOAD_REGION: ${LANGFUSE_S3_EVENT_UPLOAD_REGION:-us-east-1}
       LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID:-minio}
@@ -83,6 +91,7 @@ services:
     depends_on: *langfuse-depends-on
     ports:
       - "3030:3030"
+    volumes: *langfuse-blob-volumes
     environment:
       <<: *langfuse-web-env
     restart: always
@@ -130,6 +139,8 @@ services:
       start_period: 2s
 
   minio:
+    # Optional, off by default. Enable with `--profile s3` for S3-backed media/event stores or exports.
+    profiles: ["s3"]
     image: cgr.dev/chainguard/minio
     entrypoint: sh
     # create the 'langfuse' bucket before starting the service
@@ -186,6 +197,10 @@ volumes:
   langfuse_postgres_data:
     driver: local
   langfuse_greptimedb_data:
+    driver: local
+  langfuse_media_data:
+    driver: local
+  langfuse_event_data:
     driver: local
   langfuse_minio_data:
     driver: local

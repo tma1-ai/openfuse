@@ -151,7 +151,7 @@ describe("Observation Eval E2E Pipeline", () => {
       });
 
       // ASSERT: Scheduling phase
-      expect(pipeline.schedulerDeps.uploadObservationToS3).toHaveBeenCalledWith(
+      expect(pipeline.schedulerDeps.uploadObservationBlob).toHaveBeenCalledWith(
         {
           projectId,
           traceId: observation.trace_id,
@@ -170,10 +170,10 @@ describe("Observation Eval E2E Pipeline", () => {
       );
       expect(pipeline.schedulerDeps.enqueueEvalJob).toHaveBeenCalled();
 
-      // Get the S3 path that was used
-      const uploadCall = (pipeline.schedulerDeps.uploadObservationToS3 as Mock)
+      // Get the blob path that was used
+      const uploadCall = (pipeline.schedulerDeps.uploadObservationBlob as Mock)
         .mock.results[0];
-      const observationS3Path = await uploadCall.value;
+      const observationBlobPath = await uploadCall.value;
 
       // ARRANGE: Set up mocks for processing phase
       const mockJob = {
@@ -243,7 +243,7 @@ describe("Observation Eval E2E Pipeline", () => {
         event: {
           projectId,
           jobExecutionId: capturedJobExecutionId!,
-          observationS3Path,
+          observationBlobPath,
         },
         executionType: EvalTemplateType.LLM_AS_JUDGE,
         deps: pipeline.processorDeps,
@@ -251,8 +251,8 @@ describe("Observation Eval E2E Pipeline", () => {
 
       // ASSERT: Processing phase
       expect(
-        pipeline.processorDeps.downloadObservationFromS3,
-      ).toHaveBeenCalledWith(observationS3Path);
+        pipeline.processorDeps.downloadObservationBlob,
+      ).toHaveBeenCalledWith(observationBlobPath);
       expect(runLLMAsJudgeEvaluation).toHaveBeenCalledWith(
         expect.objectContaining({
           projectId,
@@ -360,14 +360,14 @@ describe("Observation Eval E2E Pipeline", () => {
         event: {
           projectId,
           jobExecutionId: job.id,
-          observationS3Path: "test-path",
+          observationBlobPath: "test-path",
         },
         executionType: EvalTemplateType.CODE,
         deps: pipeline.processorDeps,
       });
 
       expect(
-        pipeline.processorDeps.downloadObservationFromS3,
+        pipeline.processorDeps.downloadObservationBlob,
       ).toHaveBeenCalledWith("test-path");
       expect(pipeline.executionDeps.uploadScore).toHaveBeenCalledTimes(1);
       expect(
@@ -439,9 +439,9 @@ describe("Observation Eval E2E Pipeline", () => {
         schedulerDeps: pipeline.schedulerDeps,
       });
 
-      // S3 upload only happens if there are matching configs
+      // blob upload only happens if there are matching configs
       expect(
-        pipeline.schedulerDeps.uploadObservationToS3,
+        pipeline.schedulerDeps.uploadObservationBlob,
       ).not.toHaveBeenCalled();
       expect(pipeline.schedulerDeps.upsertJobExecution).not.toHaveBeenCalled();
       expect(pipeline.schedulerDeps.enqueueEvalJob).not.toHaveBeenCalled();
@@ -529,9 +529,9 @@ describe("Observation Eval E2E Pipeline", () => {
       );
       expect(pipeline.schedulerDeps.enqueueEvalJob).toHaveBeenCalledTimes(3);
 
-      // S3 upload should only happen once
+      // blob upload should only happen once
       expect(
-        pipeline.schedulerDeps.uploadObservationToS3,
+        pipeline.schedulerDeps.uploadObservationBlob,
       ).toHaveBeenCalledTimes(1);
     });
   });
@@ -618,7 +618,7 @@ describe("Observation Eval E2E Pipeline", () => {
         event: {
           projectId,
           jobExecutionId: "job-123",
-          observationS3Path: "test-path",
+          observationBlobPath: "test-path",
         },
         executionType: EvalTemplateType.LLM_AS_JUDGE,
         deps: pipeline.processorDeps,
@@ -723,7 +723,7 @@ describe("Observation Eval E2E Pipeline", () => {
         event: {
           projectId,
           jobExecutionId: "job-123",
-          observationS3Path: "test-path",
+          observationBlobPath: "test-path",
         },
         executionType: EvalTemplateType.LLM_AS_JUDGE,
         deps: pipeline.processorDeps,

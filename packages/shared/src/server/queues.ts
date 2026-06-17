@@ -23,12 +23,10 @@ export const IngestionEvent = z.object({
     type: z.enum(Object.values(eventTypes)),
     eventBodyId: z.string(),
     // GreptimeDB primary path (02-write-path.md): entityType lets the worker read raw_events
-    // without re-deriving it; batchId scopes the Redis seen-cache at batch level. Both optional
-    // for backward compatibility with in-flight S3-era jobs.
+    // without re-deriving it; batchId scopes the Redis seen-cache at batch level. Both optional so
+    // the worker can fall back to deriving entityType / a null seen-token if a producer omits them.
     entityType: z.string().optional(),
     batchId: z.string().optional(),
-    fileKey: z.string().optional(),
-    skipS3List: z.boolean().optional(),
   }),
   authCheck: z.object({
     validKey: z.literal(true),
@@ -138,7 +136,7 @@ export const EvalExecutionEvent = z.object({
 export const ObservationEvalExecutionEventSchema = z.object({
   projectId: z.string(),
   jobExecutionId: z.string(),
-  observationS3Path: z.string(),
+  observationBlobPath: z.string(),
   executionMode: JobConfigExecutionMode.optional(),
 });
 export const PostHogIntegrationProcessingEventSchema = z.object({

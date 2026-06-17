@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import Decimal from "decimal.js";
 import {
   createOrgProjectAndApiKey,
+  eventTypes,
   StorageService,
   StorageServiceFactory,
 } from "@langfuse/shared/src/server";
@@ -167,7 +168,7 @@ describe("Production Dependency Factories Integration Tests", () => {
       }, 15_000);
     });
 
-    describe("uploadObservationToS3", () => {
+    describe("uploadObservationBlob", () => {
       it("should upload observation data to S3 and return the path", async () => {
         const { projectId } = await createOrgProjectAndApiKey();
         const observationId = randomUUID();
@@ -185,7 +186,7 @@ describe("Production Dependency Factories Integration Tests", () => {
         };
 
         // Execute
-        const s3Path = await deps.uploadObservationToS3({
+        const s3Path = await deps.uploadObservationBlob({
           projectId,
           traceId,
           observationId,
@@ -318,20 +319,25 @@ describe("Production Dependency Factories Integration Tests", () => {
     });
 
     describe("uploadScore", () => {
-      it("should upload score event to S3 without throwing", async () => {
+      it("should persist score event to raw_events without throwing", async () => {
         const { projectId } = await createOrgProjectAndApiKey();
         const scoreId = randomUUID();
         const eventId = randomUUID();
 
         const scoreEvent = {
-          id: scoreId,
-          name: "test-eval-score",
-          value: 0.85,
-          traceId: randomUUID(),
-          observationId: randomUUID(),
-          source: "EVAL",
-          comment: "Test evaluation",
-          dataType: "NUMERIC",
+          id: eventId,
+          timestamp: new Date().toISOString(),
+          type: eventTypes.SCORE_CREATE,
+          body: {
+            id: scoreId,
+            name: "test-eval-score",
+            value: 0.85,
+            traceId: randomUUID(),
+            observationId: randomUUID(),
+            source: "EVAL",
+            comment: "Test evaluation",
+            dataType: "NUMERIC",
+          },
         };
 
         // Execute - should not throw
@@ -396,7 +402,7 @@ describe("Production Dependency Factories Integration Tests", () => {
         environment: "test",
       };
 
-      const s3Path = await schedulerDeps.uploadObservationToS3({
+      const s3Path = await schedulerDeps.uploadObservationBlob({
         projectId,
         traceId,
         observationId,
@@ -425,27 +431,27 @@ describe("Production Dependency Factories Integration Tests", () => {
         },
       });
 
-      // Step 4: Executor uploads score to S3
+      // Step 4: Executor persists score to raw_events (no blob storage)
       const eventId = randomUUID();
       await executorDeps.uploadScore({
         projectId,
         scoreId,
         eventId,
         event: {
-          id: scoreId,
-          name: "integration-test-score",
-          value: 1.0,
-          traceId,
-          observationId,
-          source: "EVAL",
-          dataType: "NUMERIC",
+          id: eventId,
+          timestamp: new Date().toISOString(),
+          type: eventTypes.SCORE_CREATE,
+          body: {
+            id: scoreId,
+            name: "integration-test-score",
+            value: 1.0,
+            traceId,
+            observationId,
+            source: "EVAL",
+            dataType: "NUMERIC",
+          },
         },
       });
-
-      const prefix = env.LANGFUSE_S3_EVENT_UPLOAD_PREFIX || "";
-      createdS3Paths.push(
-        `${prefix}${projectId}/score/${scoreId}/${eventId}.json`,
-      );
 
       // Verify final state
       jobExecution = await prisma.jobExecution.findUnique({
