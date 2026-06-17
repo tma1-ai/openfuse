@@ -58,7 +58,6 @@ import {
   getObservationByIdFromEventsGreptime,
   getObservationsForPublicApiFromEventsGreptime,
   getObservationsCountForPublicApiFromEventsGreptime,
-  getObservationsV2ForPublicApiFromEventsGreptime,
 } from "./greptime/eventsObservations";
 import {
   streamEventsForAnalyticsGreptime,
@@ -89,7 +88,6 @@ import {
   ObservationTableQuery,
 } from "./observations";
 import { type SessionEventsMetricsRow } from "../queries/sql/event-query-builder";
-import { type EventsObservationPublic } from "../queries/createGenerationsQuery";
 import { type NumericEventsTableColumnId } from "../../eventsTable";
 import { tracesTableCols } from "../../tableDefinitions/tracesTable";
 
@@ -320,10 +318,6 @@ type PublicApiObservationsQuery = {
   expandMetadataKeys?: string[] | null;
 };
 
-type BuildObservationsQueryComponentsOptions = {
-  allowUnindexedIoFilters?: boolean;
-};
-
 /**
  * V1 API: Get observations list from events table for public API
  * Returns complete observations with all fields for transformDbToApiObservation
@@ -337,38 +331,6 @@ export const getObservationsFromEventsTableForPublicApi = async (
     page: opts.page,
     limit: opts.limit,
     parseIoAsJson: opts.parseIoAsJson,
-  });
-};
-
-/**
- * V2 API: Get observations list from events table for public API
- * Returns partial observations based on requested field groups
- * Field filtering happens at query time in ClickHouse
- *
- * When IO or expanded metadata is requested, uses a CTE-based split query:
- * - base CTE: filters/orders/limits on events_core (fast, truncated)
- * - io CTE: fetches full IO/metadata from events_full for matched rows only
- * This avoids expensive full-table scans on events_full.
- */
-export const getObservationsV2FromEventsTableForPublicApi = async (
-  opts: PublicApiObservationsQuery & {
-    fields: ObservationFieldGroupPublicApi[];
-  },
-  // The CH split-query (events_core base + events_full IO CTE) is moot on the single merged
-  // GreptimeDB projection; `allowUnindexedIoFilters` is a CH FTS guard with no GreptimeDB analogue.
-  _options: BuildObservationsQueryComponentsOptions = {},
-): Promise<Array<EventsObservationPublic>> => {
-  const requestedFields = opts.fields ?? ["core", "basic"];
-  const selectIOAndMetadata =
-    requestedFields.includes("io") || requestedFields.includes("metadata");
-
-  return getObservationsV2ForPublicApiFromEventsGreptime({
-    projectId: opts.projectId,
-    props: { ...opts, advancedFilters: opts.advancedFilters as FilterState },
-    limit: opts.limit,
-    cursor: opts.cursor,
-    selectIOAndMetadata,
-    parseIoAsJson: false,
   });
 };
 
