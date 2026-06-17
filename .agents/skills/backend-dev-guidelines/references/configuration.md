@@ -133,7 +133,7 @@ const EnvSchema = z.object({
   // GreptimeDB
   GREPTIME_GRPC_URL: z.string().default("localhost:4001"),
   GREPTIME_SQL_HOST: z.string().default("localhost"),
-  GREPTIME_SQL_PORT: z.coerce.number().default(4002),
+  GREPTIME_SQL_PORT: z.coerce.number().int().positive().default(4002),
   GREPTIME_DB: z.string().default("openfuse"),
   GREPTIME_USER: z.string().default(""),
   GREPTIME_PASSWORD: z.string().default(""),
@@ -204,7 +204,7 @@ const EnvSchema = z.object({
   // GreptimeDB
   GREPTIME_GRPC_URL: z.string().default("localhost:4001"),
   GREPTIME_SQL_HOST: z.string().default("localhost"),
-  GREPTIME_SQL_PORT: z.coerce.number().default(4002),
+  GREPTIME_SQL_PORT: z.coerce.number().int().positive().default(4002),
   GREPTIME_SQL_READ_ONLY_HOST: z.string().optional(),
   GREPTIME_DB: z.string().default("openfuse"),
   GREPTIME_USER: z.string().default(""),
