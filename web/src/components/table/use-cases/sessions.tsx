@@ -87,14 +87,12 @@ export type SessionTableProps = {
   projectId: string;
   userId?: string;
   omittedFilter?: SessionOmittableFilterColumn[];
-  isBetaEnabled?: boolean;
 };
 
 export default function SessionsTable({
   projectId,
   userId,
   omittedFilter = [],
-  isBetaEnabled = false,
 }: SessionTableProps) {
   const sessionsFilterConfig = useMemo(
     () => getSessionFilterConfig(omittedFilter),
@@ -178,7 +176,7 @@ export default function SessionsTable({
   });
 
   // dateRangeFilter contains only createdAt datetime filters, pass directly to API
-  const filterOptionsV3 = api.sessions.filterOptions.useQuery(
+  const filterOptions = api.sessions.filterOptions.useQuery(
     {
       projectId,
       timestampFilter:
@@ -187,7 +185,6 @@ export default function SessionsTable({
           : undefined,
     },
     {
-      enabled: !isBetaEnabled,
       trpc: {
         context: {
           skipBatch: true,
@@ -195,26 +192,6 @@ export default function SessionsTable({
       },
     },
   );
-
-  const filterOptionsV4 = api.sessions.filterOptionsFromEvents.useQuery(
-    {
-      projectId,
-      timestampFilter:
-        dateRangeFilter.length > 0
-          ? (dateRangeFilter as TimeFilter[])
-          : undefined,
-    },
-    {
-      enabled: isBetaEnabled,
-      trpc: {
-        context: {
-          skipBatch: true,
-        },
-      },
-    },
-  );
-
-  const filterOptions = isBetaEnabled ? filterOptionsV4 : filterOptionsV3;
 
   const newFilterOptions = useMemo(() => {
     const scoreCategories =
@@ -303,30 +280,13 @@ export default function SessionsTable({
     limit: paginationState.pageSize,
   };
 
-  const sessionsV3 = api.sessions.all.useQuery(payloadGetAll, {
-    enabled: !isBetaEnabled,
+  const sessions = api.sessions.all.useQuery(payloadGetAll, {
     refetchOnWindowFocus: true,
   });
-  const sessionsV4 = api.sessions.allFromEvents.useQuery(payloadGetAll, {
-    enabled: isBetaEnabled,
-    refetchOnWindowFocus: true,
-  });
-  const sessions = isBetaEnabled ? sessionsV4 : sessionsV3;
 
-  const sessionCountQueryV3 = api.sessions.countAll.useQuery(payloadCount, {
-    enabled: !isBetaEnabled,
+  const sessionCountQuery = api.sessions.countAll.useQuery(payloadCount, {
     refetchOnWindowFocus: true,
   });
-  const sessionCountQueryV4 = api.sessions.countAllFromEvents.useQuery(
-    payloadCount,
-    {
-      enabled: isBetaEnabled,
-      refetchOnWindowFocus: true,
-    },
-  );
-  const sessionCountQuery = isBetaEnabled
-    ? sessionCountQueryV4
-    : sessionCountQueryV3;
 
   const addToQueueMutation = api.annotationQueueItems.createMany.useMutation({
     onSuccess: (data) => {
@@ -349,30 +309,16 @@ export default function SessionsTable({
       filter: scoreFilters.forSessions(),
     });
 
-  const sessionMetricsV3 = api.sessions.metrics.useQuery(
+  const sessionMetrics = api.sessions.metrics.useQuery(
     {
       projectId,
-      sessionIds: sessionsV3.data?.sessions.map((s) => s.id) ?? [],
+      sessionIds: sessions.data?.sessions.map((s) => s.id) ?? [],
     },
     {
-      enabled: sessionsV3.data !== undefined && !isBetaEnabled,
+      enabled: sessions.data !== undefined,
       refetchOnWindowFocus: true,
     },
   );
-
-  const sessionMetricsV4 = api.sessions.metricsFromEvents.useQuery(
-    {
-      projectId,
-      sessionIds: sessionsV4.data?.sessions.map((s) => s.id) ?? [],
-      queryFromTimestamp: dateRange?.from ?? null,
-    },
-    {
-      enabled: sessionsV4.data !== undefined && isBetaEnabled,
-      refetchOnWindowFocus: true,
-    },
-  );
-
-  const sessionMetrics = isBetaEnabled ? sessionMetricsV4 : sessionMetricsV3;
 
   type SessionCoreOutput = RouterOutput["sessions"]["all"]["sessions"][number];
   type SessionMetricOutput = RouterOutput["sessions"]["metrics"][number];

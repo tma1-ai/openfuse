@@ -183,7 +183,6 @@ function SessionsTab({ userId, projectId }: TabProps) {
       projectId={projectId}
       userId={userId}
       omittedFilter={["userIds"]}
-      isBetaEnabled={false}
     />
   );
 }

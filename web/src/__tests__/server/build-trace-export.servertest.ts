@@ -234,6 +234,44 @@ describe("buildTraceExport", () => {
     });
   });
 
+  it("inherits trace-level userId/sessionId/name/release for observations that lack them", async () => {
+    mockGetTraceById.mockResolvedValue(
+      makeTrace({
+        name: "Parent Trace",
+        userId: "trace-user",
+        sessionId: "trace-session",
+        release: "v1.2.3",
+      }),
+    );
+    // The observation has none of these trace-level fields set.
+    mockGetObservationsForTrace.mockResolvedValue([
+      makeObservation({
+        userId: null,
+        sessionId: null,
+        name: "child-observation",
+        version: null,
+      }),
+    ]);
+
+    const result = await buildTraceExport({
+      traceId,
+      projectId,
+      session: makeSession(),
+    });
+
+    expect(result.observations).toHaveLength(1);
+    expect(result.observations[0]).toMatchObject({
+      id: "obs-1",
+      // Observation-level value is preserved.
+      name: "child-observation",
+      // Trace-level values are inherited by the exported observation rows.
+      userId: "trace-user",
+      sessionId: "trace-session",
+      traceName: "Parent Trace",
+      release: "v1.2.3",
+    });
+  });
+
   it("maps correction score text into stringValue without leaking internal fields", async () => {
     mockGetScoresAndCorrectionsForTraces.mockResolvedValue([
       makeScore({
