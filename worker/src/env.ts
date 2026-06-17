@@ -438,6 +438,29 @@ const EnvSchema = z.object({
     .default(0.3), // Probability for recording sharded queue depth metrics
   LANGFUSE_QUEUE_METRICS_INTERVAL_MS: z.coerce.number().min(100).default(1000),
   LANGFUSE_QUEUE_METRICS_ENABLED: z.enum(["true", "false"]).default("true"),
+}).superRefine((env, ctx) => {
+  if (
+    env.LANGFUSE_MEDIA_STORAGE_BACKEND === "local" &&
+    !env.LANGFUSE_MEDIA_LOCAL_PATH
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["LANGFUSE_MEDIA_LOCAL_PATH"],
+      message:
+        "LANGFUSE_MEDIA_LOCAL_PATH is required when LANGFUSE_MEDIA_STORAGE_BACKEND is 'local'",
+    });
+  }
+  if (
+    env.LANGFUSE_EVENT_STORAGE_BACKEND === "local" &&
+    !env.LANGFUSE_EVENT_LOCAL_PATH
+  ) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["LANGFUSE_EVENT_LOCAL_PATH"],
+      message:
+        "LANGFUSE_EVENT_LOCAL_PATH is required when LANGFUSE_EVENT_STORAGE_BACKEND is 'local'",
+    });
+  }
 });
 
 type ParsedEnv = z.infer<typeof EnvSchema>;

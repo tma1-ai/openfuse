@@ -3,6 +3,7 @@ import { randomUUID } from "crypto";
 import Decimal from "decimal.js";
 import {
   createOrgProjectAndApiKey,
+  eventTypes,
   StorageService,
   StorageServiceFactory,
 } from "@langfuse/shared/src/server";
@@ -324,14 +325,19 @@ describe("Production Dependency Factories Integration Tests", () => {
         const eventId = randomUUID();
 
         const scoreEvent = {
-          id: scoreId,
-          name: "test-eval-score",
-          value: 0.85,
-          traceId: randomUUID(),
-          observationId: randomUUID(),
-          source: "EVAL",
-          comment: "Test evaluation",
-          dataType: "NUMERIC",
+          id: eventId,
+          timestamp: new Date().toISOString(),
+          type: eventTypes.SCORE_CREATE,
+          body: {
+            id: scoreId,
+            name: "test-eval-score",
+            value: 0.85,
+            traceId: randomUUID(),
+            observationId: randomUUID(),
+            source: "EVAL",
+            comment: "Test evaluation",
+            dataType: "NUMERIC",
+          },
         };
 
         // Execute - should not throw
@@ -432,13 +438,18 @@ describe("Production Dependency Factories Integration Tests", () => {
         scoreId,
         eventId,
         event: {
-          id: scoreId,
-          name: "integration-test-score",
-          value: 1.0,
-          traceId,
-          observationId,
-          source: "EVAL",
-          dataType: "NUMERIC",
+          id: eventId,
+          timestamp: new Date().toISOString(),
+          type: eventTypes.SCORE_CREATE,
+          body: {
+            id: scoreId,
+            name: "integration-test-score",
+            value: 1.0,
+            traceId,
+            observationId,
+            source: "EVAL",
+            dataType: "NUMERIC",
+          },
         },
       });
 

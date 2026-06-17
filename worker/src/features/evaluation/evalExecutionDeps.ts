@@ -145,6 +145,15 @@ export function createProductionEvalExecutionDeps(): EvalExecutionDeps {
     },
 
     uploadScore: async (params) => {
+      if (
+        params.event.id !== params.eventId ||
+        params.event.body.id !== params.scoreId
+      ) {
+        throw new Error(
+          `Eval score event identifiers do not match upload params for project ${params.projectId}`,
+        );
+      }
+
       // Persist the eval-generated score to raw_events (the durable source of truth), mirroring the
       // standard ingestion path. The worker rebuilds the score projection by replaying raw_events,
       // so no blob storage is involved.
@@ -153,9 +162,12 @@ export function createProductionEvalExecutionDeps(): EvalExecutionDeps {
         params.projectId,
         Date.now(),
       );
-      if (rawEvent) {
-        await writeRawEvents([rawEvent]);
+      if (!rawEvent) {
+        throw new Error(
+          `Eval score event ${params.eventId} for score ${params.scoreId} cannot be converted to raw_events`,
+        );
       }
+      await writeRawEvents([rawEvent]);
     },
 
     enqueueScoreIngestion: async (params) => {

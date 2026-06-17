@@ -17,6 +17,15 @@ let s3StorageServiceClient: StorageService | null = null;
  * Creates the client on first call using environment configuration.
  */
 export function getEvalS3StorageClient(): StorageService {
+  if (
+    env.LANGFUSE_EVENT_STORAGE_BACKEND === "s3" &&
+    !env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET
+  ) {
+    throw new Error(
+      "LANGFUSE_S3_EVENT_UPLOAD_BUCKET must be set when LANGFUSE_EVENT_STORAGE_BACKEND is 's3' (used by eval observation blobs).",
+    );
+  }
+
   if (!s3StorageServiceClient) {
     s3StorageServiceClient = StorageServiceFactory.getInstance({
       bucketName: env.LANGFUSE_S3_EVENT_UPLOAD_BUCKET ?? "",
