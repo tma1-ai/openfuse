@@ -1,6 +1,6 @@
 # Langfuse Seeder System
 
-System for generating test data in ClickHouse and PostgreSQL for Langfuse development and testing.
+System for generating test data in GreptimeDB and PostgreSQL for Langfuse development and testing.
 
 ## Architecture Overview
 
@@ -8,7 +8,7 @@ System for generating test data in ClickHouse and PostgreSQL for Langfuse develo
 seeder/
 ├── types.ts                 # Core interfaces and types
 ├── data-generators.ts       # Data generation logic
-├── clickhouse-builder.ts    # ClickHouse query building
+├── greptime-writer.ts       # GreptimeDB bulk INSERT writer
 ├── seeder-orchestrator.ts   # Main orchestration logic
 ├── postgres-seed-constants.ts  # PostgreSQL data constants
 ├── seed-constants.ts  # Realistic test-data constants
@@ -62,15 +62,17 @@ await orchestrator.createSyntheticData(projectIds, config);
 
 ### DataGenerator
 
-Generates realistic data for all three types. If you need to change any clickhouse data, you should modify this class. Key methods:
+Generates realistic data for all three types. If you need to change any GreptimeDB data, you should modify this class. Key methods:
 
 - `generateDatasetTrace()` - Creates traces from dataset items
 - `generateSyntheticTraces()` - Creates realistic synthetic traces
 - `generateEvaluationTraces()` - Creates evaluation-focused traces
 
-### ClickHouseQueryBuilder
+### greptime-writer
 
-Builds optimized ClickHouse insert queries. No need to edit this file. Handles proper escaping and type handling.
+`greptime-writer.ts` builds bulk INSERT SQL for the seeder against GreptimeDB
+(`raw_events` and the projection tables). Handles batching, escaping, and type
+handling. Used by the scenario seeders under `scenarios/`.
 
 ### SeederOrchestrator
 
@@ -99,7 +101,7 @@ interface SeederConfig {
 
 1. Add interface to `types.ts`
 2. Add generator method to `DataGenerator`
-3. Add query builder method to `ClickHouseQueryBuilder`
+3. Add INSERT-building method to `greptime-writer.ts`
 4. Add orchestration method to `SeederOrchestrator`
 5. Update interdependency documentation
 
@@ -117,21 +119,21 @@ interface SeederConfig {
 
 #### Changing ID Generation
 
-1. **Check**: All places that query ClickHouse by ID
+1. **Check**: All places that query GreptimeDB by ID
 2. **Check**: PostgreSQL foreign key references
 3. **Check**: Dataset run item and evaluation trace creation logic
 4. **Action**: Update `seed-helpers.ts` functions consistently
 
 #### Changing Environment Names
 
-1. **Check**: All ClickHouse queries that filter by environment
+1. **Check**: All GreptimeDB queries that filter by environment
 2. **Check**: PostgreSQL dataset and prompt environment fields
 3. **Check**: UI environment filtering logic
 4. **Action**: Update constants in both systems
 
 #### Changing Data Structure
 
-1. **Check**: ClickHouse table schema compatibility
+1. **Check**: GreptimeDB table schema compatibility
 2. **Check**: PostgreSQL table relationships
 3. **Check**: API response serialization
 4. **Action**: Update both schemas before changing data generation
@@ -148,7 +150,7 @@ interface SeederConfig {
 ### Required Files
 
 ```
-packages/shared/clickhouse/
+packages/shared/scripts/seeder/utils/
 ├── nested_json.json      # Large JSON for realistic inputs
 ├── markdown.txt          # Markdown content for document analysis
 └── chat_ml_json.json     # Chat ML format examples

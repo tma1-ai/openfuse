@@ -31,7 +31,7 @@ Langfuse uses a **three-layer architecture** with two primary entry points (tRPC
 │      ↓                      │   │      ↓                      │
 │  Service (business logic)   │   │  Service (business logic)   │
 │      ↓                      │   │      ↓                      │
-│  Prisma / ClickHouse        │   │  Prisma / ClickHouse        │
+│  Prisma / GreptimeDB        │   │  Prisma / GreptimeDB        │
 │                             │   │                             │
 └─────────────────────────────┘   └─────────────────────────────┘
                  ↓
@@ -45,7 +45,7 @@ Langfuse uses a **three-layer architecture** with two primary entry points (tRPC
 │      ↓                                                      │
 │  Service (business logic)                                   │
 │      ↓                                                      │
-│  Prisma / ClickHouse                                        │
+│  Prisma / GreptimeDB                                        │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -79,7 +79,7 @@ Two types of entry points:
 - **Repositories** for complex data access patterns (traces, observations, scores, events)
 - **Direct Prisma** for simple CRUD operations in services
 - PostgreSQL for transactional data
-- ClickHouse for analytics/traces (accessed via repositories)
+- GreptimeDB for analytics/traces (accessed via repositories)
 - Redis for caching/queues
 
 **Async Processing Layer: Worker**
@@ -148,11 +148,11 @@ Two types of entry points:
 6. Service executes business logic:
    - Validate business rules
    - Use repositories for complex queries or Prisma directly
-   - ClickHouse queries via repositories if needed
+   - GreptimeDB queries via repositories if needed
    ↓
 7. Database operations:
    - prisma.dataset.create({ data })
-   - clickhouse queries via getTracesTable()
+   - GreptimeDB queries via getTracesTable()
    ↓
 8. Response flows back:
    Database → Service → Procedure → tRPC → Client
@@ -208,7 +208,7 @@ Two types of entry points:
    ↓
 5. Service performs operations:
    - Prisma transactions
-   - ClickHouse queries
+   - GreptimeDB queries
    - External API calls (LLMs)
    ↓
 6. Job completes or fails:
@@ -300,7 +300,7 @@ The shared package provides types, utilities, and server code used by both web a
 | ------------------------------------------ | --------------------- | ---------------------------------------------------------------------------------- |
 | `@langfuse/shared`                         | ✅ Frontend + Backend | Prisma types, Zod schemas, constants, table definitions, domain models, utilities  |
 | `@langfuse/shared/src/db`                  | 🔒 Backend only       | Prisma client instance                                                             |
-| `@langfuse/shared/src/server`              | 🔒 Backend only       | Services, repositories, queues, auth, ClickHouse, LLM integration, instrumentation |
+| `@langfuse/shared/src/server`              | 🔒 Backend only       | Services, repositories, queues, auth, GreptimeDB, LLM integration, instrumentation |
 | `@langfuse/shared/src/server/auth/apiKeys` | 🔒 Backend only       | API key management (separated to avoid circular deps)                              |
 | `@langfuse/shared/encryption`              | 🔒 Backend only       | Database field encryption/decryption                                               |
 
@@ -310,7 +310,8 @@ The shared package provides types, utilities, and server code used by both web a
 packages/shared/src/
 ├── server/                  # 🔒 All server-only code
 │   ├── auth/                # Authentication & authorization
-│   ├── clickhouse/          # ClickHouse client & queries
+│   ├── greptime/            # GreptimeDB client & migrations
+│   ├── storage/             # Storage client helpers (date conversion, etc.)
 │   ├── redis/               # Redis client & 30+ queue types
 │   ├── repositories/        # Data access (traces, observations, scores, events)
 │   ├── services/            # Business services (Storage, Email, Slack, etc.)
@@ -347,7 +348,7 @@ import {
   instrumentAsync,
   traceException,
   redis,
-  clickhouseClient,
+  greptimeQuery,
   StorageService,
   fetchLLMCompletion,
   filterToPrisma,
@@ -465,7 +466,7 @@ src/server/api/routers/
 - ✅ Transaction orchestration
 - ✅ Repository calls for complex queries
 - ✅ Direct Prisma operations for simple CRUD
-- ✅ ClickHouse queries (via repositories)
+- ✅ GreptimeDB queries (via repositories)
 - ✅ Redis cache access
 - ✅ External API calls (LLMs, etc.)
 - ❌ HTTP concerns (Request/Response)
@@ -647,15 +648,15 @@ Langfuse uses two databases with different purposes:
 │                       Application                           │
 │                                                             │
 │  ┌──────────────┐              ┌──────────────┐           │
-│  │  PostgreSQL  │              │  ClickHouse  │           │
+│  │  PostgreSQL  │              │  GreptimeDB  │           │
 │  │              │              │              │           │
 │  │ Transactional│              │  Analytics   │           │
 │  │    Data      │              │    Data      │           │
 │  └──────────────┘              └──────────────┘           │
 │         ↑                              ↑                   │
 │         │                              │                   │
-│    Prisma ORM                    Direct SQL               │
-│  (schema migrations)              (via client)            │
+│    Prisma ORM                  Direct SQL (mysql2)        │
+│  (schema migrations)         (via greptimeQuery)         │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -667,14 +668,15 @@ Langfuse uses two databases with different purposes:
 - Schema managed via `prisma migrate`
 - Located in `packages/shared/prisma/`
 
-**ClickHouse (Analytics Database):**
+**GreptimeDB (Analytics Database):**
 
-- Accessed via direct SQL queries
-- High-volume trace/observation data
-- Columnar storage for analytics
-- Optimized for aggregations
-- Schema in `packages/shared/src/server/clickhouse/`
-- Schema managed via `golang-migrate`
+- Accessed via `greptimeQuery` (direct SQL over mysql2)
+- Event-sourced: `raw_events` (append_mode) is the source of truth;
+  `traces` / `observations` / `scores` / `dataset_run_items` are
+  `merge_mode=last_non_null` projection tables rebuilt from it
+- High-volume trace/observation data, optimized for aggregations
+- Schema is static SQL in `packages/shared/greptime/migrations/*.sql`,
+  applied at startup by `applyGreptimeMigrations`
 
 **Redis (Cache & Queues):**
 
@@ -693,7 +695,7 @@ import { prisma } from "@langfuse/shared/src/db";
 
 const dataset = await prisma.dataset.create({ data });
 
-// ClickHouse via helper functions
+// GreptimeDB via helper functions
 import { getTracesTable } from "@langfuse/shared/src/server";
 
 const traces = await getTracesTable({
@@ -714,7 +716,7 @@ Langfuse uses repositories in `packages/shared/src/server/repositories/` for com
 
 - Abstraction over complex queries (traces, observations, scores, events)
 - Data converters for transforming database models to application models
-- ClickHouse query builders and stream processing
+- GreptimeDB query builders and stream processing
 - Reusable query logic across services
 
 Services can use repositories for complex operations OR Prisma directly for simple CRUD operations.

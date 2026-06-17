@@ -42,7 +42,7 @@ Langfuse uses a **layered architecture** with clear separation of concerns:
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                      DATABASE LAYER                          │
-│       PostgreSQL (Prisma) + ClickHouse (Direct Client)      │
+│      PostgreSQL (Prisma) + GreptimeDB (Direct SQL)          │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -67,7 +67,7 @@ Langfuse uses a **layered architecture** with clear separation of concerns:
 
 - ✅ Contain business logic
 - ✅ Orchestrate multiple operations
-- ✅ Call repositories or Prisma/ClickHouse
+- ✅ Call repositories or Prisma/`greptimeQuery`
 - ✅ Handle complex workflows
 - ❌ Should NOT know about HTTP, tRPC, or request/response objects
 
@@ -75,7 +75,7 @@ Langfuse uses a **layered architecture** with clear separation of concerns:
 
 - ✅ Complex database queries
 - ✅ Data transformation (DB → domain models)
-- ✅ ClickHouse query builders
+- ✅ GreptimeDB query builders
 - ✅ Reusable query logic
 - ❌ Should NOT contain business logic
 
@@ -119,7 +119,7 @@ export const scoresRouter = createTRPCRouter({
     .input(ScoreAllOptions)
     .query(async ({ input, ctx }) => {
       // Delegate to repository for data fetching
-      const clickhouseScoreData = await getScoresUiTable({
+      const scoreData = await getScoresUiTable({
         projectId: input.projectId,
         filter: input.filter ?? [],
         orderBy: input.orderBy,
@@ -132,14 +132,14 @@ export const scoresRouter = createTRPCRouter({
         ctx.prisma.jobExecution.findMany({
           where: {
             jobOutputScoreId: {
-              in: clickhouseScoreData.map((score) => score.id),
+              in: scoreData.map((score) => score.id),
             },
           },
         }),
         ctx.prisma.user.findMany({
           where: {
             id: {
-              in: clickhouseScoreData
+              in: scoreData
                 .map((s) => s.authorUserId)
                 .filter((id): id is string => id !== null),
             },
@@ -148,7 +148,7 @@ export const scoresRouter = createTRPCRouter({
       ]);
 
       // Transform and combine data
-      return clickhouseScoreData.map((score) => ({
+      return scoreData.map((score) => ({
         ...score,
         jobConfigurationId:
           jobExecutions.find((j) => j.jobOutputScoreId === score.id)
@@ -467,7 +467,6 @@ export class ScoresApiService {
       scoreId,
       source,
       scoreScope: this.apiVersion === "v1" ? "traces_only" : "all",
-      preferredClickhouseService: "ReadOnly",
     });
   }
 
@@ -497,7 +496,7 @@ export class ScoresApiService {
 
 - Services contain business logic, not routing logic
 - Services should NOT import tRPC or Next.js types
-- Services can call repositories, Prisma, ClickHouse directly
+- Services can call repositories, Prisma, or `greptimeQuery` directly
 - Services orchestrate multiple operations
 - Services are reusable across tRPC and public API
 
@@ -540,10 +539,11 @@ Repositories handle complex database queries, data transformation, and provide r
 
 ```
 packages/shared/src/server/repositories/
-├── traces.ts              # Trace queries (ClickHouse)
-├── observations.ts        # Observation queries (ClickHouse)
-├── scores.ts              # Score queries (ClickHouse)
-├── clickhouse.ts          # Core ClickHouse helpers
+├── traces.ts              # Trace queries (delegate to greptime/*)
+├── observations.ts        # Observation queries (delegate to greptime/*)
+├── scores.ts              # Score queries (delegate to greptime/*)
+├── greptime/              # GreptimeDB query builders + mutations
+├── dbUtils.ts             # Core DB helpers (date parsing, error types)
 └── definitions.ts         # Type definitions
 ```
 
@@ -552,9 +552,10 @@ packages/shared/src/server/repositories/
 **File:** `packages/shared/src/server/repositories/traces.ts`
 
 ```typescript
-import { queryClickhouse, upsertClickhouse } from "./clickhouse";
+import { greptimeQuery } from "@langfuse/shared/src/server";
+import { upsertTraceToGreptime } from "./greptime/mutations";
 import { TraceRecordReadType } from "./definitions";
-import { convertClickhouseToDomain } from "./traces_converters";
+import { convertGreptimeToDomain } from "./traces_converters";
 
 /**
  * Get traces by IDs
@@ -563,48 +564,42 @@ export const getTracesByIds = async (
   projectId: string,
   traceIds: string[],
 ): Promise<TraceRecordReadType[]> => {
-  const rows = await queryClickhouse<TraceRecordReadType>({
+  // Projection table holds merged latest state — no FINAL / LIMIT 1 BY.
+  const rows = await greptimeQuery<TraceRecordReadType>({
     query: `
       SELECT *
       FROM traces
-      WHERE project_id = {projectId: String}
-      AND id IN ({traceIds: Array(String)})
-      ORDER BY event_ts DESC
-      LIMIT 1 BY id, project_id
+      WHERE project_id = :projectId
+      AND id IN (:traceIds)
     `,
     params: { projectId, traceIds },
+    readOnly: true,
     tags: { feature: "tracing", type: "trace" },
   });
 
-  return rows.map(convertClickhouseToDomain);
+  return rows.map(convertGreptimeToDomain);
 };
 
 /**
- * Upsert trace to ClickHouse
+ * Upsert a single trace (low-frequency UI/tRPC edit).
+ * Writes one raw_events row; the projection table reflects it.
+ * Bulk ingestion goes through the worker's GreptimeWriter, not this path.
  */
 export const upsertTrace = async (
   trace: TraceRecordInsertType,
 ): Promise<void> => {
-  await upsertClickhouse({
-    table: "traces",
-    records: [trace],
-    eventBodyMapper: (body) => ({
-      id: body.id,
-      name: body.name,
-      user_id: body.user_id,
-      // ... map fields
-    }),
-    tags: { feature: "ingestion", type: "trace" },
-  });
+  await upsertTraceToGreptime(trace);
 };
 ```
 
 **Key Points:**
 
-- Use `queryClickhouse` for SELECT queries
-- Use `upsertClickhouse` for INSERT/UPDATE
-- Use `commandClickhouse` for DDL (ALTER TABLE, etc.)
-- Include data converters (`convertClickhouseToDomain`)
+- Use `greptimeQuery` (with `readOnly: true`) for SELECT queries
+- Use `upsertTraceToGreptime` / `upsertScoreToGreptime` for single-entity edits;
+  bulk ingestion goes through the worker's `GreptimeWriter`
+- Schema/DDL is static SQL applied by `applyGreptimeMigrations`, not a runtime
+  helper
+- Include data converters (`convertGreptimeToDomain`)
 - Add OpenTelemetry tags for observability
 - Repositories should NOT contain business logic
 
@@ -612,12 +607,12 @@ export const upsertTrace = async (
 
 ✅ **Use repositories for:**
 
-- Complex ClickHouse queries with CTEs, joins, aggregations
+- Complex GreptimeDB queries with CTEs, joins, aggregations
 - Queries used in multiple places (DRY principle)
 - Data transformation from DB types to domain models
 - Streaming large result sets
 
-❌ **Use direct Prisma/ClickHouse for:**
+❌ **Use direct Prisma/`greptimeQuery` for:**
 
 - Simple CRUD operations
 - One-off queries
@@ -686,7 +681,7 @@ export async function createScoreWithValidation({
   const scoreId = randomUUID();
 
   await Promise.all([
-    // Create score in ClickHouse
+    // Create score in GreptimeDB (writes a raw_events row)
     upsertScore({
       id: scoreId,
       projectId,
@@ -713,19 +708,9 @@ export async function createScoreWithValidation({
 ```typescript
 // packages/shared/src/server/repositories/scores.ts
 export const upsertScore = async (score: ScoreInsertType): Promise<void> => {
-  // ✅ Pure data access - no business logic
-  await upsertClickhouse({
-    table: "scores",
-    records: [score],
-    eventBodyMapper: (body) => ({
-      id: body.id,
-      trace_id: body.traceId,
-      name: body.name,
-      value: body.value,
-      author_user_id: body.authorUserId,
-    }),
-    tags: { feature: "scoring" },
-  });
+  // ✅ Pure data access - no business logic.
+  // Single-entity edit → write one raw_events row via the mutation helper.
+  await upsertScoreToGreptime(score);
 };
 ```
 
@@ -817,10 +802,11 @@ export default withMiddlewares({
   GET: createAuthedProjectAPIRoute({
     name: "Get Scores",
     fn: async ({ auth }) => {
-      // ❌ Direct ClickHouse query in route
-      const scores = await queryClickhouse({
-        query: "SELECT * FROM scores WHERE project_id = {projectId: String}",
+      // ❌ Direct GreptimeDB query in route
+      const scores = await greptimeQuery({
+        query: "SELECT * FROM scores WHERE project_id = :projectId",
         params: { projectId: auth.scope.projectId },
+        readOnly: true,
       });
 
       return { data: scores };
@@ -875,7 +861,7 @@ export const upsertScore = async (
   // ❌ Side effects in repository
   await auditLog({ ... });
 
-  await upsertClickhouse({ ... });
+  await upsertScoreToGreptime(score);
 };
 ```
 
@@ -884,17 +870,7 @@ export const upsertScore = async (
 ```typescript
 // ✅ GOOD: Pure data access, no business logic
 export const upsertScore = async (score: ScoreInsertType): Promise<void> => {
-  await upsertClickhouse({
-    table: "scores",
-    records: [score],
-    eventBodyMapper: (body) => ({
-      id: body.id,
-      trace_id: body.traceId,
-      name: body.name,
-      value: body.value,
-    }),
-    tags: { feature: "scoring" },
-  });
+  await upsertScoreToGreptime(score);
 };
 ```
 

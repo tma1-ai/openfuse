@@ -18,8 +18,8 @@ The write path is implemented and flipped to be the primary path (worker reads t
   1. **projection + EAV are non-atomic**: `GreptimeWriter` does a single combined `client.write([...tables])` (projection + EAV share gRPC fate), eliminating the common network split; GreptimeDB has no cross-table transactions, and a residual server partial is backstopped by a drop metric + idempotent rebuild. A reconciliation job can still be added.
   2. **The "Implementation Breakdown" below is the original plan intent**; as-built deviations are in this status section.
   3. **Object storage is optional**: standard ingestion and eval-generated scores no longer write S3 event blobs. OTel and eval observation blobs use the event storage backend (`local` by default in Compose, `s3` optional).
-  4. **ClickHouse kept for now**: CH projection writes are kept for read-path compatibility; remove CH after the read path (04) is migrated.
-  5. `@greptime/ingester` is a local `file:` dependency; CI reproducibility requires it to be published/vendored first.
+  4. **ClickHouse removed**: the ClickHouse client and dual-write were removed after the read path (04) and the cutover (P7) landed; GreptimeDB is the sole store.
+  5. `@greptime/ingester` is a published npm dependency (`^0.2.1`).
 
 ## Context
 

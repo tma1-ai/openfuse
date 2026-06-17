@@ -30,11 +30,11 @@ const withErrorHandling = t.middleware(async ({ ctx, next }) => {
   const res = await next({ ctx });
 
   if (!res.ok) {
-    if (res.error.cause instanceof ClickHouseResourceError) {
-      // Surface ClickHouse resource errors with advice message
+    if (res.error.cause instanceof DbResourceError) {
+      // Surface GreptimeDB resource errors with advice message
       res.error = new TRPCError({
         code: "SERVICE_UNAVAILABLE",
-        message: ClickHouseResourceError.ERROR_ADVICE_MESSAGE,
+        message: DbResourceError.ERROR_ADVICE_MESSAGE,
       });
     } else {
       // Transform 5xx errors to not expose internals
@@ -316,9 +316,9 @@ export function withMiddlewares(handlers: Handlers) {
           });
         }
 
-        if (error instanceof ClickHouseResourceError) {
+        if (error instanceof DbResourceError) {
           return res.status(524).json({
-            message: ClickHouseResourceError.ERROR_ADVICE_MESSAGE,
+            message: DbResourceError.ERROR_ADVICE_MESSAGE,
             error: "Request is taking too long to process.",
           });
         }
@@ -557,7 +557,7 @@ All tRPC errors go through `withErrorHandling` middleware:
 
 **Error types handled:**
 
-1. **ClickHouseResourceError** → `SERVICE_UNAVAILABLE` (524)
+1. **DbResourceError** → `SERVICE_UNAVAILABLE` (524)
 2. **BaseError** → Preserves httpCode and message
 3. **5xx errors** → Sanitized as "Internal error" (hides stack traces)
 4. **4xx errors** → Original error message preserved
@@ -566,10 +566,10 @@ All tRPC errors go through `withErrorHandling` middleware:
 
 ```typescript
 if (!res.ok) {
-  if (res.error.cause instanceof ClickHouseResourceError) {
+  if (res.error.cause instanceof DbResourceError) {
     res.error = new TRPCError({
       code: "SERVICE_UNAVAILABLE",
-      message: ClickHouseResourceError.ERROR_ADVICE_MESSAGE,
+      message: DbResourceError.ERROR_ADVICE_MESSAGE,
     });
   } else {
     const { code, httpStatus } = resolveError(res.error);
@@ -599,10 +599,10 @@ catch (error) {
     });
   }
 
-  // 2. ClickHouseResourceError (query timeouts, memory limits)
-  if (error instanceof ClickHouseResourceError) {
+  // 2. DbResourceError (GreptimeDB query timeouts, memory limits)
+  if (error instanceof DbResourceError) {
     return res.status(524).json({
-      message: ClickHouseResourceError.ERROR_ADVICE_MESSAGE,
+      message: DbResourceError.ERROR_ADVICE_MESSAGE,
       error: "Request is taking too long to process.",
     });
   }

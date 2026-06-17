@@ -26,8 +26,8 @@ progress output. Full usage and the need→command table live in the
   preflight subset before writing
 - `scenarios/` — one file per scenario plus shared `rng.ts`, `payload.ts`,
   `event-mirror.ts` (v3 observation → v4 `events_full` row), `verify.ts`
-- `seed-postgres.ts`, `seed-clickhouse.ts`, `utils/` — the pre-existing
-  `pnpm run dx` seed path (unchanged by the CLI)
+- `seed-postgres.ts`, `utils/` — the pre-existing `pnpm run dx` seed path
+  (GreptimeDB writes via `utils/greptime-writer.ts`; unchanged by the CLI)
 - `README.md` — design rationale, contract, and roadmap
 
 ## Rules for changes

@@ -129,12 +129,12 @@ cost.
 ## Layout
 
 - `cli.ts` — env-precheck bootstrap; `cli-main.ts` — the actual CLI
-- `doctor.ts` — stack checks (Postgres, migrations, project, ClickHouse +
-  tables + memory pressure, Redis, MinIO, web app), each with a fix command
+- `doctor.ts` — stack checks (Postgres, migrations, project, GreptimeDB +
+  tables, Redis, MinIO, web app), each with a fix command
 - `scenarios/` — one file per scenario plus `rng.ts` (Rng/jitter/anchor),
   `payload.ts`, `event-mirror.ts` (v3→v4 mapping), `verify.ts` (readbacks)
-- `seed-postgres.ts`, `seed-clickhouse.ts`, `utils/` — the pre-existing dx
-  seed path (the bulk builders in `utils/clickhouse-builder.ts` are shared)
+- `seed-postgres.ts`, `utils/` — the pre-existing dx seed path (the bulk
+  GreptimeDB writer in `utils/greptime-writer.ts` is shared)
 
 ## What's next (deliberately not built yet)
 
