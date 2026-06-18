@@ -17,13 +17,18 @@ const SCORE_TO_TRACE_OBSERVATIONS_INTERVAL_MS = 60 * 60 * 1000;
 /**
  * GreptimeDB dashboard rollup reads (04-read-path.md, P2). Replaces the ClickHouse dashboard repo:
  *   - getScoreAggregate: scores FINAL [JOIN traces FINAL] -> plain GROUP BY on the merged projection.
- *   - getObservation{Cost,Usage}ByTypeByTime: the CH `ARRAY JOIN mapKeys/mapValues(... _details)`
- *     per time bucket cannot be done over the JSON projection columns (GreptimeDB SQL has no
- *     dynamic JSON-key enumeration). The keys are instead pre-exploded at write time into the
- *     observations_usage_cost EAV table (one row per key), so the by-type breakdown is a plain
- *     server-side GROUP BY key that returns every custom usage/cost key, not just input/output/
- *     total. `toStartOfInterval ... WITH FILL` becomes `date_bin` + app-side gap fill.
+ *   - getObservation{Cost,Usage}ByTypeByTime: GreptimeDB SQL cannot enumerate JSON map keys, so the
+ *     by-type breakdown reads two sources and merges them. The standard input/output/total keys come
+ *     straight from the observations usage_details/cost_details JSON columns (covers all history,
+ *     unchanged from before). Any custom/dynamic keys come from the pre-exploded
+ *     observations_usage_cost EAV table -- populated for new writes, and for history once a
+ *     reconciliation backfill runs. The EAV side excludes the standard keys so they are never
+ *     double-counted. `toStartOfInterval ... WITH FILL` becomes `date_bin` + app-side gap fill.
  */
+
+// Standard usage/cost keys read straight from the JSON columns so they never depend on the EAV
+// backfill; every other key is a custom/dynamic key sourced from observations_usage_cost.
+const KNOWN_DETAIL_KEYS = ["input", "output", "total"] as const;
 
 // Greptime dashboard filter mapping (mirrors `tableDefinitions/mapDashboards.ts`). Each column carries
 // the conventional alias of its table in the dashboard queries (traces=t, observations=o, scores=s).
@@ -199,16 +204,63 @@ const getObservationDetailByTypeByTime = async (opts: {
     );
   }
 
-  // 'usage_details' / 'cost_details' -> the observations_usage_cost `kind` discriminator.
+  // 'usage_details' / 'cost_details' -> the observations_usage_cost `kind` discriminator + alias.
   const kind = jsonColumn === "cost_details" ? "cost" : "usage";
   params.kind = kind;
 
-  // Aggregate the pre-exploded EAV rows: GROUP BY (bucket, key) sums each dynamic key server-side.
-  // Join observations for the dashboard filters (type/level/model/...) and the trace lookback; the
-  // EAV row's `timestamp` carries the observation start_time, so bucketing/pruning happen on this
-  // table directly. The observations alias stays `o` so the compiled filter predicates compose
-  // unchanged.
-  const rows = await greptimeQuery<{
+  const traceJoin = hasTraceFilter
+    ? `LEFT JOIN traces t ON o.trace_id = t.id AND o.project_id = t.project_id AND ${notDeleted("t")}`
+    : "";
+  const restClause = restRes.query ? `AND ${restRes.query}` : "";
+  const envClause = env.query ? `AND ${env.query}` : "";
+  const lookbackClause = useLookback
+    ? "AND t.timestamp >= :traceTimestamp"
+    : "";
+
+  const byBucket = new Map<number, Record<string, number>>();
+  const allKeys = new Set<string>();
+  const setSum = (bucketMsKey: number, key: string, value: number) => {
+    allKeys.add(key);
+    const perKey = byBucket.get(bucketMsKey) ?? {};
+    perKey[key] = value;
+    byBucket.set(bucketMsKey, perKey);
+  };
+  const bucketOf = (raw: Date | string | undefined): number =>
+    (raw instanceof Date ? raw : new Date(String(raw))).getTime();
+
+  // Q1: standard input/output/total read straight from the observations JSON columns. Covers every
+  // observation (including history that has no EAV rows yet), so the canonical series never regress.
+  const knownSums = KNOWN_DETAIL_KEYS.map(
+    (k) =>
+      `sum(coalesce(json_get_float(o.${jsonColumn}, '${k}'), 0)) AS ${kind}_${k}`,
+  ).join(",\n        ");
+  const knownRows = await greptimeQuery<Record<string, unknown>>({
+    query: `
+      SELECT date_bin(INTERVAL '${bucketSizeSeconds}' second, o.start_time) AS bucket,
+        ${knownSums}
+      FROM observations o
+      ${traceJoin}
+      WHERE o.project_id = :projectId AND ${notDeleted("o")}
+        AND o.start_time >= :winFrom AND o.start_time < :winTo
+        ${restClause}
+        ${envClause}
+        ${lookbackClause}
+      GROUP BY bucket
+      ORDER BY bucket ASC`,
+    params,
+    readOnly: true,
+  });
+  for (const row of knownRows) {
+    const b = bucketOf(row.bucket as Date | string);
+    for (const k of KNOWN_DETAIL_KEYS)
+      setSum(b, k, Number(row[`${kind}_${k}`] ?? 0));
+  }
+
+  // Q2: custom (non-standard) keys from the pre-exploded EAV table -- GROUP BY key sums each dynamic
+  // key server-side. Standard keys are excluded so Q1 (the authoritative JSON map) is never
+  // double-counted. The EAV row's `timestamp` carries the observation start_time; observations is
+  // joined as `o` so the compiled filter predicates compose unchanged.
+  const customRows = await greptimeQuery<{
     bucket: Date | string;
     detail_key: string;
     sum: string | number | null;
@@ -219,32 +271,23 @@ const getObservationDetailByTypeByTime = async (opts: {
         sum(uc.${quoteIdent("value")}) AS sum
       FROM observations_usage_cost uc
       JOIN observations o ON uc.entity_id = o.id AND uc.project_id = o.project_id AND ${notDeleted("o")}
-      ${hasTraceFilter ? "LEFT JOIN traces t ON o.trace_id = t.id AND o.project_id = t.project_id AND " + notDeleted("t") : ""}
+      ${traceJoin}
       WHERE uc.${quoteIdent("kind")} = :kind
         AND uc.project_id = :projectId AND ${notDeleted("uc")}
         AND uc.${quoteIdent("timestamp")} >= :winFrom AND uc.${quoteIdent("timestamp")} < :winTo
-        ${restRes.query ? `AND ${restRes.query}` : ""}
-        ${env.query ? `AND ${env.query}` : ""}
-        ${useLookback ? "AND t.timestamp >= :traceTimestamp" : ""}
+        AND uc.${quoteIdent("key")} NOT IN ('input', 'output', 'total')
+        ${restClause}
+        ${envClause}
+        ${lookbackClause}
       GROUP BY bucket, uc.${quoteIdent("key")}
       ORDER BY bucket ASC`,
     params,
     readOnly: true,
   });
-
-  // Index bucket -> per-key sum over the dynamic key set the EAV table returns (any custom usage/
-  // cost key, not just input/output/total), then gap-fill across the full [from, to] bucket grid.
-  const byBucket = new Map<number, Record<string, number>>();
-  const allKeys = new Set<string>();
-  for (const row of rows) {
-    const bucket =
-      row.bucket instanceof Date ? row.bucket : new Date(String(row.bucket));
+  for (const row of customRows) {
     const key = greptimeString(row.detail_key);
     if (key == null) continue;
-    allKeys.add(key);
-    const perKey = byBucket.get(bucket.getTime()) ?? {};
-    perKey[key] = Number(row.sum ?? 0);
-    byBucket.set(bucket.getTime(), perKey);
+    setSum(bucketOf(row.bucket), key, Number(row.sum ?? 0));
   }
 
   // Keep only keys that carry a nonzero sum somewhere (mirror CH's "types present in data").
