@@ -234,8 +234,11 @@ const getObservationDetailByTypeByTime = async (opts: {
     (k) =>
       `sum(coalesce(json_get_float(o.${jsonColumn}, '${k}'), 0)) AS ${kind}_${k}`,
   ).join(",\n        ");
-  const knownRows = await greptimeQuery<Record<string, unknown>>({
-    query: `
+  // Q1 and Q2 are independent read-only aggregations; run them concurrently so the by-type read is
+  // one round-trip wide, not two. (mysql2 named-placeholder substitution ignores Q1's unused :kind.)
+  const [knownRows, customRows] = await Promise.all([
+    greptimeQuery<Record<string, unknown>>({
+      query: `
       SELECT date_bin(INTERVAL '${bucketSizeSeconds}' second, o.start_time) AS bucket,
         ${knownSums}
       FROM observations o
@@ -247,25 +250,19 @@ const getObservationDetailByTypeByTime = async (opts: {
         ${lookbackClause}
       GROUP BY bucket
       ORDER BY bucket ASC`,
-    params,
-    readOnly: true,
-  });
-  for (const row of knownRows) {
-    const b = bucketOf(row.bucket as Date | string);
-    for (const k of KNOWN_DETAIL_KEYS)
-      setSum(b, k, Number(row[`${kind}_${k}`] ?? 0));
-  }
-
-  // Q2: custom (non-standard) keys from the pre-exploded EAV table -- GROUP BY key sums each dynamic
-  // key server-side. Standard keys are excluded so Q1 (the authoritative JSON map) is never
-  // double-counted. The EAV row's `timestamp` carries the observation start_time; observations is
-  // joined as `o` so the compiled filter predicates compose unchanged.
-  const customRows = await greptimeQuery<{
-    bucket: Date | string;
-    detail_key: string;
-    sum: string | number | null;
-  }>({
-    query: `
+      params,
+      readOnly: true,
+    }),
+    // Q2: custom (non-standard) keys from the pre-exploded EAV table -- GROUP BY key sums each
+    // dynamic key server-side. Standard keys are excluded so Q1 (the authoritative JSON map) is
+    // never double-counted. The EAV row's `timestamp` carries the observation start_time;
+    // observations is joined as `o` so the compiled filter predicates compose unchanged.
+    greptimeQuery<{
+      bucket: Date | string;
+      detail_key: string;
+      sum: string | number | null;
+    }>({
+      query: `
       SELECT date_bin(INTERVAL '${bucketSizeSeconds}' second, uc.${quoteIdent("timestamp")}) AS bucket,
         uc.${quoteIdent("key")} AS detail_key,
         sum(uc.${quoteIdent("value")}) AS sum
@@ -281,9 +278,15 @@ const getObservationDetailByTypeByTime = async (opts: {
         ${lookbackClause}
       GROUP BY bucket, uc.${quoteIdent("key")}
       ORDER BY bucket ASC`,
-    params,
-    readOnly: true,
-  });
+      params,
+      readOnly: true,
+    }),
+  ]);
+  for (const row of knownRows) {
+    const b = bucketOf(row.bucket as Date | string);
+    for (const k of KNOWN_DETAIL_KEYS)
+      setSum(b, k, Number(row[`${kind}_${k}`] ?? 0));
+  }
   for (const row of customRows) {
     const key = greptimeString(row.detail_key);
     if (key == null) continue;
