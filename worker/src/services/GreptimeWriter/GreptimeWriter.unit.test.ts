@@ -112,6 +112,32 @@ describe("GreptimeWriter batch-failure isolation", () => {
     ).toHaveLength(0);
   });
 
+  it("registers and lands the observation usage/cost EAV fan-out", async () => {
+    // Regression guard: an observation fans out to observations_usage_cost, which must be a
+    // registered PHYSICAL_TABLE. If it is missing, the writer's per-table queue / Table builder is
+    // undefined and addToQueue/flushAll throw before anything lands.
+    const { write, landed } = fakeWriter(() => null);
+    const writer = GreptimeWriter.createForTest({ write });
+
+    writer.addToQueue(
+      GreptimeTable.Observations,
+      createObservation({
+        project_id: "p",
+        id: "obs-uc",
+        metadata: {},
+        usage_details: { input: 10, output: 20, total: 30, cache_read: 5 },
+        cost_details: { input: 1, total: 1 },
+      }),
+    );
+    await writer.flushAll(true);
+
+    expect(landedProjectionIds(landed, "observations")).toContain("obs-uc");
+    // 4 usage keys + 2 cost keys, all keyed to the one observation's entity_id.
+    const usageCostIds = landedProjectionIds(landed, "observations_usage_cost");
+    expect(usageCostIds).toHaveLength(6);
+    expect(new Set(usageCostIds)).toEqual(new Set(["obs-uc"]));
+  });
+
   it("isolates a poison group via bisection while good groups land", async () => {
     const { write, landed } = fakeWriter((tables) =>
       snapshot(tables).some((s) => s.ids.includes("t2"))
