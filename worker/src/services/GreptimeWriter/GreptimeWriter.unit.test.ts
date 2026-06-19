@@ -132,9 +132,10 @@ describe("GreptimeWriter batch-failure isolation", () => {
     await writer.flushAll(true);
 
     expect(landedProjectionIds(landed, "observations")).toContain("obs-uc");
-    // 4 usage keys + 2 cost keys, all keyed to the one observation's entity_id.
+    // Only custom keys are exploded into the EAV table; standard input/output/total are served from
+    // the JSON columns. usage has one custom key (cache_read); cost has none.
     const usageCostIds = landedProjectionIds(landed, "observations_usage_cost");
-    expect(usageCostIds).toHaveLength(6);
+    expect(usageCostIds).toHaveLength(1);
     expect(new Set(usageCostIds)).toEqual(new Set(["obs-uc"]));
   });
 
