@@ -32,7 +32,7 @@ const LangfuseLogotypeOrCustomized = () => {
       {/* Collapsed sidebar: icon only. */}
       <LangfuseIcon
         size={28}
-        className="hidden scale-120 group-data-[collapsible=icon]:block"
+        className="hidden scale-[1.2] group-data-[collapsible=icon]:block"
       />
     </div>
   );

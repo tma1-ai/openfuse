@@ -17,7 +17,7 @@ export function IntroSection() {
         </p>
 
         <Button asChild variant="outline">
-          <a href={OPENFUSE_GITHUB} target="_blank" rel="noopener">
+          <a href={OPENFUSE_GITHUB} target="_blank" rel="noopener noreferrer">
             <SiGithub className="mr-2 h-4 w-4" /> GitHub ↗
           </a>
         </Button>
@@ -25,7 +25,7 @@ export function IntroSection() {
           <a
             href={`${OPENFUSE_GITHUB}/issues/new`}
             target="_blank"
-            rel="noopener"
+            rel="noopener noreferrer"
           >
             <Bug className="mr-2 h-4 w-4" /> Report an issue ↗
           </a>
@@ -34,7 +34,7 @@ export function IntroSection() {
           <a
             href={`${OPENFUSE_GITHUB}/discussions`}
             target="_blank"
-            rel="noopener"
+            rel="noopener noreferrer"
           >
             <MessagesSquare className="mr-2 h-4 w-4" /> Discussions ↗
           </a>
