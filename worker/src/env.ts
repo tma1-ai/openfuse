@@ -132,6 +132,19 @@ const EnvSchema = z.object({
     .number()
     .positive()
     .default(1),
+  // Projects enumerated + fanned out per fleet-orchestration page before it re-enqueues itself with
+  // the next project cursor. The orchestration job itself is cheap (one project-page query + one
+  // addBulk); keep it modest so the reconciliation queue isn't flooded all at once.
+  LANGFUSE_GREPTIME_RECONCILIATION_FLEET_PROJECT_PAGE_SIZE: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(50),
+  // Single keyset walk over projects; one consumer is enough and keeps the cursor strictly ordered.
+  LANGFUSE_GREPTIME_RECONCILIATION_FLEET_CONCURRENCY: z.coerce
+    .number()
+    .positive()
+    .default(1),
   LANGFUSE_EVAL_CREATOR_LIMITER_DURATION: z.coerce
     .number()
     .positive()
@@ -255,6 +268,9 @@ const EnvSchema = z.object({
     .enum(["true", "false"])
     .default("true"),
   QUEUE_CONSUMER_GREPTIME_RECONCILIATION_QUEUE_IS_ENABLED: z
+    .enum(["true", "false"])
+    .default("true"),
+  QUEUE_CONSUMER_GREPTIME_RECONCILIATION_FLEET_QUEUE_IS_ENABLED: z
     .enum(["true", "false"])
     .default("true"),
   QUEUE_CONSUMER_DATASET_DELETE_QUEUE_IS_ENABLED: z

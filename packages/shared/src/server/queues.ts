@@ -100,6 +100,40 @@ export const GreptimeReconciliationEventSchema = z.object({
     .max(GREPTIME_RECONCILIATION_MAX_BATCH_SIZE)
     .optional(),
 });
+
+// Upper bound on how many projects one fleet-orchestration page enumerates + fans out before it
+// re-enqueues itself, enforced on the admin route and the queue payload alike.
+export const GREPTIME_RECONCILIATION_FLEET_MAX_PROJECT_PAGE_SIZE = 1000;
+
+// Fleet-wide reconciliation orchestrator (one-shot historical backfill). Mirrors the integration
+// "schedule" queues: this job keyset-paginates over projects and fans out one per-project
+// GreptimeReconciliationJob each, then re-enqueues itself for the next project page. It does no
+// rebuild work itself; the existing per-project processor drains each project.
+export const GreptimeReconciliationFleetEventSchema = z.object({
+  // Keyset cursor into projects ordered by id. Omitted on the first job; the processor re-enqueues
+  // itself with the last project id of each page until all projects are enumerated.
+  cursor: z
+    .object({
+      projectId: z.string(),
+    })
+    .optional(),
+  // Projects enumerated + fanned out per orchestration page before self-requeue. Optional so the
+  // producer can rely on the worker-side default.
+  projectPageSize: z
+    .number()
+    .int()
+    .positive()
+    .max(GREPTIME_RECONCILIATION_FLEET_MAX_PROJECT_PAGE_SIZE)
+    .optional(),
+  // Per-project entity batch size, passed through verbatim to each enqueued GreptimeReconciliationJob
+  // (bounded there by GREPTIME_RECONCILIATION_MAX_BATCH_SIZE).
+  batchSize: z
+    .number()
+    .int()
+    .positive()
+    .max(GREPTIME_RECONCILIATION_MAX_BATCH_SIZE)
+    .optional(),
+});
 export const DatasetQueueEventSchema = z.discriminatedUnion("deletionType", [
   // Delete all run items for a specific dataset
   z.object({
@@ -317,6 +351,9 @@ export type ScoresQueueEventType = z.infer<typeof ScoresQueueEventSchema>;
 export type GreptimeReconciliationEventType = z.infer<
   typeof GreptimeReconciliationEventSchema
 >;
+export type GreptimeReconciliationFleetEventType = z.infer<
+  typeof GreptimeReconciliationFleetEventSchema
+>;
 export type DatasetQueueEventType = z.infer<typeof DatasetQueueEventSchema>;
 export type ProjectQueueEventType = z.infer<typeof ProjectQueueEventSchema>;
 export type DatasetRunItemUpsertEventType = z.infer<
@@ -385,6 +422,7 @@ export enum QueueName {
   CreateEvalQueue = "create-eval-queue",
   ScoreDelete = "score-delete",
   GreptimeReconciliation = "greptime-reconciliation",
+  GreptimeReconciliationFleet = "greptime-reconciliation-fleet",
   DatasetDelete = "dataset-delete-queue",
   DeadLetterRetryQueue = "dead-letter-retry-queue",
   WebhookQueue = "webhook-queue",
@@ -420,6 +458,7 @@ export enum QueueJobs {
   CreateEvalJob = "create-eval-job",
   ScoreDelete = "score-delete",
   GreptimeReconciliationJob = "greptime-reconciliation-job",
+  GreptimeReconciliationFleetJob = "greptime-reconciliation-fleet-job",
   DatasetDelete = "dataset-delete-job",
   DeadLetterRetryJob = "dead-letter-retry-job",
   WebhookJob = "webhook-job",
@@ -452,6 +491,12 @@ export type TQueueJobTypes = {
     id: string;
     payload: GreptimeReconciliationEventType;
     name: QueueJobs.GreptimeReconciliationJob;
+  };
+  [QueueName.GreptimeReconciliationFleet]: {
+    timestamp: Date;
+    id: string;
+    payload: GreptimeReconciliationFleetEventType;
+    name: QueueJobs.GreptimeReconciliationFleetJob;
   };
   [QueueName.DatasetDelete]: {
     timestamp: Date;
