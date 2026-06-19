@@ -130,7 +130,7 @@ export function AuthenticatedLayout({
     <>
       <Head>
         <title>{metadata.title}</title>
-        <link rel="icon" type="image/svg+xml" href={metadata.faviconPath} />
+        <link rel="icon" type="image/png" href={metadata.faviconPath} />
         <link
           rel="icon"
           type="image/png"

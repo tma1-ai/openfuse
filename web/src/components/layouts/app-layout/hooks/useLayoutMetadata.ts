@@ -4,7 +4,6 @@
  */
 
 import { useMemo } from "react";
-import { useLangfuseCloudRegion } from "@/src/features/organizations/hooks";
 import { env } from "@/src/env.mjs";
 import type { NavigationItem } from "@/src/components/layouts/utilities/routes";
 
@@ -22,18 +21,14 @@ export function useLayoutMetadata(
   activePathName: string | undefined,
   _navigation: NavigationItem[],
 ) {
-  const { region } = useLangfuseCloudRegion();
-
   return useMemo(() => {
     const basePath = env.NEXT_PUBLIC_BASE_PATH ?? "";
 
     // Determine page title from active route
-    const title = activePathName ? `${activePathName} | Langfuse` : "Langfuse";
+    const title = activePathName ? `${activePathName} | Openfuse` : "Openfuse";
 
-    // Use dev favicon in DEV region for visual distinction
-    // Using SVG for modern browsers with PNG fallback specified in sizes
-    const faviconPath =
-      region === "DEV" ? `${basePath}/icon-dev.svg` : `${basePath}/icon.svg`;
+    // Openfuse brand icon (transparent PNG, theme-agnostic).
+    const faviconPath = `${basePath}/openfuse-icon.png`;
 
     return {
       title,
@@ -42,5 +37,5 @@ export function useLayoutMetadata(
       favicon256Path: `${basePath}/icon256.png`,
       appleTouchIconPath: `${basePath}/apple-touch-icon.png`,
     };
-  }, [activePathName, region]);
+  }, [activePathName]);
 }
