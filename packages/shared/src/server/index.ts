@@ -92,6 +92,7 @@ export * from "./redis/traceDelete";
 export * from "./redis/projectDelete";
 export * from "./redis/scoreDelete";
 export * from "./redis/greptimeReconciliation";
+export * from "./redis/greptimeReconciliationFleet";
 export * from "./redis/datasetDelete";
 export * from "./redis/datasetRunItemUpsert";
 export * from "./redis/otelIngestionQueue";

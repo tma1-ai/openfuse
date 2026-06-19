@@ -69,6 +69,7 @@ import { meteringDataPostgresExportProcessor } from "./ee/meteringDataPostgresEx
 import { batchActionQueueProcessor } from "./queues/batchActionQueue";
 import { scoreDeleteProcessor } from "./queues/scoreDelete";
 import { greptimeReconciliationProcessor } from "./queues/greptimeReconciliation";
+import { greptimeReconciliationFleetProcessor } from "./queues/greptimeReconciliationFleet";
 import { DlqRetryService } from "./services/dlq/dlqRetryService";
 import { entityChangeQueueProcessor } from "./queues/entityChangeQueue";
 import { webhookProcessor } from "./queues/webhooks";
@@ -199,6 +200,18 @@ if (env.QUEUE_CONSUMER_GREPTIME_RECONCILIATION_QUEUE_IS_ENABLED === "true") {
     greptimeReconciliationProcessor,
     {
       concurrency: env.LANGFUSE_GREPTIME_RECONCILIATION_CONCURRENCY,
+    },
+  );
+}
+
+if (
+  env.QUEUE_CONSUMER_GREPTIME_RECONCILIATION_FLEET_QUEUE_IS_ENABLED === "true"
+) {
+  WorkerManager.register(
+    QueueName.GreptimeReconciliationFleet,
+    greptimeReconciliationFleetProcessor,
+    {
+      concurrency: env.LANGFUSE_GREPTIME_RECONCILIATION_FLEET_CONCURRENCY,
     },
   );
 }
