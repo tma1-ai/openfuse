@@ -1,6 +1,7 @@
 import { type FilterState } from "../../../types";
 import { greptimeQuery } from "../../greptime/client";
 import { createGreptimeFilterFromFilterState } from "../../greptime/sql/factory";
+import { USAGE_COST_KNOWN_KEYS } from "../../greptime/sql/fragments";
 import {
   FilterList,
   type DateTimeFilter,
@@ -29,7 +30,10 @@ const SCORE_TO_TRACE_OBSERVATIONS_INTERVAL_MS = 60 * 60 * 1000;
 
 // Standard usage/cost keys read straight from the JSON columns so they never depend on the EAV
 // backfill; every other key is a custom/dynamic key sourced from observations_usage_cost.
-const KNOWN_DETAIL_KEYS = ["input", "output", "total"] as const;
+const KNOWN_DETAIL_KEYS = USAGE_COST_KNOWN_KEYS;
+const KNOWN_DETAIL_KEYS_SQL = KNOWN_DETAIL_KEYS.map((key) => `'${key}'`).join(
+  ", ",
+);
 
 // Greptime dashboard filter mapping (mirrors `tableDefinitions/mapDashboards.ts`). Each column carries
 // the conventional alias of its table in the dashboard queries (traces=t, observations=o, scores=s).
@@ -274,7 +278,7 @@ const getObservationDetailByTypeByTime = async (opts: {
       WHERE uc.${quoteIdent("kind")} = :kind
         AND uc.project_id = :projectId AND ${notDeleted("uc")}
         AND uc.${quoteIdent("timestamp")} >= :winFrom AND uc.${quoteIdent("timestamp")} < :winTo
-        AND uc.${quoteIdent("key")} NOT IN ('input', 'output', 'total')
+        AND uc.${quoteIdent("key")} NOT IN (${KNOWN_DETAIL_KEYS_SQL})
         ${restClause}
         ${envClause}
         ${lookbackClause}
