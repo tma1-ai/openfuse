@@ -140,6 +140,36 @@ export const getObservationsForTrace = async <IncludeIO extends boolean>(opts: {
   });
 };
 
+/**
+ * Count a trace's observations with the same trace-to-observations lookback window as
+ * `getObservationsForTrace`. A `SELECT count(*)` instead of fetching every row just to read its
+ * length, for callers (e.g. trace export) that only need the size.
+ */
+export const getObservationCountForTrace = async (opts: {
+  traceId: string;
+  projectId: string;
+  timestamp?: Date;
+}): Promise<number> => {
+  const { traceId, projectId, timestamp } = opts;
+  const rows = await greptimeQuery<{ count: string | number }>({
+    query: `
+      SELECT count(*) AS count
+      FROM observations
+      WHERE trace_id = :traceId AND project_id = :projectId
+        ${timestamp ? "AND start_time >= :traceLookback" : ""}
+        AND ${notDeleted()}`,
+    params: {
+      traceId,
+      projectId,
+      ...(timestamp
+        ? { traceLookback: greptimeTsParam(minus(timestamp, HOUR_MS)) }
+        : {}),
+    },
+    readOnly: true,
+  });
+  return Number(rows[0]?.count ?? 0);
+};
+
 export const getObservationForTraceIdByName = async ({
   traceId,
   projectId,

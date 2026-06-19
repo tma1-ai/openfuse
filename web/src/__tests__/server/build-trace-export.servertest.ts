@@ -10,6 +10,7 @@ import {
 const {
   mockGetTraceById,
   mockGetObservationsForTrace,
+  mockGetObservationCountForTrace,
   mockGetScoresAndCorrectionsForTraces,
   mockTraceSessionFindFirst,
   mockProjectFindFirst,
@@ -17,6 +18,7 @@ const {
 } = vi.hoisted(() => ({
   mockGetTraceById: vi.fn(),
   mockGetObservationsForTrace: vi.fn(),
+  mockGetObservationCountForTrace: vi.fn(),
   mockGetScoresAndCorrectionsForTraces: vi.fn(),
   mockTraceSessionFindFirst: vi.fn(),
   mockProjectFindFirst: vi.fn(),
@@ -28,6 +30,8 @@ vi.mock("@langfuse/shared/src/server", async () => ({
   getTraceById: (...args: unknown[]) => mockGetTraceById(...args),
   getObservationsForTrace: (...args: unknown[]) =>
     mockGetObservationsForTrace(...args),
+  getObservationCountForTrace: (...args: unknown[]) =>
+    mockGetObservationCountForTrace(...args),
   getScoresAndCorrectionsForTraces: (...args: unknown[]) =>
     mockGetScoresAndCorrectionsForTraces(...args),
 }));
@@ -164,6 +168,8 @@ describe("buildTraceExport", () => {
       originalObservationLimit;
     mockGetTraceById.mockResolvedValue(makeTrace());
     mockGetObservationsForTrace.mockResolvedValue([makeObservation()]);
+    // Default below the omit-large-fields threshold, so the row fetch keeps IO/metadata.
+    mockGetObservationCountForTrace.mockResolvedValue(1);
     mockGetScoresAndCorrectionsForTraces.mockResolvedValue([makeScore()]);
     mockTraceSessionFindFirst.mockResolvedValue(null);
     mockProjectFindFirst.mockResolvedValue({ orgId: "org-1" });
@@ -189,21 +195,21 @@ describe("buildTraceExport", () => {
         shouldJsonParse: false,
       },
     });
-    // First call derives the observation count without IO/metadata.
-    expect(mockGetObservationsForTrace).toHaveBeenNthCalledWith(1, {
+    // The observation count is derived with a dedicated COUNT(*) helper (same lookback window).
+    expect(mockGetObservationCountForTrace).toHaveBeenCalledWith({
       traceId,
       projectId,
       timestamp: traceTimestamp,
-      includeIO: false,
     });
-    // Second call fetches the records with full IO/metadata for small traces.
-    expect(mockGetObservationsForTrace).toHaveBeenNthCalledWith(2, {
+    expect(mockGetObservationCountForTrace).toHaveBeenCalledTimes(1);
+    // Below the threshold -> the single row fetch keeps full IO/metadata.
+    expect(mockGetObservationsForTrace).toHaveBeenCalledTimes(1);
+    expect(mockGetObservationsForTrace).toHaveBeenCalledWith({
       traceId,
       projectId,
       timestamp: traceTimestamp,
       includeIO: true,
     });
-    expect(mockGetObservationsForTrace).toHaveBeenCalledTimes(2);
     expect(mockGetScoresAndCorrectionsForTraces).toHaveBeenCalledWith({
       projectId,
       traceIds: [traceId],
@@ -332,6 +338,9 @@ describe("buildTraceExport", () => {
   });
 
   it("omits IO, metadata, toolDefinitions, and toolCalls for large trace exports", async () => {
+    // The count crosses the threshold, so omitLargeFields is driven by the COUNT helper, not the
+    // fetched rows' length.
+    mockGetObservationCountForTrace.mockResolvedValue(350);
     mockGetObservationsForTrace.mockResolvedValue(
       Array.from({ length: 350 }, (_, idx) => ({
         ...makeObservation(),
@@ -347,6 +356,7 @@ describe("buildTraceExport", () => {
     });
 
     // Large traces fetch records without IO/metadata.
+    expect(mockGetObservationsForTrace).toHaveBeenCalledTimes(1);
     expect(mockGetObservationsForTrace).toHaveBeenLastCalledWith({
       traceId,
       projectId,

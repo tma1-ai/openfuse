@@ -64,6 +64,12 @@ export const getObservationsForTrace = <IncludeIO extends boolean>(
     includeIO: opts.includeIO,
   });
 
+export const getObservationCountForTrace = (opts: {
+  traceId: string;
+  projectId: string;
+  timestamp?: Date;
+}) => greptimeObservationReads.getObservationCountForTrace(opts);
+
 export const getObservationForTraceIdByName = (args: {
   traceId: string;
   projectId: string;
