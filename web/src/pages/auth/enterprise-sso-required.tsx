@@ -139,7 +139,7 @@ export default function EnterpriseSsoRequiredPage() {
   return (
     <>
       <Head>
-        <title>Enterprise SSO Required | Langfuse</title>
+        <title>Enterprise SSO Required | Openfuse</title>
       </Head>
       <div className="min-h-screen-with-banner bg-background flex flex-col justify-center px-6 py-12 lg:px-8">
         <div className="sm:mx-auto sm:w-full sm:max-w-md">
