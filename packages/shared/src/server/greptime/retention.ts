@@ -1,7 +1,16 @@
 import type { Connection } from "mysql2/promise";
 
 import { env } from "../../env";
+import {
+  isValidGreptimeDatabaseName,
+  normalizeDuration,
+  parseDurationSeconds,
+} from "../../utils/greptimeRetentionDuration";
 import { logger } from "../logger";
+
+// Re-exported so retention consumers (and the colocated test) keep importing the duration grammar
+// from this module; the implementation lives in a pure, env-free util shared with env.ts.
+export { normalizeDuration, parseDurationSeconds };
 
 /**
  * GreptimeDB database-level retention (TTL).
@@ -21,63 +30,8 @@ import { logger } from "../logger";
  * precedence over the database TTL.)
  */
 
-// humantime-style duration units -> seconds. Approximate (y=365d) — used only to validate that the
-// TTL string parses, never to compute an exact expiry.
-const UNIT_SECONDS: Record<string, number> = {
-  s: 1, sec: 1, secs: 1, second: 1, seconds: 1,
-  m: 60, min: 60, mins: 60, minute: 60, minutes: 60,
-  h: 3600, hr: 3600, hrs: 3600, hour: 3600, hours: 3600,
-  d: 86400, day: 86400, days: 86400,
-  w: 604800, week: 604800, weeks: 604800,
-  y: 31536000, year: 31536000, years: 31536000,
-}; // prettier-ignore
-
-const DURATION_TOKEN = /(\d+)\s*([a-z]+)/g;
-const UNQUOTED_DATABASE_IDENTIFIER = /^[a-z_][a-z0-9_]*$/;
-
-/**
- * Normalize a TTL string to the exact form `parseDurationSeconds` validates: trimmed + lowercased.
- * Emitting this (rather than the raw input) into SQL keeps the stored TTL canonical, e.g. "730D" ->
- * "730d".
- */
-export const normalizeDuration = (raw: string): string =>
-  raw.trim().toLowerCase();
-
-/**
- * Parse a humantime-style duration ("730d", "104w", "2y", "1h30m") to seconds. Doubles as input
- * validation: anything that does not parse cleanly throws, so a bad/injection-y TTL string fails
- * loud rather than reaching SQL.
- */
-export const parseDurationSeconds = (raw: string): number => {
-  const normalized = normalizeDuration(raw);
-  if (!normalized) throw new Error("empty GreptimeDB TTL duration");
-
-  let total = 0;
-  let consumed = "";
-  for (const match of normalized.matchAll(DURATION_TOKEN)) {
-    const multiplier = UNIT_SECONDS[match[2]];
-    if (multiplier === undefined) {
-      throw new Error(
-        `unsupported GreptimeDB TTL unit '${match[2]}' in '${raw}'`,
-      );
-    }
-    total += Number(match[1]) * multiplier;
-    consumed += match[0];
-  }
-  // Reject leftover characters (e.g. "30x", "1 fortnight") and zero-length matches.
-  if (
-    total <= 0 ||
-    consumed.replace(/\s+/g, "") !== normalized.replace(/\s+/g, "")
-  ) {
-    throw new Error(
-      `could not parse GreptimeDB TTL duration '${raw}' (use e.g. '730d', '104w', '2y')`,
-    );
-  }
-  return total;
-};
-
 const formatDatabaseNameForAlter = (database: string): string => {
-  if (!UNQUOTED_DATABASE_IDENTIFIER.test(database)) {
+  if (!isValidGreptimeDatabaseName(database)) {
     throw new Error(
       `invalid GreptimeDB database name '${database}' for ALTER DATABASE; must start with a lowercase letter or underscore, then lowercase letters, digits, or underscores`,
     );
