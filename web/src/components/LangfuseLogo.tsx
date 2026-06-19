@@ -11,10 +11,10 @@ export const LangfuseIcon = ({
 }) => (
   // eslint-disable-next-line @next/next/no-img-element
   <img
-    src={`${env.NEXT_PUBLIC_BASE_PATH ?? ""}/icon.svg`}
+    src={`${env.NEXT_PUBLIC_BASE_PATH ?? ""}/openfuse-icon.png`}
     width={size}
     height={size}
-    alt="Langfuse Icon"
+    alt="Openfuse Icon"
     className={className}
   />
 );
@@ -22,18 +22,14 @@ export const LangfuseIcon = ({
 const LangfuseLogotypeOrCustomized = () => {
   return (
     <div className="flex items-center">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        className="-ml-1.5 max-h-6 max-w-22 group-data-[collapsible=icon]:hidden dark:hidden"
-        src={`${env.NEXT_PUBLIC_BASE_PATH ?? ""}/wordart-black.svg`}
-        alt="Langfuse Logo"
-      />
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        className="-ml-1.5 hidden max-h-6 max-w-22 group-data-[collapsible=icon]:hidden dark:block"
-        src={`${env.NEXT_PUBLIC_BASE_PATH ?? ""}/wordart-white.svg`}
-        alt="Langfuse Logo"
-      />
+      {/* Expanded sidebar: Openfuse wordmark. The "fuse" half uses the brand teal so the wordmark
+          matches the logo across light/dark themes ("Open" inherits the foreground color). Kept
+          text-only (no leading icon) to preserve the original wordmark footprint next to the
+          version label. */}
+      <span className="text-foreground text-xl font-semibold tracking-tight group-data-[collapsible=icon]:hidden">
+        Open<span className="text-[#02CAA9]">fuse</span>
+      </span>
+      {/* Collapsed sidebar: icon only. */}
       <LangfuseIcon
         size={28}
         className="hidden scale-120 group-data-[collapsible=icon]:block"

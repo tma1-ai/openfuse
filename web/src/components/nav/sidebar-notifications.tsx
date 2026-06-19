@@ -73,15 +73,15 @@ export const notifications: SidebarNotification[] = [
   },
   {
     id: "github-star",
-    title: "Star Langfuse",
+    title: "Star Openfuse",
     description:
       "See the latest releases and help grow the community on GitHub",
-    link: "https://github.com/langfuse/langfuse",
+    link: "https://github.com/tma1-ai/openfuse",
     linkContent: (
       // eslint-disable-next-line @next/next/no-img-element
       <img
-        alt="Langfuse GitHub stars"
-        src="https://img.shields.io/github/stars/langfuse/langfuse?label=langfuse&style=social"
+        alt="Openfuse GitHub stars"
+        src="https://img.shields.io/github/stars/tma1-ai/openfuse?label=openfuse&style=social"
       />
     ),
   },
