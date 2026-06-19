@@ -112,15 +112,24 @@ describe("buildGreptimeRowsForRecord", () => {
     expect(out[1].rows[0]).toMatchObject({ timestamp: 2000, key: "k" });
 
     const usageCost = out.find((o) => o.table === "observations_usage_cost")!;
-    // One row per usage key then per cost key, carrying the observation start_time and kind tag.
+    // Only custom keys are exploded into the EAV table; standard input/output/total are served from
+    // the JSON columns, so they are skipped here (no write amplification). cost_details has no custom
+    // keys, so only the usage `cache_read` row survives.
     expect(usageCost.rows).toEqual([
-      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "usage", key: "input", value: 10, is_deleted: false }, // prettier-ignore
-      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "usage", key: "output", value: 20, is_deleted: false }, // prettier-ignore
-      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "usage", key: "total", value: 30, is_deleted: false }, // prettier-ignore
       { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "usage", key: "cache_read", value: 5, is_deleted: false }, // prettier-ignore
-      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "cost", key: "input", value: 1, is_deleted: false }, // prettier-ignore
-      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "cost", key: "total", value: 1, is_deleted: false }, // prettier-ignore
     ]);
+  });
+
+  it("omits the usage/cost EAV group when an observation has only standard keys", () => {
+    const obs = createObservation({
+      project_id: "p1",
+      id: "o3",
+      metadata: {},
+      usage_details: { input: 10, output: 20, total: 30 },
+      cost_details: { input: 1, output: 2, total: 3 },
+    });
+    const out = buildGreptimeRowsForRecord(GreptimeTable.Observations, obs);
+    expect(tablesOf(out)).toEqual(["observations"]);
   });
 
   it("omits the usage/cost EAV group when an observation has no usage or cost", () => {
@@ -181,16 +190,30 @@ describe("row mappers", () => {
 describe("usageCostRows", () => {
   it("drops non-finite values and propagates is_deleted", () => {
     const rows = usageCostRows({
-      usageDetails: { input: 10, bad: NaN, worse: Infinity },
-      costDetails: { total: 0.5 },
+      usageDetails: { cache_read: 10, bad: NaN, worse: Infinity },
+      costDetails: { cache_read: 0.5 },
       projectId: "p1",
       entityId: "o1",
       timestamp: 1234,
       isDeleted: true,
     });
     expect(rows).toEqual([
-      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "usage", key: "input", value: 10, is_deleted: true }, // prettier-ignore
-      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "cost", key: "total", value: 0.5, is_deleted: true }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "usage", key: "cache_read", value: 10, is_deleted: true }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "cost", key: "cache_read", value: 0.5, is_deleted: true }, // prettier-ignore
+    ]);
+  });
+
+  it("skips standard input/output/total keys (served from JSON columns)", () => {
+    const rows = usageCostRows({
+      usageDetails: { input: 10, output: 20, total: 30, reasoning: 7 },
+      costDetails: { input: 1, output: 2, total: 3 },
+      projectId: "p1",
+      entityId: "o1",
+      timestamp: 1234,
+      isDeleted: false,
+    });
+    expect(rows).toEqual([
+      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "usage", key: "reasoning", value: 7, is_deleted: false }, // prettier-ignore
     ]);
   });
 

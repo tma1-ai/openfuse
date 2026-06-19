@@ -1,6 +1,7 @@
 import { type FilterState } from "../../../types";
 import { greptimeQuery } from "../../greptime/client";
 import { createGreptimeFilterFromFilterState } from "../../greptime/sql/factory";
+import { USAGE_COST_KNOWN_KEYS } from "../../greptime/sql/fragments";
 import {
   FilterList,
   type DateTimeFilter,
@@ -22,13 +23,17 @@ const SCORE_TO_TRACE_OBSERVATIONS_INTERVAL_MS = 60 * 60 * 1000;
  *     straight from the observations usage_details/cost_details JSON columns (covers all history,
  *     unchanged from before). Any custom/dynamic keys come from the pre-exploded
  *     observations_usage_cost EAV table -- populated for new writes, and for history once a
- *     reconciliation backfill runs. The EAV side excludes the standard keys so they are never
- *     double-counted. `toStartOfInterval ... WITH FILL` becomes `date_bin` + app-side gap fill.
+ *     reconciliation backfill runs. The writer only fans custom keys into the EAV table; the NOT IN
+ *     guard on the standard keys is kept defensive (older rows written before that change still
+ *     carried them). `toStartOfInterval ... WITH FILL` becomes `date_bin` + app-side gap fill.
  */
 
 // Standard usage/cost keys read straight from the JSON columns so they never depend on the EAV
 // backfill; every other key is a custom/dynamic key sourced from observations_usage_cost.
-const KNOWN_DETAIL_KEYS = ["input", "output", "total"] as const;
+const KNOWN_DETAIL_KEYS = USAGE_COST_KNOWN_KEYS;
+const KNOWN_DETAIL_KEYS_SQL = KNOWN_DETAIL_KEYS.map((key) => `'${key}'`).join(
+  ", ",
+);
 
 // Greptime dashboard filter mapping (mirrors `tableDefinitions/mapDashboards.ts`). Each column carries
 // the conventional alias of its table in the dashboard queries (traces=t, observations=o, scores=s).
@@ -254,9 +259,10 @@ const getObservationDetailByTypeByTime = async (opts: {
       readOnly: true,
     }),
     // Q2: custom (non-standard) keys from the pre-exploded EAV table -- GROUP BY key sums each
-    // dynamic key server-side. Standard keys are excluded so Q1 (the authoritative JSON map) is
-    // never double-counted. The EAV row's `timestamp` carries the observation start_time;
-    // observations is joined as `o` so the compiled filter predicates compose unchanged.
+    // dynamic key server-side. The writer no longer fans standard keys into the EAV table, but the
+    // NOT IN guard stays defensive so any older rows that still carry them are not double-counted
+    // against Q1 (the authoritative JSON map). The EAV row's `timestamp` carries the observation
+    // start_time; observations is joined as `o` so the compiled filter predicates compose unchanged.
     greptimeQuery<{
       bucket: Date | string;
       detail_key: string;
@@ -272,7 +278,7 @@ const getObservationDetailByTypeByTime = async (opts: {
       WHERE uc.${quoteIdent("kind")} = :kind
         AND uc.project_id = :projectId AND ${notDeleted("uc")}
         AND uc.${quoteIdent("timestamp")} >= :winFrom AND uc.${quoteIdent("timestamp")} < :winTo
-        AND uc.${quoteIdent("key")} NOT IN ('input', 'output', 'total')
+        AND uc.${quoteIdent("key")} NOT IN (${KNOWN_DETAIL_KEYS_SQL})
         ${restClause}
         ${envClause}
         ${lookbackClause}

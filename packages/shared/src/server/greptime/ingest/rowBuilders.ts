@@ -4,7 +4,14 @@ import {
   type ScoreRecordInsertType,
   type TraceRecordInsertType,
 } from "../../repositories/definitions";
+import { USAGE_COST_KNOWN_KEYS } from "../sql/fragments";
 import { GreptimeTable } from "./tableSchemas";
+
+// Standard input/output/total are read straight from the observations usage_details/cost_details
+// JSON columns on every read path (dashboard Q1), so exploding them into the EAV table would be
+// pure write amplification: the only EAV reader (dashboard Q2) excludes them with a NOT IN guard.
+// Only custom/dynamic keys (cache_read, reasoning, ...) need the per-key EAV fan-out.
+const KNOWN_USAGE_COST_KEYS = new Set<string>(USAGE_COST_KNOWN_KEYS);
 
 /**
  * Record -> GreptimeDB gRPC row mappers + EAV fan-out (02-write-path.md, step 5).
@@ -177,11 +184,13 @@ export const tagRows = (params: {
 
 /**
  * Explode an observation's usage_details / cost_details maps into observations_usage_cost EAV rows
- * (one row per dynamic key, tagged by `kind`). This is what lets the dashboard aggregate any
+ * (one row per custom key, tagged by `kind`). This is what lets the dashboard aggregate any
  * custom usage/cost key with a server-side GROUP BY instead of the hardcoded input/output/total
- * narrowing GreptimeDB SQL forced before (F5). Non-finite values are dropped, mirroring
- * `mergeUsageOrCostMaps`. `timestamp` carries the observation start_time, matching the EAV
- * convention used by `metadataRows`.
+ * narrowing GreptimeDB SQL forced before (F5). The standard input/output/total keys are skipped:
+ * they are served from the JSON columns on every read path, so the EAV table only carries the
+ * long-tail custom keys (zero write amplification for the common case). Non-finite values are
+ * dropped, mirroring `mergeUsageOrCostMaps`. `timestamp` carries the observation start_time,
+ * matching the EAV convention used by `metadataRows`.
  */
 export const usageCostRows = (params: {
   usageDetails: Record<string, number> | undefined;
@@ -196,7 +205,10 @@ export const usageCostRows = (params: {
     map: Record<string, number> | undefined,
   ): GreptimeRow[] =>
     Object.entries(map ?? {})
-      .filter(([, value]) => Number.isFinite(Number(value)))
+      .filter(
+        ([key, value]) =>
+          !KNOWN_USAGE_COST_KEYS.has(key) && Number.isFinite(Number(value)),
+      )
       .map(([key, value]) => ({
         project_id: params.projectId,
         entity_id: params.entityId,
