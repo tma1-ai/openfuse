@@ -48,6 +48,7 @@ const cleanup = async () => {
     "observations_metadata",
     "scores_metadata",
     "traces_tags",
+    "observations_usage_cost",
   ];
   for (const t of tables) {
     await greptimeQuery({

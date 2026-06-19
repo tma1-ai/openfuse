@@ -32,6 +32,17 @@ export const tagsTableForEntity: Record<GreptimeEntityType, string> = {
 };
 
 /**
+ * EAV usage/cost subtable name for an entity type. Only observations carry usage_details /
+ * cost_details, so this is the lone entry; the table does not exist for traces or scores, which is
+ * why this is a partial map (deletion must skip absent tables rather than DELETE a missing one).
+ */
+export const usageCostTableForEntity: Partial<
+  Record<GreptimeEntityType, string>
+> = {
+  observation: "observations_usage_cost",
+};
+
+/**
  * Backtick-quote a single identifier for GreptimeDB SQL (MySQL dialect). Escapes embedded
  * backticks. Use for every column/table name emitted into a SQL string.
  */

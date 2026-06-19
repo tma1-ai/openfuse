@@ -149,6 +149,19 @@ export const tagsTable = (name: string): Table =>
     .addTimestampColumn("timestamp", Precision.Millisecond)
     .addFieldColumn("is_deleted", DataType.Bool);
 
+// EAV usage/cost subtable (observations only): one row per (project, observation, kind, key).
+// Tags = PRIMARY KEY (project_id, entity_id, kind, key); `value` is the numeric metric (Float64,
+// matching the DOUBLE column in 0008_observations_usage_cost.sql). See rowBuilders.usageCostRows.
+export const usageCostTable = (name: string): Table =>
+  Table.new(name)
+    .addTagColumn("project_id", DataType.String)
+    .addTagColumn("entity_id", DataType.String)
+    .addTagColumn("kind", DataType.String)
+    .addTagColumn("key", DataType.String)
+    .addTimestampColumn("timestamp", Precision.Millisecond)
+    .addFieldColumn("value", DataType.Float64)
+    .addFieldColumn("is_deleted", DataType.Bool);
+
 /** Physical table name -> fresh `Table` schema builder. The writer keeps one queue per key. */
 export const PHYSICAL_TABLES: Record<string, () => Table> = {
   traces: tracesTable,
@@ -159,4 +172,5 @@ export const PHYSICAL_TABLES: Record<string, () => Table> = {
   observations_metadata: () => metadataTable("observations_metadata"),
   scores_metadata: () => metadataTable("scores_metadata"),
   traces_tags: () => tagsTable("traces_tags"),
+  observations_usage_cost: () => usageCostTable("observations_usage_cost"),
 };
