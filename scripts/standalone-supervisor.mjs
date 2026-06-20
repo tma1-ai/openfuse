@@ -36,6 +36,7 @@ const procs = [
     // Mirror web/Dockerfile's CMD keep-alive tuning for the Next.js standalone server.
     args: ["web/server.js", "--keepAliveTimeout", "110000"],
     cwd: WEB_DIR,
+    port: WEB_PORT,
     // Next standalone binds HOSTNAME; force 0.0.0.0 so the container is reachable.
     env: { ...process.env, PORT: WEB_PORT, HOSTNAME: "0.0.0.0" },
   },
@@ -44,6 +45,7 @@ const procs = [
     cmd: "node",
     args: ["dist/index.js"],
     cwd: WORKER_DIR,
+    port: WORKER_PORT,
     env: { ...process.env, PORT: WORKER_PORT },
   },
 ];
@@ -55,7 +57,7 @@ let killTimer = null;
 const log = (msg) => console.log(`[supervisor] ${msg}`);
 
 const children = procs.map((p) => {
-  log(`starting ${p.name}: ${p.cmd} ${p.args.join(" ")} (cwd=${p.cwd}, PORT=${p.env.PORT})`);
+  log(`starting ${p.name}: ${p.cmd} ${p.args.join(" ")} (cwd=${p.cwd}, PORT=${p.port})`);
   const child = spawn(p.cmd, p.args, { cwd: p.cwd, env: p.env, stdio: "inherit" });
   const entry = { ...p, child, exited: false };
 
