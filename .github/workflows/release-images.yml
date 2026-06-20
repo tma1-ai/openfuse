@@ -1,7 +1,7 @@
 name: Release images
 
-# Build and publish the web and worker Docker images to Docker Hub
-# (tma1ai/openfuse-web, tma1ai/openfuse-worker).
+# Build and publish the web, worker, and standalone Docker images to Docker Hub
+# (tma1ai/openfuse-web, tma1ai/openfuse-worker, tma1ai/openfuse-standalone).
 #
 # Triggers:
 #   - push a `v*` tag (e.g. `v1.2.0`)  -> versioned release: semver tags + `latest`
@@ -49,6 +49,9 @@ jobs:
           - component: worker
             dockerfile: ./worker/Dockerfile
             image: tma1ai/openfuse-worker
+          - component: standalone
+            dockerfile: ./Dockerfile.standalone
+            image: tma1ai/openfuse-standalone
     steps:
       - name: Checkout
         uses: actions/checkout@v4

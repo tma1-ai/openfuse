@@ -22,29 +22,26 @@ Read [Known limitations](docs/known-limitations.md) before you deploy.
 
 ## 5-minute quickstart (Docker Compose)
 
-Requirements: Docker and Docker Compose for the stack, plus Node and pnpm (via `corepack`) on the host to run the one-time schema bootstrap in step 2. The stack is `langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, and `redis`, with object storage off by default.
+Requirements: Docker and Docker Compose. The stack is `langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, and `redis`, with object storage off by default. Both the Postgres and GreptimeDB schemas migrate automatically inside the container on startup — no manual bootstrap step.
 
 ```bash
 git clone https://github.com/tma1-ai/openfuse.git
 cd openfuse
-cp .env.prod.example .env          # then edit every `# CHANGEME` value (secrets)
-
-# 1. bring up infra first
-docker compose up -d greptimedb postgres redis
-
-# 2. bootstrap the GreptimeDB schema from the host (once per environment, before serving traffic)
-pnpm install
-GREPTIME_GRPC_URL=localhost:4001 \
-  GREPTIME_SQL_HOST=localhost \
-  pnpm --filter=@langfuse/shared run greptime:migrate
-
-# 3. start the app
-docker compose up -d              # langfuse-web + langfuse-worker
+cp .env.prod.example .env     # then edit every `# CHANGEME` value (secrets)
+docker compose up -d          # builds web/worker, starts the full stack
 ```
 
 Open <http://localhost:3000>, create an org/project/user, and point any Langfuse SDK at it.
 
-> **Schema bootstrap is required.** The container entrypoint runs Postgres migrations automatically, but not the GreptimeDB schema. Run `greptime:migrate` once GreptimeDB is healthy and before web/worker serve traffic, and again after pulling new `packages/shared/greptime/migrations/*.sql`. The `.env` file points containers at the `greptimedb` service name; when you run the migration from your host shell, override it to `localhost` as shown above. The migrations are idempotent (`CREATE ... IF NOT EXISTS`), so re-running is safe. Full guide: [deployment](docs/deployment.md).
+> **Migrations are automatic.** The web container entrypoint applies the Postgres and GreptimeDB schemas on startup (idempotent; serialised across replicas by a Postgres advisory lock; fail-closed). Opt out with `LANGFUSE_AUTO_POSTGRES_MIGRATION_DISABLED` / `LANGFUSE_AUTO_GREPTIME_MIGRATION_DISABLED`. Full guide: [deployment](docs/deployment.md).
+
+### Single container (standalone)
+
+For a single node, `tma1ai/openfuse-standalone` runs web + worker in one container (the GreptimeDB-standalone analogue):
+
+```bash
+docker compose -f docker-compose.standalone.yml up   # then open http://localhost:3000
+```
 
 ## Published images
 
@@ -52,8 +49,9 @@ Release images are published to Docker Hub:
 
 - `tma1ai/openfuse-web`
 - `tma1ai/openfuse-worker`
+- `tma1ai/openfuse-standalone` — web + worker in one container, for single-node self-hosting
 
-A pushed `v*` tag publishes the full semver (`1.2.0`), the floating `major.minor` and `major` (non-`-rc` only), and a commit-SHA tag; `latest` moves only on non-`-rc` `v*` releases. To run published images instead of building locally, set `OPENFUSE_WEB_IMAGE` / `OPENFUSE_WORKER_IMAGE` in `.env` and `docker compose up -d`.
+A pushed `v*` tag publishes the full semver (`1.2.0`), the floating `major.minor` and `major` (non-`-rc` only), and a commit-SHA tag; `latest` moves only on non-`-rc` `v*` releases. To run published images instead of building locally, set `OPENFUSE_WEB_IMAGE` / `OPENFUSE_WORKER_IMAGE` (or `OPENFUSE_STANDALONE_IMAGE`) in `.env` and `docker compose up -d`.
 
 ## Architecture
 
@@ -90,7 +88,7 @@ Openfuse is a community fork and is not affiliated with or endorsed by Langfuse.
 
 ## Documentation
 
-- [Deployment](docs/deployment.md): self-host with Docker Compose, env, schema bootstrap, object storage.
+- [Deployment](docs/deployment.md): self-host with Docker Compose, env, automatic migrations, standalone image, object storage.
 - [Development](docs/development.md): local setup, GreptimeDB schema, targeted tests.
 - [Architecture](docs/architecture.md): what lives where, and why ClickHouse is gone.
 - [Known limitations](docs/known-limitations.md): read before deploying.

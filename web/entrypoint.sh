@@ -80,8 +80,19 @@ if [ $status -ne 0 ]; then
     exit $status
 fi
 
-# Note: the GreptimeDB analytics-store schema is applied out of band, not from
-# this entrypoint (see packages/shared/src/server/greptime/applyMigrations.ts).
+# Apply the GreptimeDB analytics-store schema (gated, fail-closed). Mirrors the upstream Langfuse
+# contract where ClickHouse migrations also run from the web entrypoint. Idempotent + serialised by a
+# Postgres advisory lock, so it is safe to re-run on every start and across replicas. The runner is a
+# self-contained node script (no tsx in the production image); its mysql2 + pg deps live under
+# /app/migrate-runtime, separate from the Next standalone tree.
+if [ "$LANGFUSE_AUTO_GREPTIME_MIGRATION_DISABLED" != "true" ]; then
+    echo "Applying GreptimeDB migrations..."
+    if ! GREPTIME_MIGRATIONS_DIR="${GREPTIME_MIGRATIONS_DIR:-/app/migrate-runtime/migrations}" \
+        node /app/migrate-runtime/greptime-migrate.mjs; then
+        echo "Applying GreptimeDB migrations failed. Exiting..."
+        exit 1
+    fi
+fi
 
 # Run the command passed to the docker image on start
 exec "$@"

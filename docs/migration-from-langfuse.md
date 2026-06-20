@@ -23,7 +23,7 @@ One thing to watch: the fork rejects a handful of nonsensical dashboard queries 
 | Analytics store           | ClickHouse            | GreptimeDB                                                                                               |
 | Event source of truth     | S3/blob event store   | GreptimeDB `raw_events` (append-only)                                                                    |
 | Object storage for ingest | required              | optional (local-file backends default)                                                                   |
-| Schema bootstrap          | automatic             | GreptimeDB schema is a manual `greptime:migrate` step                                                    |
+| Schema bootstrap          | automatic             | automatic on container startup (PG + GreptimeDB); idempotent, advisory-lock serialised                  |
 | Dashboard percentiles     | ClickHouse `quantile` | GreptimeDB `uddsketch` (approximate; small differences)                                                  |
 | Tool/metadata/tag filters | `map`/`array` access  | EAV `EXISTS` / join (same results; see known limitations for the one called-tool value-breakdown nuance) |
 

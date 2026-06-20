@@ -23,6 +23,23 @@ import { applyGreptimeRetention } from "./retention";
 
 const MIGRATIONS_DIR = path.resolve(__dirname, "../../../greptime/migrations");
 
+/**
+ * Without a migration ledger the runner re-applies every `.sql` on each bootstrap, so the statements
+ * must be safe to re-run. Today they already are — `CREATE TABLE IF NOT EXISTS`, the declarative
+ * `ALTER TABLE ... MODIFY COLUMN ... SET <kind> INDEX` (re-setting an index is a no-op), and the
+ * idempotent `ALTER DATABASE ... SET 'ttl'` (all verified against GreptimeDB v1.1.1 over the MySQL
+ * wire). The one common non-idempotent shape is a future `ALTER TABLE ... ADD COLUMN`, which
+ * GreptimeDB rejects on re-run with errno 1060 (ER_DUP_FIELDNAME / "TableColumnExists"). Tolerating
+ * exactly that error keeps re-runs safe while every other error still fails loud. The decoupled
+ * image runner (`scripts/greptime-migrate.mjs`) inlines this same contract.
+ */
+const GREPTIME_COLUMN_EXISTS_ERRNO = 1060;
+
+export const isIdempotentReapplyError = (error: unknown): boolean =>
+  typeof error === "object" &&
+  error !== null &&
+  (error as { errno?: number }).errno === GREPTIME_COLUMN_EXISTS_ERRNO;
+
 const splitStatements = (sql: string): string[] =>
   sql
     .split("\n")
@@ -64,7 +81,17 @@ export const applyGreptimeMigrations = async (
       const sql = readFileSync(path.join(MIGRATIONS_DIR, file), "utf8");
       const statements = splitStatements(sql);
       for (const statement of statements) {
-        await connection.query(statement);
+        try {
+          await connection.query(statement);
+        } catch (error) {
+          if (isIdempotentReapplyError(error)) {
+            logger.warn(
+              `[greptime-migrations] tolerated idempotent re-apply in ${file}: ${(error as Error).message}`,
+            );
+            continue;
+          }
+          throw error;
+        }
       }
       if (statements.length > 0) {
         logger.info(

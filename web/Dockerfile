@@ -142,10 +142,6 @@ RUN if [ -n "$NEXT_PUBLIC_LANGFUSE_CLOUD_REGION" ]; then \
     npm install --no-package-lock --no-save dd-trace@5.97.0; \
     fi
 
-# npm is only used for the installs above; remove it from the final runtime image.
-RUN rm -rf /usr/local/lib/node_modules/npm && \
-    rm -f /usr/local/bin/npm /usr/local/bin/npx
-
 COPY --from=builder --chown=nextjs:nodejs /app/web/next.config.mjs .
 COPY --from=builder --chown=nextjs:nodejs /app/web/package.json .
 
@@ -160,6 +156,19 @@ COPY --from=builder --chown=nextjs:nodejs /app/packages/shared/prisma ./packages
 COPY --chown=nextjs:nodejs ./web/entrypoint.sh ./web/entrypoint.sh
 COPY --chown=nextjs:nodejs ./packages/shared/scripts/cleanup.sql ./packages/shared/scripts/cleanup.sql
 RUN chmod +x ./web/entrypoint.sh
+
+# GreptimeDB analytics-store migration runner, invoked by web/entrypoint.sh on startup. Self-contained
+# (no tsx in production). Its mysql2 + pg deps install into an isolated /app/migrate-runtime with its
+# own minimal package.json, so npm never walks up into the monorepo's workspace package.json (which
+# would fail on `workspace:*` deps). npm is only used for these installs (and the prisma/dd-trace
+# installs above), so remove it from the final runtime image afterwards.
+RUN mkdir -p /app/migrate-runtime && \
+    printf '{"name":"openfuse-migrate-runtime","private":true}\n' > /app/migrate-runtime/package.json && \
+    npm install --prefix /app/migrate-runtime --no-package-lock --no-save --no-audit --no-fund mysql2@3.11.5 pg@8.13.0 && \
+    rm -rf /usr/local/lib/node_modules/npm && \
+    rm -f /usr/local/bin/npm /usr/local/bin/npx
+COPY --chown=nextjs:nodejs ./scripts/greptime-migrate.mjs /app/migrate-runtime/greptime-migrate.mjs
+COPY --chown=nextjs:nodejs ./packages/shared/greptime/migrations /app/migrate-runtime/migrations
 
 # Pre-create the default local blob-store mount points owned by the app user so a fresh named volume
 # (LANGFUSE_MEDIA_LOCAL_PATH / LANGFUSE_EVENT_LOCAL_PATH in docker-compose) inherits writable
