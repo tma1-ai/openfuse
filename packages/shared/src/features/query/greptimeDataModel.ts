@@ -293,6 +293,22 @@ const observationsView: ViewDeclarationType = {
       type: "string",
       relationTable: "dataset_run_items",
     },
+    // Tool-name dimensions (05 Finding #1): relation-backed for a by-tool breakdown (JOIN + GROUP BY
+    // tool_name). A FILTER on these routes to an EAV EXISTS via `filterViaEav` instead of the join.
+    toolNames: {
+      sql: "td.tool_name",
+      alias: "toolNames",
+      type: "string",
+      relationTable: "tool_definitions",
+      filterViaEav: { eavTable: "observations_tool_definitions" },
+    },
+    calledToolNames: {
+      sql: "tc.tool_name",
+      alias: "calledToolNames",
+      type: "string",
+      relationTable: "tool_calls",
+      filterViaEav: { eavTable: "observations_tool_calls" },
+    },
   },
   measures: {
     count: { sql: "*", alias: "count", type: "integer", unit: "observations" },
@@ -410,6 +426,24 @@ const observationsView: ViewDeclarationType = {
     dataset_run_items: datasetRunItemsRelation(
       "ON o.project_id = dri.project_id AND o.trace_id = dri.trace_id",
     ),
+    // Tool-name EAV relations (05 Finding #1): a by-tool breakdown joins the physical tool table by
+    // (project_id, entity_id) and GROUP BYs `tool_name`, fanning the observation out per tool — the
+    // GreptimeDB equivalent of CH `arrayJoin(mapKeys(tool_definitions))` / `arrayJoin(tool_call_names)`.
+    // `timestamp` (= observation start_time) aligns with the observations query window.
+    tool_definitions: {
+      name: "observations_tool_definitions",
+      alias: "td",
+      joinConditionSql:
+        "ON td.project_id = o.project_id AND td.entity_id = o.id",
+      timeDimension: "timestamp",
+    },
+    tool_calls: {
+      name: "observations_tool_calls",
+      alias: "tc",
+      joinConditionSql:
+        "ON tc.project_id = o.project_id AND tc.entity_id = o.id",
+      timeDimension: "timestamp",
+    },
   },
   segments: [],
   timeDimension: "start_time",

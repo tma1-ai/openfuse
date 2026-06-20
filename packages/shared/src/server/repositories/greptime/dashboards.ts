@@ -6,7 +6,11 @@ import {
   FilterList,
   type DateTimeFilter,
 } from "../../greptime/sql/greptime-filter";
-import { type GreptimeColumnMappings } from "../../greptime/sql/columnMappings";
+import {
+  type GreptimeColumnMappings,
+  OBSERVATIONS_TOOL_CALLS_TABLE,
+  OBSERVATIONS_TOOL_DEFINITIONS_TABLE,
+} from "../../greptime/sql/columnMappings";
 import { greptimeString } from "../../greptime/sql/rowContract";
 import { quoteIdent } from "../../greptime/schemaUtils";
 import { greptimeTsParam, notDeleted } from "./queryHelpers";
@@ -37,8 +41,9 @@ const KNOWN_DETAIL_KEYS_SQL = KNOWN_DETAIL_KEYS.map((key) => `'${key}'`).join(
 
 // Greptime dashboard filter mapping (mirrors `tableDefinitions/mapDashboards.ts`). Each column carries
 // the conventional alias of its table in the dashboard queries (traces=t, observations=o, scores=s).
-// `toolNames` / `calledToolNames` are intentionally absent (JSON-key membership is not expressible);
-// filtering by them throws loudly rather than mis-filtering.
+// `toolNames` / `calledToolNames` route to a project-scoped EAV EXISTS over the observation tool
+// tables (05 Finding #1), the GreptimeDB replacement for CH `hasAny(mapKeys(tool_definitions))` /
+// `hasAny(tool_call_names)`.
 const dashboardGreptimeColumnDefinitions: GreptimeColumnMappings = [
   { uiTableName: "Trace Name", uiTableId: "traceName", greptimeTableName: "traces", greptimeSelect: "name", queryPrefix: "t" }, // prettier-ignore
   { uiTableName: "Tags", uiTableId: "traceTags", greptimeTableName: "traces", greptimeSelect: "tags", queryPrefix: "t" }, // prettier-ignore
@@ -57,6 +62,8 @@ const dashboardGreptimeColumnDefinitions: GreptimeColumnMappings = [
   { uiTableName: "Version", uiTableId: "version", greptimeTableName: "traces", greptimeSelect: "version", queryPrefix: "t" }, // prettier-ignore
   { uiTableName: "Model", uiTableId: "model", greptimeTableName: "observations", greptimeSelect: "provided_model_name", queryPrefix: "o" }, // prettier-ignore
   { uiTableName: "Environment", uiTableId: "environment", greptimeTableName: "traces", greptimeSelect: "environment", queryPrefix: "t" }, // prettier-ignore
+  { uiTableName: "Tool Names (Available)", uiTableId: "toolNames", greptimeTableName: "observations", greptimeSelect: "id", queryPrefix: "o", toolNameEav: { eavTable: OBSERVATIONS_TOOL_DEFINITIONS_TABLE }, aliases: ["Tool Names"] }, // prettier-ignore
+  { uiTableName: "Tool Names (Called)", uiTableId: "calledToolNames", greptimeTableName: "observations", greptimeSelect: "id", queryPrefix: "o", toolNameEav: { eavTable: OBSERVATIONS_TOOL_CALLS_TABLE } }, // prettier-ignore
 ];
 
 const splitEnvFilter = (

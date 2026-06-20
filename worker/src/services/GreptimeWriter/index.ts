@@ -6,6 +6,9 @@ import {
   buildGreptimeRowsForRecord,
   classifyGreptimeWriteError,
   DatasetRunItemRecordInsertType,
+  type DeleteEavRowsFn,
+  deleteEavRowsForEntities,
+  EAV_TABLES_FOR_PROJECTION,
   getGreptimeIngestClient,
   GreptimeRow,
   GreptimeTable,
@@ -45,9 +48,8 @@ import type { GreptimeProjectionSink } from "./sink";
  * failure breaks out immediately and is handed to `bisectGroups`, which splits the batch by logical
  * group to isolate the bad entity while good entities land. The bisection unit is the logical group —
  * an entity's projection row plus its EAV rows — so bisection never splits a projection from its EAV.
- * (Independently, the per-table `batchSize` splice can still spread one fan-out across flushes if a
- * queue crosses the threshold mid-record; that is pre-existing behaviour, healed by the idempotent
- * full-history rebuild, not something bisection introduces or worsens.)
+ * The size-triggered flush splices whole groups (`spliceGroupAwareBatch`), so a fan-out is never
+ * spread across flushes either; this lets EAV cleanup target exactly the entities written each flush.
  */
 
 // Re-exported so existing `import { GreptimeWriter, GreptimeTable } from ".../GreptimeWriter"`
@@ -74,15 +76,23 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   private readonly maxFieldBytes: number;
   private readonly queues: Record<string, QueueItem[]>;
   private readonly write: WriteFn;
+  private readonly deleteEav: DeleteEavRowsFn;
   /** Size-triggered background flush is only armed on the running singleton; a test writer is fully manual. */
   private readonly autoFlush: boolean;
   private intervalId: NodeJS.Timeout | null = null;
   private isFlushInProgress = false;
   private nextGroupId = 0;
 
-  private constructor(deps: { write: WriteFn; autoStart: boolean }) {
+  private constructor(deps: {
+    write: WriteFn;
+    autoStart: boolean;
+    deleteEav?: DeleteEavRowsFn;
+    batchSize?: number;
+  }) {
     this.write = deps.write;
-    this.batchSize = env.LANGFUSE_INGESTION_WRITE_BATCH_SIZE;
+    // Default to the real batched SQL delete; tests inject a spy/noop so flushAll needs no live DB.
+    this.deleteEav = deps.deleteEav ?? deleteEavRowsForEntities;
+    this.batchSize = deps.batchSize ?? env.LANGFUSE_INGESTION_WRITE_BATCH_SIZE;
     this.writeInterval = env.LANGFUSE_INGESTION_WRITE_INTERVAL_MS;
     this.maxAttempts = env.LANGFUSE_INGESTION_WRITE_MAX_ATTEMPTS;
     this.maxFieldBytes = env.LANGFUSE_GREPTIME_WRITE_MAX_FIELD_BYTES;
@@ -107,8 +117,18 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * Build an isolated instance for tests: an injected `write` and no interval, so `flushAll` can be
    * driven explicitly against a fake that throws per row-predicate. Never touches the singleton.
    */
-  public static createForTest(deps: { write: WriteFn }): GreptimeWriter {
-    return new GreptimeWriter({ write: deps.write, autoStart: false });
+  public static createForTest(deps: {
+    write: WriteFn;
+    deleteEav?: DeleteEavRowsFn;
+    batchSize?: number;
+  }): GreptimeWriter {
+    return new GreptimeWriter({
+      write: deps.write,
+      autoStart: false,
+      // Default to a noop so existing flush tests need no live DB; pass a spy to assert cleanup.
+      deleteEav: deps.deleteEav ?? (async () => {}),
+      batchSize: deps.batchSize,
+    });
   }
 
   /**
@@ -118,7 +138,14 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * live singleton's queue.
    */
   public static createManual(deps: { write: WriteFn }): GreptimeWriter {
-    return new GreptimeWriter({ write: deps.write, autoStart: false });
+    // The bulk writer owns EAV cleanup and runs it before bulk-writing; its unary lane only writes
+    // (gated projections, bulk-failure fallback rows that were already cleaned), so it must not
+    // re-run cleanup. A noop deleteEav keeps the lane a pure writer.
+    return new GreptimeWriter({
+      write: deps.write,
+      autoStart: false,
+      deleteEav: async () => {},
+    });
   }
 
   private start(): void {
@@ -152,7 +179,59 @@ export class GreptimeWriter implements GreptimeProjectionSink {
       | ScoreRecordInsertType
       | DatasetRunItemRecordInsertType,
   ): void {
+    // EAV cleanup is derived from the spliced projection rows at flush time (see flushAll), so the
+    // enqueue path stays a plain fan-out; the bulk writer records cleanup itself.
     this.enqueueRows(buildGreptimeRowsForRecord(table, record));
+  }
+
+  /**
+   * The projection entities written in this flush's splice, per projection table -> projectId -> ids.
+   * Derived synchronously from the spliced PROJECTION rows: because `spliceGroupAwareBatch` never
+   * splits a logical group, an entity present here has its full current fan-out (projection + every
+   * EAV row) in this same flush, so deleting its old EAV before the write is exact — no transient gap.
+   * An entity whose EAV set shrank to empty still has its projection row, so it is still cleaned.
+   * Holding this in a fresh local (not instance state) means a concurrent `addToQueue` during the
+   * delete awaits only touches the queues for the next flush; there is no cleanup state to race on.
+   */
+  private eavCleanupTargets(
+    spliced: { table: string; items: QueueItem[] }[],
+  ): Map<GreptimeTable, Map<string, Set<string>>> {
+    const targets = new Map<GreptimeTable, Map<string, Set<string>>>();
+    for (const { table, items } of spliced) {
+      const projectionTable = table as GreptimeTable;
+      if (!EAV_TABLES_FOR_PROJECTION[projectionTable]) continue; // projection tables only
+      let byProject = targets.get(projectionTable);
+      if (!byProject) {
+        byProject = new Map();
+        targets.set(projectionTable, byProject);
+      }
+      for (const { row } of items) {
+        const projectId = row.project_id as string;
+        let ids = byProject.get(projectId);
+        if (!ids) {
+          ids = new Set();
+          byProject.set(projectId, ids);
+        }
+        ids.add(row.id as string);
+      }
+    }
+    return targets;
+  }
+
+  /**
+   * Batch-delete the stale EAV rows of each entity written in this flush, BEFORE the new set lands, so
+   * a key/tag/tool dropped from an updated entity does not survive. Run inside the flush's cleanup
+   * try/catch: a delete failure restores the splice and aborts the write, so a later flush retries the
+   * delete before the same rows can land (no row is written over un-cleared EAV).
+   */
+  private async runEavCleanup(
+    targets: Map<GreptimeTable, Map<string, Set<string>>>,
+  ): Promise<void> {
+    for (const [projectionTable, byProject] of targets) {
+      for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ?? []) {
+        await this.deleteEav(eavTable, byProject);
+      }
+    }
   }
 
   /**
@@ -272,6 +351,15 @@ export class GreptimeWriter implements GreptimeProjectionSink {
     this.requeueItems(items);
   }
 
+  /** Put a spliced batch back without bumping attempts; used when pre-write cleanup fails. */
+  private restoreSpliced(
+    spliced: { table: string; items: QueueItem[] }[],
+  ): void {
+    for (const { table, items } of spliced) {
+      this.queues[table].unshift(...items);
+    }
+  }
+
   /**
    * Terminal action for a single deterministically-failing group. An `oversize` group gets one
    * reactive-truncation retry (cap each whitelisted field, rewrite); if that lands it is saved, if it
@@ -357,8 +445,63 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   }
 
   /**
-   * Splice one batch from every non-empty physical table and write them all in a SINGLE gRPC call,
-   * so an entity's projection row and its EAV rows share fate — they all land, or all requeue.
+   * Splice a batch without ever splitting a logical group (an entity's projection row and all its EAV
+   * rows, sharing one groupId). Whole groups are taken in groupId order until about `batchSize` rows
+   * (always at least one group, so an oversized fan-out still makes progress), or everything when
+   * `fullQueue`. Selection is by a groupId SET and filter, not a prefix, because a requeue re-appends
+   * an older groupId at the tail — the queues are not strictly ordered. Keeping each group intact is
+   * what lets EAV cleanup target the exact entities written this flush, with no transient gap.
+   */
+  private spliceGroupAwareBatch(
+    fullQueue: boolean,
+  ): { table: string; items: QueueItem[] }[] {
+    const tables = Object.keys(this.queues);
+    let isSelected: ((groupId: number) => boolean) | null = null;
+    if (!fullQueue) {
+      const rowsByGroup = new Map<number, number>();
+      for (const table of tables) {
+        for (const item of this.queues[table]) {
+          rowsByGroup.set(
+            item.groupId,
+            (rowsByGroup.get(item.groupId) ?? 0) + 1,
+          );
+        }
+      }
+      const chosen = new Set<number>();
+      let total = 0;
+      for (const groupId of [...rowsByGroup.keys()].sort((a, b) => a - b)) {
+        const rows = rowsByGroup.get(groupId)!;
+        if (chosen.size > 0 && total + rows > this.batchSize) break; // always take >= 1 group
+        chosen.add(groupId);
+        total += rows;
+        if (total >= this.batchSize) break;
+      }
+      isSelected = (groupId) => chosen.has(groupId);
+    }
+
+    const spliced: { table: string; items: QueueItem[] }[] = [];
+    for (const table of tables) {
+      const q = this.queues[table];
+      if (q.length === 0) continue;
+      if (!isSelected) {
+        spliced.push({ table, items: q.splice(0, q.length) });
+        continue;
+      }
+      const taken: QueueItem[] = [];
+      const remaining: QueueItem[] = [];
+      for (const item of q)
+        (isSelected(item.groupId) ? taken : remaining).push(item);
+      if (taken.length > 0) {
+        this.queues[table] = remaining;
+        spliced.push({ table, items: taken });
+      }
+    }
+    return spliced;
+  }
+
+  /**
+   * Splice one group-aware batch and write it in a SINGLE gRPC call, so an entity's projection row and
+   * its EAV rows share fate — they all land, or all requeue, never split across flushes.
    *
    * The backOff retry predicate only retries *transient* failures (network/region blips); a
    * *deterministic* poison/oversize failure breaks out immediately (no wasted attempts) and is handed
@@ -368,18 +511,22 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    */
   public async flushAll(fullQueue = false): Promise<void> {
     return instrumentAsync({ name: "write-to-greptime" }, async () => {
-      const spliced: { table: string; items: QueueItem[] }[] = [];
-      for (const table of Object.keys(this.queues)) {
-        const q = this.queues[table];
-        if (q.length === 0) continue;
-        spliced.push({
-          table,
-          items: q.splice(0, fullQueue ? q.length : this.batchSize),
-        });
-      }
+      const spliced = this.spliceGroupAwareBatch(fullQueue);
       if (spliced.length === 0) return;
       const total = spliced.reduce((n, s) => n + s.items.length, 0);
       recordHistogram("langfuse.queue.greptime_writer.batch_size", total);
+
+      // Delete the stale EAV rows of the entities written in THIS batch before their new set lands.
+      // The group-aware splice keeps each entity's projection + EAV together, so the target set is
+      // exact. If cleanup fails, no projection/EAV row from this batch may land; restore the splice
+      // and retry cleanup on a later flush.
+      try {
+        await this.runEavCleanup(this.eavCleanupTargets(spliced));
+      } catch (err) {
+        this.restoreSpliced(spliced);
+        logger.error("GreptimeWriter EAV cleanup failed; batch restored", err);
+        throw err;
+      }
 
       let landedRows = 0;
       await this.writeWithIsolation(this.regroup(spliced), {

@@ -145,7 +145,7 @@ jobs:
         run: |
           docker run -d --name greptimedb \
             -p 4000:4000 -p 4001:4001 -p 4002:4002 \
-            greptime/greptimedb:v1.1.0 standalone start \
+            greptime/greptimedb:v1.1.1 standalone start \
             --http-addr 0.0.0.0:4000 \
             --rpc-bind-addr 0.0.0.0:4001 \
             --mysql-addr 0.0.0.0:4002

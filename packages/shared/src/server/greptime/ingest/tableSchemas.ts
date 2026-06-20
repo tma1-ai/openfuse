@@ -162,6 +162,41 @@ export const usageCostTable = (name: string): Table =>
     .addFieldColumn("value", DataType.Float64)
     .addFieldColumn("is_deleted", DataType.Bool);
 
+// EAV tool-name subtable (observations only): one row per (project, observation, tool_name).
+// Tags = PRIMARY KEY (project_id, entity_id, tool_name). See rowBuilders.toolDefinitionRows /
+// toolCallRows and 0009_observations_tool_names.sql.
+export const toolNameTable = (name: string): Table =>
+  Table.new(name)
+    .addTagColumn("project_id", DataType.String)
+    .addTagColumn("entity_id", DataType.String)
+    .addTagColumn("tool_name", DataType.String)
+    .addTimestampColumn("timestamp", Precision.Millisecond)
+    .addFieldColumn("is_deleted", DataType.Bool);
+
+/**
+ * The EAV derived-index tables fanned out from each projection entity (mirrors the per-table groups
+ * `buildGreptimeRowsForRecord` emits). Used by the write path to clear an entity's stale EAV rows
+ * before re-writing its current set: an EAV key/tag/tool that drops out of an updated entity (a
+ * shrunk metadata map, a removed tool) leaves no row in the new fan-out, so without an up-front
+ * delete the old row would linger and keep matching `EXISTS` filters / breakdown joins. ClickHouse
+ * had no such gap — `tool_definitions`/`metadata` are whole `Map` columns read off the latest
+ * ReplacingMergeTree row, so a shrink is naturally reflected. `dataset_run_items` has no EAV tables.
+ *
+ * MUST stay in sync with the fan-out in `rowBuilders.buildGreptimeRowsForRecord`.
+ */
+export const EAV_TABLES_FOR_PROJECTION: Partial<
+  Record<GreptimeTable, readonly string[]>
+> = {
+  [GreptimeTable.Traces]: ["traces_metadata", "traces_tags"],
+  [GreptimeTable.Observations]: [
+    "observations_metadata",
+    "observations_usage_cost",
+    "observations_tool_definitions",
+    "observations_tool_calls",
+  ],
+  [GreptimeTable.Scores]: ["scores_metadata"],
+};
+
 /** Physical table name -> fresh `Table` schema builder. The writer keeps one queue per key. */
 export const PHYSICAL_TABLES: Record<string, () => Table> = {
   traces: tracesTable,
@@ -173,4 +208,7 @@ export const PHYSICAL_TABLES: Record<string, () => Table> = {
   scores_metadata: () => metadataTable("scores_metadata"),
   traces_tags: () => tagsTable("traces_tags"),
   observations_usage_cost: () => usageCostTable("observations_usage_cost"),
+  observations_tool_definitions: () =>
+    toolNameTable("observations_tool_definitions"),
+  observations_tool_calls: () => toolNameTable("observations_tool_calls"),
 };

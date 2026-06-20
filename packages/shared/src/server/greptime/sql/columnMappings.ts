@@ -1,6 +1,11 @@
 import { type UiColumnMatchable } from "../../../tableDefinitions/types";
 import { type ScoreGrain, type DatasetRunItemsGrain } from "./greptime-filter";
 
+/** Observation tool-name EAV tables routed by `toolNameEav` (05 Finding #1). */
+export const OBSERVATIONS_TOOL_DEFINITIONS_TABLE =
+  "observations_tool_definitions";
+export const OBSERVATIONS_TOOL_CALLS_TABLE = "observations_tool_calls";
+
 /**
  * GreptimeDB column mapping (04-read-path.md, P1). The dialect-agnostic match keys
  * (`uiTableId`/`uiTableName`/`aliases`) are shared with the ClickHouse `UiColumnMapping` so the UI
@@ -38,6 +43,14 @@ export type GreptimeColumnMapping = UiColumnMatchable &
      * routes a `stringOptions` filter to a correlated reverse EXISTS over `dataset_run_items`.
      */
     datasetRunItemsGrain?: DatasetRunItemsGrain;
+    /**
+     * Present on the observation tool-name columns (`toolNames` / `calledToolNames`): routes an
+     * `arrayOptions` filter to a project-scoped EAV EXISTS over the named tool table (CH used
+     * `hasAny(mapKeys(tool_definitions))` / `hasAny(tool_call_names)`). `greptimeSelect` is unused
+     * for the filter (the EXISTS predicates on `tool_name`), but a representative column is kept so
+     * the mapping still resolves through `findUiColumnMapping`.
+     */
+    toolNameEav?: { eavTable: string };
   }>;
 
 export type GreptimeColumnMappings = readonly GreptimeColumnMapping[];
@@ -113,6 +126,10 @@ export const observationsTableGreptimeColumnDefinitions: GreptimeColumnMappings 
     { uiTableName: "Version", uiTableId: "version", greptimeTableName: "observations", greptimeSelect: "version", queryPrefix: "o" }, // prettier-ignore
     { uiTableName: "Prompt Name", uiTableId: "promptName", greptimeTableName: "observations", greptimeSelect: "prompt_name", queryPrefix: "o" }, // prettier-ignore
     { uiTableName: "Prompt Version", uiTableId: "promptVersion", greptimeTableName: "observations", greptimeSelect: "prompt_version", queryPrefix: "o" }, // prettier-ignore
+    // Tool-name EAV filter columns: an `arrayOptions` filter routes to a project-scoped EXISTS over
+    // the tool table (greptimeSelect unused for the EXISTS; `id` kept as a resolvable placeholder).
+    { uiTableName: "Tool Names", uiTableId: "toolNames", greptimeTableName: "observations", greptimeSelect: "id", queryPrefix: "o", toolNameEav: { eavTable: OBSERVATIONS_TOOL_DEFINITIONS_TABLE } }, // prettier-ignore
+    { uiTableName: "Called Tool Names", uiTableId: "calledToolNames", greptimeTableName: "observations", greptimeSelect: "id", queryPrefix: "o", toolNameEav: { eavTable: OBSERVATIONS_TOOL_CALLS_TABLE } }, // prettier-ignore
   ];
 
 // ---------------------------------------------------------------------------

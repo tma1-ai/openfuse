@@ -3,10 +3,10 @@
  * reconciliation handler does (build records -> addToQueue -> flushAll) but drives the bulk writer
  * directly, so it exercises the real hybrid path end to end:
  *   - observation projection (3x DECIMAL) goes unary via the dedicated manual writer,
- *   - its EAV (observations_usage_cost / observations_metadata) is released to bulk only after the
- *     projection lands (gating),
+ *   - its EAV (observations_metadata / observations_usage_cost / observations_tool_definitions /
+ *     observations_tool_calls) is released to bulk only after the projection lands (gating),
  *   - decimal-free entities (trace + EAV, score) ride bulk.
- * Then it asserts the rows are readable and that no observations_usage_cost row is orphaned from its
+ * Then it asserts the rows are readable and that no observation EAV row is orphaned from its
  * observations projection.
  *
  * Run:
@@ -72,6 +72,8 @@ async function main() {
       usage_details: { input: 10, output: 20, total: 30, cache_read: 5 },
       cost_details: { input: 0.1, total: 0.3, cache_read: 0.05 },
       total_cost: 0.3,
+      tool_definitions: { search: "find things", calculator: "do math" },
+      tool_call_names: ["search", "search", "calculator"],
     }),
   );
   bulk.addToQueue(
@@ -99,6 +101,15 @@ async function main() {
     "observation usage/cost EAV landed (gated bulk)",
     (await countWhere("observations_usage_cost")) >= 1,
   );
+  // Tool-name EAV: one row per definition key (2) and per distinct called name (search dedup -> 2).
+  check(
+    "observation tool definitions EAV landed (2 keys)",
+    (await countWhere("observations_tool_definitions")) === 2,
+  );
+  check(
+    "observation tool calls EAV landed (deduped to 2)",
+    (await countWhere("observations_tool_calls")) === 2,
+  );
   check("score projection landed", (await countWhere("scores")) === 1);
 
   // Decimal round-trips through the unary projection path (string-preserved precision).
@@ -112,17 +123,75 @@ async function main() {
     obs,
   );
 
-  // No orphan: every observations_usage_cost entity must have a matching observations projection row.
-  const orphans = await greptimeQuery<{ entity_id: string }>({
-    query: `SELECT DISTINCT uc.entity_id FROM observations_usage_cost uc
-            LEFT JOIN observations o ON o.project_id = uc.project_id AND o.id = uc.entity_id
-            WHERE uc.project_id = :p AND o.id IS NULL`,
+  // No orphan: every observation EAV entity must have a matching observations projection row.
+  const orphanQuery = (eavTable: string) =>
+    greptimeQuery<{ entity_id: string }>({
+      query: `SELECT DISTINCT e.entity_id FROM ${eavTable} e
+              LEFT JOIN observations o ON o.project_id = e.project_id AND o.id = e.entity_id
+              WHERE e.project_id = :p AND o.id IS NULL`,
+      params: { p: PROJECT },
+    });
+  for (const eavTable of [
+    "observations_usage_cost",
+    "observations_tool_definitions",
+    "observations_tool_calls",
+  ]) {
+    const orphans = await orphanQuery(eavTable);
+    check(`no orphan ${eavTable} rows`, orphans.length === 0, orphans);
+  }
+
+  // EAV shrink consistency: re-write obs-1 with a SMALLER tool set + no custom usage/cost keys. The
+  // write path must clear the old EAV rows before writing the new set, so the dropped keys do not
+  // linger and keep matching filters (the ClickHouse Map column would shrink naturally).
+  const shrinkBulk = new GreptimeBulkWriter({
+    client,
+    unary: GreptimeWriter.createManual({
+      write: (tables) => client.write(tables),
+    }),
+    batchSize: 1000,
+  });
+  shrinkBulk.addToQueue(
+    GreptimeTable.Observations,
+    createObservation({
+      project_id: PROJECT,
+      id: "obs-1",
+      trace_id: "trace-1",
+      metadata: { k: "v" },
+      usage_details: { input: 10, output: 20, total: 30 }, // dropped the custom cache_read key
+      cost_details: { input: 0.1, total: 0.3 },
+      total_cost: 0.3,
+      tool_definitions: { calculator: "do math" }, // dropped `search`
+      tool_call_names: ["calculator"], // dropped `search`
+    }),
+  );
+  await shrinkBulk.flushAll();
+
+  const toolDefs = await greptimeQuery<{ tool_name: string }>({
+    query: `SELECT tool_name FROM observations_tool_definitions WHERE project_id = :p AND entity_id = 'obs-1' AND is_deleted = false`,
     params: { p: PROJECT },
   });
   check(
-    "no orphan observations_usage_cost rows",
-    orphans.length === 0,
-    orphans,
+    "tool definitions shrank to {calculator} (stale `search` cleared)",
+    toolDefs.length === 1 && toolDefs[0].tool_name === "calculator",
+    toolDefs,
+  );
+  const toolCalls = await greptimeQuery<{ tool_name: string }>({
+    query: `SELECT tool_name FROM observations_tool_calls WHERE project_id = :p AND entity_id = 'obs-1' AND is_deleted = false`,
+    params: { p: PROJECT },
+  });
+  check(
+    "tool calls shrank to {calculator} (stale `search` cleared)",
+    toolCalls.length === 1 && toolCalls[0].tool_name === "calculator",
+    toolCalls,
+  );
+  const usageCostKeys = await greptimeQuery<{ key: string }>({
+    query: `SELECT \`key\` FROM observations_usage_cost WHERE project_id = :p AND entity_id = 'obs-1' AND is_deleted = false`,
+    params: { p: PROJECT },
+  });
+  check(
+    "usage/cost EAV cleared after dropping the custom cache_read key",
+    usageCostKeys.length === 0,
+    usageCostKeys,
   );
 
   // Cleanup.
@@ -133,6 +202,8 @@ async function main() {
     "observations",
     "observations_metadata",
     "observations_usage_cost",
+    "observations_tool_definitions",
+    "observations_tool_calls",
     "scores",
     "scores_metadata",
   ]) {

@@ -82,6 +82,16 @@ function metricsKnownClass(label: string): string | undefined {
   const measure = parts[2];
   const agg = parts[3];
   const tail = parts[4];
+  // Called-tool breakdown of a per-observation VALUE measure: ClickHouse `arrayJoin(tool_call_names)`
+  // explodes the multiset, so a tool called N times in one observation multiplies that observation's
+  // aggregate (cost/tokens) N×, inflating the cross-bucket total ABOVE the observation's actual value
+  // (cost is not conserved). The fork's tool-call EAV is keyed by distinct tool_name, so it attributes
+  // the value once per distinct called tool — consistent with the `count` breakdown (which both stacks
+  // already report per distinct tool) and value-conserving. This is the corrected semantics; CH's
+  // multiplicity double-count is the divergence. Available-tool breakdown (`by:toolNames`) is a map's
+  // key set, has no multiplicity, and must stay exact parity — it is intentionally NOT covered here.
+  if (tail === "by:calledToolNames" && !COUNT_MEASURES.has(measure))
+    return "called-tool value breakdown: ClickHouse arrayJoin double-counts an observation's value by tool-call multiplicity (non-conserving); the fork attributes the value once per distinct called tool (count-consistent, conserving). Fork is the corrected semantics.";
   if (tail?.startsWith("ts:"))
     return "timeseries gap-fill differs (fork emits zero-filled buckets; upstream omits empty buckets)";
   if (agg === "histogram")
@@ -332,10 +342,12 @@ async function main() {
 
   // 4. build cases
   const readCases = buildReadCases(p);
-  const metricCases = buildMetricsMatrix(p.window.from, p.window.to, [
-    p.facets.envProd,
-    p.facets.envStaging,
-  ]).map((mc) => ({
+  const metricCases = buildMetricsMatrix(
+    p.window.from,
+    p.window.to,
+    [p.facets.envProd, p.facets.envStaging],
+    [p.facets.toolSearch, p.facets.toolCalc],
+  ).map((mc) => ({
     label: `metrics/${mc.label}`,
     path: `/api/public/metrics?query=${encodeURIComponent(JSON.stringify(mc.query))}`,
   }));

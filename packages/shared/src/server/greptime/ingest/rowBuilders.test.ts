@@ -120,6 +120,58 @@ describe("buildGreptimeRowsForRecord", () => {
     ]);
   });
 
+  it("fans an observation's tool_definitions keys + deduped tool_call_names into tool EAV", () => {
+    const obs = createObservation({
+      project_id: "p1",
+      id: "o4",
+      start_time: 2000,
+      metadata: {},
+      usage_details: {},
+      cost_details: {},
+      tool_definitions: { search: "find", calculator: "math" },
+      tool_call_names: ["search", "search", "calculator"],
+      is_deleted: 0,
+    });
+    const out = buildGreptimeRowsForRecord(GreptimeTable.Observations, obs);
+    expect(tablesOf(out)).toEqual([
+      "observations",
+      "observations_tool_definitions",
+      "observations_tool_calls",
+    ]);
+
+    const defs = out.find((o) => o.table === "observations_tool_definitions")!;
+    expect(defs.rows).toEqual([
+      { project_id: "p1", entity_id: "o4", tool_name: "search", timestamp: 2000, is_deleted: false }, // prettier-ignore
+      { project_id: "p1", entity_id: "o4", tool_name: "calculator", timestamp: 2000, is_deleted: false }, // prettier-ignore
+    ]);
+
+    // tool_call_names is de-duplicated to one row per distinct name (search appears twice).
+    const calls = out.find((o) => o.table === "observations_tool_calls")!;
+    expect(calls.rows.map((r) => r.tool_name)).toEqual([
+      "search",
+      "calculator",
+    ]);
+  });
+
+  it("propagates is_deleted=true to the tool EAV rows on a tombstone re-fanout", () => {
+    const obs = createObservation({
+      project_id: "p1",
+      id: "o5",
+      metadata: {},
+      usage_details: {},
+      cost_details: {},
+      tool_definitions: { search: "find" },
+      tool_call_names: ["search"],
+      is_deleted: 1,
+    });
+    const out = buildGreptimeRowsForRecord(GreptimeTable.Observations, obs);
+    const toolRows = out
+      .filter((o) => o.table.startsWith("observations_tool_"))
+      .flatMap((o) => o.rows);
+    expect(toolRows).toHaveLength(2);
+    expect(toolRows.every((r) => r.is_deleted === true)).toBe(true);
+  });
+
   it("omits the usage/cost EAV group when an observation has only standard keys", () => {
     const obs = createObservation({
       project_id: "p1",

@@ -122,6 +122,10 @@ type AppliedDimension = {
   // Array-typed dimension (e.g. tags `string[]`). `min()` over an array column returns GreptimeDB's
   // binary array encoding instead of JSON text, so the two-level inner query must group by it raw.
   isArray: boolean;
+  // Fan-out EAV breakdown dimension (tool names): used as a breakdown it JOINs the EAV table and
+  // GROUP BYs `tool_name`, fanning the base entity out per value. Two-level aggregation would
+  // `min()`-collapse this non-invariant key, so it must not combine with a relation-backed measure.
+  fanoutRelation: boolean;
 };
 
 type AppliedMeasure = {
@@ -228,6 +232,21 @@ const buildFilterMappings = (
 
   for (const [field, dim] of Object.entries(view.dimensions)) {
     if (dim.sql === BYTYPE_SQL) continue;
+    // Tool-name dimensions are relation-backed for breakdown but filter via a project-scoped EAV
+    // EXISTS over the base entity (not the `td.tool_name` join column). Emit a filter mapping
+    // carrying the `toolNameEav` marker (factory routes it to `ToolNameOptionsFilter`); the join is
+    // added only when the column is a breakdown dimension, never for a filter (see collectRelations).
+    if (dim.filterViaEav) {
+      mappings.push({
+        uiTableName: dim.alias ?? field,
+        uiTableId: dim.alias ?? field,
+        greptimeTableName: view.baseCte,
+        greptimeSelect: "id",
+        queryPrefix: base,
+        toolNameEav: { eavTable: dim.filterViaEav.eavTable },
+      });
+      continue;
+    }
     const m = plainCol.exec(dim.sql);
     if (!m) continue; // expression dimensions (date_format(...)) are not directly filterable
     const [, prefix, col] = m;
@@ -306,6 +325,7 @@ const resolveDimension = (
     relationTable: dim.relationTable,
     isByType,
     isArray: (dim.type ?? "").endsWith("[]"),
+    fanoutRelation: Boolean(dim.filterViaEav),
     byTypeJson: isByType
       ? dim.pairExpand?.valuesSql.includes("cost_details")
         ? "cost_details"
@@ -405,6 +425,20 @@ export class GreptimeQueryBuilder {
       ) {
         dims.push(resolveDimension(query.view, view, m.requiresDimension));
       }
+    }
+
+    // Bounded support (05 Finding #1): a fan-out EAV breakdown dimension (tool names) multiplies the
+    // base entity per tool. Combined with a relation-backed (child-aggregate) measure the builder
+    // would take the two-level path and `min()`-collapse the tool_name key, silently mis-aggregating.
+    // Reject loudly instead. Tool breakdowns with base measures (count/cost/tokens/latency) are fine.
+    if (
+      dims.some((d) => d.fanoutRelation) &&
+      measures.some((m) => m.relationTable)
+    ) {
+      throw new InvalidRequestError(
+        "A tool-name breakdown cannot be combined with a relation-backed measure on GreptimeDB " +
+          "(e.g. scoresCount). Use a base measure (count, totalCost, totalTokens, latency) instead.",
+      );
     }
 
     const histogramMetric = measures.find((m) => m.aggregation === "histogram");
@@ -538,7 +572,8 @@ export class GreptimeQueryBuilder {
         throw new InvalidRequestError(`Invalid relation table: ${rel}`);
       }
       const relAlias =
-        rel === "scores" ? "sc" : baseAliasForTable(relation.name);
+        relation.alias ??
+        (rel === "scores" ? "sc" : baseAliasForTable(relation.name));
       // A `baseQuery` relation joins an inline subquery (the experiment relation joins a DISTINCT
       // projection of dataset_run_items) — the subquery already filters `is_deleted`, so no extra
       // notDeleted, and it carries no comparable time column, so `skipTimeBound` omits the window.
@@ -577,7 +612,12 @@ export class GreptimeQueryBuilder {
     for (const m of measures) if (m.relationTable) set.add(m.relationTable);
     for (const filter of query.filters) {
       const dimension = view.dimensions[filter.column];
-      if (dimension?.relationTable) set.add(dimension.relationTable);
+      // A filter on a tool-name column self-contains via an EAV EXISTS; it must NOT add the
+      // breakdown fan-out join (that would multiply the filtered measure). Only a relation-backed
+      // column used as a non-EAV filter (none today) pulls its relation in here.
+      if (dimension?.relationTable && !dimension.filterViaEav) {
+        set.add(dimension.relationTable);
+      }
     }
     return set;
   }
