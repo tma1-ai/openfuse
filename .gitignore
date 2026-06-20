@@ -119,3 +119,9 @@ web/test-results/*
 
 # Local-only Chinese working copies of migration design docs (English committed versions live alongside)
 docs/greptimedb-migration/zh/
+
+# Quality Gate C parity harness — local scratch (secrets + reports)
+docs/greptimedb-migration/parity/.env*
+docs/greptimedb-migration/parity/report-*
+docs/greptimedb-migration/parity/*.local.*
+docs/greptimedb-migration/parity/node_modules/
