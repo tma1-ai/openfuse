@@ -500,9 +500,9 @@ describe("GreptimeWriter EAV shrink consistency", () => {
 
   it("does not lose an entity enqueued while a cleanup delete is in flight", async () => {
     const { writer, deletes, deleteEav } = setup();
-    // Simulate a concurrent addToQueue interleaving during the cleanup await: the first delete call
-    // enqueues a new entity before resolving. Without the synchronous map swap, the trailing clear()
-    // would wipe this entity and skip its cleanup forever.
+    // A concurrent addToQueue interleaving during the cleanup await must not be lost: it only touches
+    // the queues, so the next flush splices and cleans it. Cleanup targets are derived from the
+    // spliced rows of each flush, so there is no shared cleanup state for the enqueue to corrupt.
     let injected = false;
     deleteEav.mockImplementation(async (table, byProject) => {
       deletes.push({
@@ -535,10 +535,88 @@ describe("GreptimeWriter EAV shrink consistency", () => {
       }),
     );
     await writer.flushAll(true);
-    // The concurrently-enqueued entity survived the swap and is cleaned on the next flush.
+    // The concurrently-enqueued entity is cleaned on the next flush (it went to the queue).
     await writer.flushAll(true);
 
     const cleanedEntities = deletes.flatMap((d) => d.entities.p ?? []);
     expect(cleanedEntities).toContain("concurrent");
+  });
+
+  it("a partial flush cleans only the entities it writes (no cross-flush gap)", async () => {
+    const { write, landed } = fakeWriter(() => null);
+    const cleaned: string[] = [];
+    const deleteEav = vi.fn(
+      async (
+        _table: string,
+        byProject: ReadonlyMap<string, ReadonlySet<string>>,
+      ) => {
+        for (const ids of byProject.values())
+          for (const id of ids) cleaned.push(id);
+      },
+    );
+    // batchSize 1: each metadata-free trace is a 1-row group, so a partial flush takes exactly one.
+    const writer = GreptimeWriter.createForTest({
+      write,
+      deleteEav,
+      batchSize: 1,
+    });
+    writer.addToQueue(
+      GreptimeTable.Traces,
+      createTrace({ project_id: "p", id: "first", metadata: {}, tags: [] }),
+    );
+    writer.addToQueue(
+      GreptimeTable.Traces,
+      createTrace({ project_id: "p", id: "second", metadata: {}, tags: [] }),
+    );
+
+    await writer.flushAll(false);
+    expect(landedProjectionIds(landed, "traces")).toEqual(["first"]);
+    // Cleanup targeted only the written entity — "second"'s EAV is untouched until it is written.
+    expect(new Set(cleaned)).toEqual(new Set(["first"]));
+    expect(writer.pendingRows()).toBeGreaterThan(0);
+
+    cleaned.length = 0;
+    await writer.flushAll(false);
+    expect(new Set(cleaned)).toEqual(new Set(["second"]));
+  });
+
+  it("never splits an entity's fan-out across a partial flush", async () => {
+    const { write, landed } = fakeWriter(() => null);
+    // batchSize 1 is smaller than one observation's multi-row fan-out; the whole group must still go.
+    const writer = GreptimeWriter.createForTest({ write, batchSize: 1 });
+    writer.addToQueue(
+      GreptimeTable.Observations,
+      createObservation({
+        project_id: "p",
+        id: "o1",
+        metadata: { k: "v" },
+        usage_details: {},
+        cost_details: {},
+        tool_definitions: { search: "x" },
+        tool_call_names: ["search"],
+      }),
+    );
+    writer.addToQueue(
+      GreptimeTable.Observations,
+      createObservation({
+        project_id: "p",
+        id: "o2",
+        metadata: {},
+        usage_details: {},
+        cost_details: {},
+      }),
+    );
+
+    await writer.flushAll(false);
+    // o1's projection AND its EAV rows landed together in this flush (group not split)...
+    expect(landedProjectionIds(landed, "observations")).toContain("o1");
+    expect(landedProjectionIds(landed, "observations_metadata")).toContain(
+      "o1",
+    );
+    expect(
+      landedProjectionIds(landed, "observations_tool_definitions"),
+    ).toContain("o1");
+    // ...and the next whole group (o2) was left for a later flush.
+    expect(landedProjectionIds(landed, "observations")).not.toContain("o2");
   });
 });
