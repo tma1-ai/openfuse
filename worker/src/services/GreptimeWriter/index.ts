@@ -9,6 +9,7 @@ import {
   getGreptimeIngestClient,
   GreptimeRow,
   GreptimeTable,
+  type GreptimeTableRows,
   logger,
   ObservationRecordInsertType,
   PHYSICAL_TABLES,
@@ -19,11 +20,13 @@ import {
   TraceRecordInsertType,
   instrumentAsync,
   truncateOversizedRow,
+  type BisectHandlers,
   type WriteErrorClassification,
   type WriteGroup,
 } from "@langfuse/shared/src/server";
 
 import { env } from "../../env";
+import type { GreptimeProjectionSink } from "./sink";
 
 /**
  * GreptimeWriter (02-write-path.md, step 5) — ports the legacy ClickHouse writer to the GreptimeDB gRPC
@@ -50,6 +53,7 @@ import { env } from "../../env";
 // Re-exported so existing `import { GreptimeWriter, GreptimeTable } from ".../GreptimeWriter"`
 // call sites keep working after the enum moved to shared.
 export { GreptimeTable } from "@langfuse/shared/src/server";
+export type { GreptimeProjectionSink } from "./sink";
 
 interface QueueItem {
   createdAt: number;
@@ -62,7 +66,7 @@ interface QueueItem {
 /** Injected so tests can drive `flushAll` with a fake writer (no live DB) and disable the interval. */
 type WriteFn = (tables: Table[]) => Promise<AffectedRows>;
 
-export class GreptimeWriter {
+export class GreptimeWriter implements GreptimeProjectionSink {
   private static instance: GreptimeWriter | null = null;
   private readonly batchSize: number;
   private readonly writeInterval: number;
@@ -107,6 +111,16 @@ export class GreptimeWriter {
     return new GreptimeWriter({ write: deps.write, autoStart: false });
   }
 
+  /**
+   * Build a non-singleton writer with no background interval, driven entirely by explicit
+   * `flushAll`/`resolveGroups` calls. Used by `GreptimeBulkWriter` as its dedicated unary lane for
+   * decimal-table projections and bulk-failure fallback, so backfill writes never interleave with the
+   * live singleton's queue.
+   */
+  public static createManual(deps: { write: WriteFn }): GreptimeWriter {
+    return new GreptimeWriter({ write: deps.write, autoStart: false });
+  }
+
   private start(): void {
     logger.info(
       `Starting GreptimeWriter. Interval: ${this.writeInterval} ms, batch size: ${this.batchSize}`,
@@ -138,15 +152,25 @@ export class GreptimeWriter {
       | ScoreRecordInsertType
       | DatasetRunItemRecordInsertType,
   ): void {
-    // One logical record fans out to its projection row plus EAV rows; they all share a group id so
-    // bisection on failure keeps them together (same combined write -> same fate).
+    this.enqueueRows(buildGreptimeRowsForRecord(table, record));
+  }
+
+  /**
+   * Enqueue one logical record's already-fanned physical rows (projection + EAV) under a single new
+   * group id, so bisection on failure keeps them together (same combined write -> same fate). The
+   * row-level seam `addToQueue` is built on; `GreptimeBulkWriter` uses it to route decimal-table rows
+   * and bulk-failure fallbacks back into this writer's isolation machinery.
+   */
+  public enqueueRows(entries: GreptimeTableRows[]): void {
     const groupId = this.nextGroupId++;
-    for (const { table: physicalTable, rows } of buildGreptimeRowsForRecord(
-      table,
-      record,
-    )) {
-      this.pushAll(physicalTable, rows, groupId);
-    }
+    for (const { table, rows } of entries) this.pushAll(table, rows, groupId);
+  }
+
+  public pendingRows(): number {
+    return Object.values(this.queues).reduce(
+      (count, queue) => count + queue.length,
+      0,
+    );
   }
 
   private push(table: string, row: GreptimeRow, groupId: number): void {
@@ -254,10 +278,10 @@ export class GreptimeWriter {
    * still fails it is requeued (transient) or dropped (deterministic). A `poison` group is dropped
    * outright — retrying a value/schema/business error is pointless.
    */
-  private async handleLeaf(
+  private async salvageOrDrop(
     group: WriteGroup<QueueItem>,
     classification: WriteErrorClassification,
-  ): Promise<void> {
+  ): Promise<boolean> {
     if (classification.class === "oversize") {
       const truncatedByTable = new Map<string, number>();
       const items = group.items.map(({ table, item }) => {
@@ -289,7 +313,7 @@ export class GreptimeWriter {
               },
             );
           }
-          return;
+          return true;
         } catch (retryErr) {
           const retryClass = classifyGreptimeWriteError(retryErr);
           if (retryClass.class === "transient") {
@@ -297,11 +321,12 @@ export class GreptimeWriter {
           } else {
             this.dropGroup(group, retryClass);
           }
-          return;
+          return false;
         }
       }
     }
     this.dropGroup(group, classification);
+    return false;
   }
 
   /** Drop a whole group and record the loss per table + the bounded error class. */
@@ -354,60 +379,102 @@ export class GreptimeWriter {
       }
       if (spliced.length === 0) return;
       const total = spliced.reduce((n, s) => n + s.items.length, 0);
+      recordHistogram("langfuse.queue.greptime_writer.batch_size", total);
 
-      try {
-        await backOff(
-          () =>
-            this.write(
-              this.buildTables(
-                spliced.map(({ table, items }) => ({
-                  table,
-                  rows: items.map((i) => i.row),
-                })),
-              ),
-            ),
-          {
-            numOfAttempts: this.maxAttempts,
-            startingDelay: 100,
-            timeMultiple: 2,
-            maxDelay: 1000,
-            // Only transient failures retry; deterministic poison/oversize stops immediately so it
-            // can be bisected rather than burning the whole attempt budget on a doomed write.
-            retry: (err) =>
-              classifyGreptimeWriteError(err).class === "transient",
-          },
-        );
-        recordGauge("greptime_writer_insert", total, { unit: "records" });
-        recordHistogram("langfuse.queue.greptime_writer.batch_size", total);
-      } catch (err) {
-        const classification = classifyGreptimeWriteError(err);
-        if (classification.class === "transient") {
-          logger.error("GreptimeWriter.flushAll (transient)", err);
-          const items: { table: string; item: QueueItem }[] = [];
-          for (const { table, items: queueItems } of spliced) {
-            for (const item of queueItems) items.push({ table, item });
+      let landedRows = 0;
+      await this.writeWithIsolation(this.regroup(spliced), {
+        onLanded: (gs) => {
+          landedRows += gs.reduce((n, g) => n + g.items.length, 0);
+        },
+        onTransient: (gs) => this.requeueGroups(gs),
+        onPoisonLeaf: async (group, leafClass) => {
+          // A truncation-salvaged oversize group is durably written; count it too so the insert
+          // gauge doesn't under-report this path.
+          if (await this.salvageOrDrop(group, leafClass)) {
+            landedRows += group.items.length;
           }
-          this.requeueItems(items);
-          return;
-        }
-        // Deterministic failure: isolate the bad group(s) so good groups still land.
-        logger.error(
-          `GreptimeWriter.flushAll bisecting (class=${classification.errorClass})`,
-          err,
-        );
-        recordIncrement("langfuse.queue.greptime_writer.bisect_runs", 1, {
-          error_class: classification.errorClass,
-        });
-        await bisectGroups(
-          this.regroup(spliced),
-          (gs) => this.writeGroups(gs),
-          {
-            onTransient: (gs) => this.requeueGroups(gs),
-            onPoisonLeaf: (group, leafClass) =>
-              this.handleLeaf(group, leafClass),
-          },
-        );
+        },
+      });
+      if (landedRows > 0) {
+        recordGauge("greptime_writer_insert", landedRows, { unit: "records" });
       }
     });
+  }
+
+  /**
+   * Write the given logical groups in ONE combined gRPC call, retrying only *transient* failures via
+   * backOff; a *deterministic* poison/oversize failure breaks out immediately and is bisected to
+   * isolate the bad group while good groups land. The terminal actions for landed / transient / poison
+   * subsets are injected, so the queue flush (requeue/drop) and the backfill `resolveGroups` (collect
+   * landed ids) share one isolation core instead of forking it.
+   */
+  private async writeWithIsolation(
+    groups: WriteGroup<QueueItem>[],
+    handlers: BisectHandlers<QueueItem>,
+  ): Promise<void> {
+    if (groups.length === 0) return;
+    try {
+      await backOff(() => this.writeGroups(groups), {
+        numOfAttempts: this.maxAttempts,
+        startingDelay: 100,
+        timeMultiple: 2,
+        maxDelay: 1000,
+        // Only transient failures retry; deterministic poison/oversize stops immediately so it can be
+        // bisected rather than burning the whole attempt budget on a doomed write.
+        retry: (err) => classifyGreptimeWriteError(err).class === "transient",
+      });
+      handlers.onLanded?.(groups);
+    } catch (err) {
+      const classification = classifyGreptimeWriteError(err);
+      if (classification.class === "transient") {
+        logger.error("GreptimeWriter.writeWithIsolation (transient)", err);
+        handlers.onTransient(groups);
+        return;
+      }
+      logger.error(
+        `GreptimeWriter.writeWithIsolation bisecting (class=${classification.errorClass})`,
+        err,
+      );
+      recordIncrement("langfuse.queue.greptime_writer.bisect_runs", 1, {
+        error_class: classification.errorClass,
+      });
+      await bisectGroups(groups, (gs) => this.writeGroups(gs), handlers);
+    }
+  }
+
+  /**
+   * Backfill primitive: write these groups now to a terminal outcome (no queue accumulation) and
+   * return the set of group ids that durably landed — including ones salvaged by truncation. Because
+   * `landed <=> written`, `GreptimeBulkWriter` gates dependent EAV bulk writes on projection success,
+   * never writing EAV orphaned from a dropped projection. Transient-after-backoff groups are requeued
+   * onto THIS writer (drained by a later `flushAll(true)`) and reported as not-landed, so their EAV is
+   * withheld this run and healed by the idempotent rebuild rather than written ahead of the projection.
+   */
+  public async resolveGroups(
+    groups: { groupId: number; rows: GreptimeTableRows[] }[],
+  ): Promise<Set<number>> {
+    const landed = new Set<number>();
+    if (groups.length === 0) return landed;
+    const wgroups: WriteGroup<QueueItem>[] = groups.map((g) => ({
+      groupId: g.groupId,
+      items: g.rows.flatMap(({ table, rows }) =>
+        rows.map((row) => ({
+          table,
+          item: { createdAt: Date.now(), attempts: 1, groupId: g.groupId, row },
+        })),
+      ),
+    }));
+    await this.writeWithIsolation(wgroups, {
+      onLanded: (gs) => {
+        for (const g of gs) landed.add(g.groupId);
+      },
+      onTransient: (gs) => this.requeueGroups(gs),
+      onPoisonLeaf: async (group, leafClass) => {
+        if (await this.salvageOrDrop(group, leafClass)) {
+          landed.add(group.groupId);
+        }
+      },
+    });
+    return landed;
   }
 }

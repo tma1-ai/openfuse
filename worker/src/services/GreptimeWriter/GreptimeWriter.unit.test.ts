@@ -301,3 +301,95 @@ describe("GreptimeWriter batch-failure isolation", () => {
     ).toHaveLength(0);
   });
 });
+
+describe("GreptimeWriter.resolveGroups (backfill projection gating)", () => {
+  // One projection-only group as the bulk writer feeds it: a single physical row keyed by `id`.
+  const traceGroup = (id: string, groupId: number) => ({
+    groupId,
+    rows: [
+      {
+        table: "traces",
+        rows: [{ project_id: "p", id, timestamp: 1, is_deleted: false }],
+      },
+    ],
+  });
+
+  it("returns every groupId on a clean write", async () => {
+    const { write, landed } = fakeWriter(() => null);
+    const writer = GreptimeWriter.createForTest({ write });
+
+    const result = await writer.resolveGroups([
+      traceGroup("a", 1),
+      traceGroup("b", 2),
+    ]);
+
+    expect([...result].sort()).toEqual([1, 2]);
+    expect(landedProjectionIds(landed, "traces").sort()).toEqual(["a", "b"]);
+  });
+
+  it("excludes a poison group from the landed set while good groups land", async () => {
+    const { write, landed } = fakeWriter((tables) =>
+      snapshot(tables).some((s) => s.ids.includes("bad"))
+        ? new ValueError("poison row bad")
+        : null,
+    );
+    const writer = GreptimeWriter.createForTest({ write });
+
+    const result = await writer.resolveGroups([
+      traceGroup("ok", 1),
+      traceGroup("bad", 2),
+    ]);
+
+    expect(result.has(1)).toBe(true);
+    expect(result.has(2)).toBe(false);
+    expect(landedProjectionIds(landed, "traces")).toEqual(["ok"]);
+    expect(
+      incrementsFor("langfuse.queue.greptime_writer.poison_groups_isolated"),
+    ).toHaveLength(1);
+  });
+
+  it("counts a truncation-salvaged oversize group as landed", async () => {
+    const cap = env.LANGFUSE_GREPTIME_WRITE_MAX_FIELD_BYTES;
+    const failThreshold = Math.floor(cap * 1.5);
+    const { write } = fakeWriter((tables) =>
+      fieldBytes(tables, "observations", "input").some((b) => b > failThreshold)
+        ? new TransportError("message too large", 8)
+        : null,
+    );
+    const writer = GreptimeWriter.createForTest({ write });
+
+    const result = await writer.resolveGroups([
+      {
+        groupId: 7,
+        rows: [
+          {
+            table: "observations",
+            rows: [
+              {
+                project_id: "p",
+                id: "o",
+                start_time: 1,
+                input: "x".repeat(cap * 2),
+                is_deleted: false,
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+
+    expect(result.has(7)).toBe(true);
+    expect(
+      incrementsFor("langfuse.queue.greptime_writer.rows_truncated").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("omits a transient-failing group from the landed set", async () => {
+    const { write } = fakeWriter(() => new TransportError("unavailable", 14));
+    const writer = GreptimeWriter.createForTest({ write });
+
+    const result = await writer.resolveGroups([traceGroup("a", 1)]);
+
+    expect(result.size).toBe(0);
+  });
+});

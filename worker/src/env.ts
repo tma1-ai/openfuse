@@ -145,6 +145,19 @@ const EnvSchema = z.object({
     .number()
     .positive()
     .default(1),
+  // Backfill-only: route reconciliation projection writes through the bulk Arrow Flight DoPut path
+  // (GreptimeBulkWriter) instead of unary gRPC. Off by default; steady-state ingestion is unaffected.
+  LANGFUSE_GREPTIME_BULK_BACKFILL_ENABLED: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((v) => v === "true"),
+  // Rows per bulk `writeRows` chunk within a reconciliation page flush. Bulk amortizes per-call
+  // overhead, so this is much larger than the unary write batch size.
+  LANGFUSE_GREPTIME_BULK_BATCH_SIZE: z.coerce
+    .number()
+    .int()
+    .positive()
+    .default(10_000),
   // Per-table region-statistics sampler. SST fragmentation is the main lever on by-type dashboard
   // latency, so make it observable. region_statistics is cluster-global; a per-interval Redis bucket
   // lock keeps a single replica emitting each interval rather than every replica publishing identical
