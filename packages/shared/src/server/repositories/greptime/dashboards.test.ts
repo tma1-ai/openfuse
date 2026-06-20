@@ -6,6 +6,7 @@ vi.mock("../../greptime/client", () => ({
   greptimeQuery: mocks.greptimeQuery,
 }));
 
+import { type FilterState } from "../../../types";
 import {
   getObservationCostByTypeByTimeGreptime,
   getObservationUsageByTypeByTimeGreptime,
@@ -121,5 +122,63 @@ describe("getObservation*ByTypeByTime (dual-read: JSON known + EAV custom)", () 
     expect(result.some((r) => r.key === "audio")).toBe(false);
     expect(result.some((r) => r.key === "output")).toBe(false);
     expect(result.some((r) => r.key === "input")).toBe(true);
+  });
+});
+
+describe("getObservation*ByTypeByTime: Q2 observations join is conditional", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  // Returns the Q2 (EAV) SQL produced for a given filter state.
+  const q2For = async (filter: FilterState): Promise<string> => {
+    mockDualRead([], []);
+    await getObservationUsageByTypeByTimeGreptime({
+      projectId: "p1",
+      filter,
+      fromTime: 0,
+      toTime: 3_600_000,
+      bucketSizeSeconds: 3600,
+    });
+    return mocks.greptimeQuery.mock.calls[1]![0].query as string;
+  };
+
+  it("skips the observations join when no observation/trace/environment filter is present", async () => {
+    const q2 = await q2For([]);
+    expect(q2).toContain("FROM observations_usage_cost uc");
+    expect(q2).not.toContain("JOIN observations o");
+    expect(q2).not.toContain("JOIN traces");
+    // No dangling observations/traces alias may leak into SELECT/WHERE/GROUP BY once the joins drop.
+    expect(q2).not.toMatch(/\bo\./);
+    expect(q2).not.toMatch(/\bt\./);
+    // Deletion is still guarded -- by the EAV flag alone, which the writer keeps in sync.
+    expect(q2).toContain("uc.`is_deleted` = false");
+  });
+
+  it("keeps the observations join for an environment filter (EAV table has no environment column)", async () => {
+    const q2 = await q2For([
+      {
+        type: "stringOptions",
+        column: "environment",
+        operator: "any of",
+        value: ["production"],
+      },
+    ]);
+    expect(q2).toContain("JOIN observations o");
+  });
+
+  it("keeps the observations join for an observation-level filter", async () => {
+    const q2 = await q2For([
+      { type: "string", column: "type", operator: "=", value: "GENERATION" },
+    ]);
+    expect(q2).toContain("JOIN observations o");
+  });
+
+  it("keeps both joins for a trace-level filter", async () => {
+    const q2 = await q2For([
+      { type: "string", column: "userId", operator: "=", value: "u1" },
+    ]);
+    expect(q2).toContain("JOIN observations o");
+    expect(q2).toContain("LEFT JOIN traces t");
   });
 });
