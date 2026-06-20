@@ -1,11 +1,4 @@
-import {
-  ArrowUp10,
-  BadgeCheck,
-  HardDriveDownload,
-  Info,
-  Map,
-  Newspaper,
-} from "lucide-react";
+import { ArrowUp10, BadgeCheck, HardDriveDownload, Map } from "lucide-react";
 import { SiGithub } from "react-icons/si";
 import { VERSION } from "@/src/constants";
 import Link from "next/link";
@@ -129,7 +122,7 @@ export const VersionLabel = ({ className }: { className?: string }) => {
         )}
         <DropdownMenuItem asChild>
           <Link
-            href="https://github.com/langfuse/langfuse/releases"
+            href="https://github.com/tma1-ai/openfuse/releases"
             target="_blank"
           >
             <SiGithub size={16} className="mr-2" />
@@ -152,31 +145,20 @@ export const VersionLabel = ({ className }: { className?: string }) => {
           </DropdownMenuItem>
         )}
         <DropdownMenuItem asChild>
-          <Link href="https://langfuse.com/changelog" target="_blank">
-            <Newspaper size={16} className="mr-2" />
-            Changelog
-          </Link>
-        </DropdownMenuItem>
-        <DropdownMenuItem asChild>
-          <Link href="https://langfuse.com/roadmap" target="_blank">
+          <Link
+            href="https://github.com/tma1-ai/openfuse/issues/8"
+            target="_blank"
+          >
             <Map size={16} className="mr-2" />
             Roadmap
           </Link>
         </DropdownMenuItem>
-        {!isLangfuseCloud && (
-          <DropdownMenuItem asChild>
-            <Link href="https://langfuse.com/pricing-self-host" target="_blank">
-              <Info size={16} className="mr-2" />
-              Compare Versions
-            </Link>
-          </DropdownMenuItem>
-        )}
         {hasUpdate && (
           <>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <Link
-                href="https://langfuse.com/docs/deployment/self-host#update"
+                href="https://github.com/tma1-ai/openfuse/blob/main/docs/operations.md#maintenance-and-upgrades"
                 target="_blank"
               >
                 <HardDriveDownload size={16} className="mr-2" />
