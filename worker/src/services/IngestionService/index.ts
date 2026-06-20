@@ -45,7 +45,7 @@ import {
 
 import { tokenCountAsync } from "../../features/tokenisation/async-usage";
 import { tokenCount } from "../../features/tokenisation/usage";
-import { GreptimeWriter, GreptimeTable } from "../GreptimeWriter";
+import { GreptimeTable, type GreptimeProjectionSink } from "../GreptimeWriter";
 import {
   convertJsonSchemaToRecord,
   convertPostgresJsonToMetadataRecord,
@@ -132,7 +132,7 @@ export class IngestionService {
     // GreptimeDB is the sole projection backend (02-write-path.md). Every merged projection record
     // is written here; the merge rebuilds each entity snapshot from its full raw_events history
     // (created_at = min(ingested_at)), so there is no baseline read.
-    private greptimeWriter: GreptimeWriter,
+    private greptimeWriter: GreptimeProjectionSink,
   ) {
     this.promptService = new PromptService(prisma, redis);
   }
