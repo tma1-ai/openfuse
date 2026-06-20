@@ -19,7 +19,7 @@ const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 /**
  * `dataset_run_items` dedup CTE body (latest physical row per logical (run,item) key). GreptimeDB has
  * no QUALIFY, so the ROW_NUMBER rank is filtered in an outer `WHERE rn = 1`. Mirrors the contract in
- * `datasetRunItems.ts` (re-declared here to avoid exporting the module-private helper).
+ * `datasetRunItems.ts` (redeclared here to avoid exporting the module-private helper).
  */
 const driDedupCte = (cols: readonly string[], whereSql: string): string =>
   `SELECT ${cols.map((c) => quoteIdent(c)).join(", ")} FROM (` +

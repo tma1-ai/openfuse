@@ -1,0 +1,102 @@
+name: Release images
+
+# Build and publish the web and worker Docker images to Docker Hub
+# (tma1ai/openfuse-web, tma1ai/openfuse-worker).
+#
+# Triggers:
+#   - push a `v*` tag (e.g. `v1.2.0`)  -> versioned release: semver tags + `latest`
+#     (non-`-rc` tags only get the floating major/minor and `latest`).
+#   - manual run (workflow_dispatch)   -> builds the chosen ref, tagged by commit sha
+#     plus an optional custom tag input. Never moves `latest`.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   DOCKERHUB_USERNAME  - Docker Hub user/org with push access to tma1ai/*
+#   DOCKERHUB_TOKEN     - Docker Hub access token with Read & Write scope
+#
+# arm64 is built under QEMU emulation on the amd64 runner, so release builds are
+# slower than native; this is fine for tag-driven releases (not run on every push).
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Optional extra image tag (e.g. v1.2.0 or edge). latest is never moved by manual runs."
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+  actions: write # BuildKit type=gha cache exporter/importer needs the Actions cache API
+
+concurrency:
+  group: release-images-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: web
+            dockerfile: ./web/Dockerfile
+            image: tma1ai/openfuse-web
+          - component: worker
+            dockerfile: ./worker/Dockerfile
+            image: tma1ai/openfuse-worker
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set NEXT_PUBLIC_BUILD_ID
+        run: echo "NEXT_PUBLIC_BUILD_ID=$(git rev-parse --short HEAD)" >> "$GITHUB_ENV"
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Extract image metadata
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051 # v5
+        with:
+          images: ${{ matrix.image }}
+          flavor: |
+            latest=false
+          tags: |
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' && !contains(github.ref, '-rc') }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'push' && !contains(github.ref, '-rc') }}
+            type=sha
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-rc') }}
+
+      - name: Build and push
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            NEXT_PUBLIC_BUILD_ID=${{ env.NEXT_PUBLIC_BUILD_ID }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.component }}

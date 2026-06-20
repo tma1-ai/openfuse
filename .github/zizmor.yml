@@ -19,3 +19,22 @@ rules:
         - LANGFUSE_LLM_CONNECTION_GOOGLEAISTUDIO_KEY
         # Fern token is generation-only; GitHub write actions are handled by GH_ACCESS_TOKEN in a protected environment.
         - FERN_TOKEN
+  # The repo tracks GitHub- and pnpm-owned actions by major tag (see ci.yml) and SHA-pins third-party
+  # actions (docker/*, dorny/*). Mirror that policy instead of zizmor's blanket hash-pin: the
+  # established convention passes while third-party supply-chain pinning stays enforced.
+  unpinned-uses:
+    config:
+      policies:
+        actions/*: ref-pin
+        pnpm/*: ref-pin
+        "*": hash-pin
+  # ci.yml is the pre-existing first-party CI; its checkout credential persistence and default job
+  # permissions are out of scope here. The new workflows (release-images / zizmor / codespell /
+  # validate-pr-title) already set persist-credentials:false and explicit permissions, so these
+  # audits still apply everywhere else.
+  artipacked:
+    ignore:
+      - ci.yml
+  excessive-permissions:
+    ignore:
+      - ci.yml
