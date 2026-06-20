@@ -18,9 +18,7 @@
 
 </div>
 
-Openfuse is a developer-preview fork of [Langfuse](https://github.com/langfuse/langfuse) that swaps the analytics store from ClickHouse to [GreptimeDB](https://github.com/GreptimeTeam/greptimedb). The Langfuse product, public APIs, and SDKs stay the same; GreptimeDB becomes the source of truth for traces, observations, scores, and the analytics behind dashboards.
-
-> **Status: alpha / developer preview.** The storage migration is in place and the read path is parity-checked against upstream, but treat this as preview software. Run it to evaluate GreptimeDB-backed Langfuse in dev or staging, on data you can afford to lose. It is not production-ready. See [Known limitations](docs/known-limitations.md).
+Openfuse is a fork of [Langfuse](https://github.com/langfuse/langfuse) that swaps the analytics store from ClickHouse to [GreptimeDB](https://github.com/GreptimeTeam/greptimedb). The Langfuse product, public APIs, and SDKs stay the same; GreptimeDB becomes the source of truth for traces, observations, scores, and the analytics behind dashboards.
 
 ## Why GreptimeDB
 
@@ -39,7 +37,11 @@ It also opens a direction that a single-purpose store cannot. Because the events
 - **Mutations, deletion, replay**: UI edits and deletions append synthetic events to `raw_events`, so replay rebuilds the merged (or soft-deleted) state instead of resurrecting or losing it.
 - **Automatic migrations**: the web and standalone containers migrate both Postgres and the GreptimeDB schema on startup — no manual bootstrap.
 
-Read [Known limitations](docs/known-limitations.md) before you deploy.
+## Project status
+
+Openfuse is in **alpha** and actively moving toward beta. The ClickHouse → GreptimeDB migration is in place, the read path is parity-checked byte-for-byte against upstream Langfuse, and the full Langfuse product, API, and SDK surface works. Try it, run real workloads against it, and open issues — that feedback is what gets it to beta.
+
+Before you depend on it, skim [Known limitations](docs/known-limitations.md): a short list of real constraints, plus a few intentional differences from upstream where the fork is equal or more correct.
 
 ## 5-minute quickstart (Docker Compose)
 

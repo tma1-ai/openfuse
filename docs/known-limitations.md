@@ -26,10 +26,6 @@ Ingestion needs no object store — traces, observations, and scores persist to 
 
 Traces, observations, and scores delete by appending a tombstone to `raw_events`, so replay rebuilds a soft-deleted row and a restored `raw_events` reconstructs deletion state. `dataset_run_items` instead hard-deletes the projection and relies on the replay path skipping deleted items; it keeps no per-entity tombstone in `raw_events`. So "`raw_events` is the complete source of truth" holds for traces/observations/scores but not for DRI. It works operationally; it is called out so the exception is explicit.
 
-## Support
-
-Alpha posture: no long-term support or backports; only the latest pre-release is maintained. See [SECURITY.md](../SECURITY.md).
-
 ## Intentional differences from upstream Langfuse (not limitations)
 
 These are documented behaviour differences, not defects: output can differ from upstream, but the fork is equal or more correct. Full detail and parity evidence are in the [parity ledger](greptimedb-migration/parity/ledger.md).
