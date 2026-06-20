@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import {
+  getGreptimeIngestClient,
   getProjectDeletedAt,
   GREPTIME_RECONCILIATION_MAX_BATCH_SIZE,
   GreptimeReconciliationEventType,
@@ -18,7 +19,11 @@ import { prisma } from "@langfuse/shared/src/db";
 
 import { env } from "../../env";
 import { IngestionService } from "../../services/IngestionService";
-import { GreptimeWriter } from "../../services/GreptimeWriter";
+import {
+  GreptimeWriter,
+  type GreptimeProjectionSink,
+} from "../../services/GreptimeWriter";
+import { GreptimeBulkWriter } from "../../services/GreptimeBulkWriter";
 
 /**
  * Reconciliation = re-run the existing per-entity rebuild over every entity of a project. raw_events
@@ -71,8 +76,20 @@ export async function handleGreptimeReconciliation(
   // re-create semantics, so every entity rebuild remains soft-deleted.
   const projectDeletedAt = await getProjectDeletedAt(projectId);
 
-  const greptimeWriter = GreptimeWriter.getInstance();
-  const ingestionService = new IngestionService(redis, prisma, greptimeWriter);
+  // Backfill fast path: write decimal-free projections through bulk Arrow Flight, keeping the
+  // observation projection unary and gating its EAV on projection success (GreptimeBulkWriter). The
+  // bulk writer owns a dedicated manual unary lane so backfill writes never interleave with the live
+  // singleton's queue. Off by default -> the unary singleton, identical to before.
+  const sink: GreptimeProjectionSink = env.LANGFUSE_GREPTIME_BULK_BACKFILL_ENABLED
+    ? new GreptimeBulkWriter({
+        client: getGreptimeIngestClient(),
+        unary: GreptimeWriter.createManual({
+          write: (tables) => getGreptimeIngestClient().write(tables),
+        }),
+        batchSize: env.LANGFUSE_GREPTIME_BULK_BATCH_SIZE,
+      })
+    : GreptimeWriter.getInstance();
+  const ingestionService = new IngestionService(redis, prisma, sink);
 
   let reconciled = 0;
   let failures = 0;
@@ -107,7 +124,7 @@ export async function handleGreptimeReconciliation(
     { projectId },
   );
 
-  await greptimeWriter.flushAll(true);
+  await sink.flushAll(true);
 
   if (failures > 0) {
     throw new Error(
