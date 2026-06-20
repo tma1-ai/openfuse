@@ -27,7 +27,7 @@ import {
   requireGreptimeString,
 } from "../../greptime/sql/rowContract";
 import { sqlSafeRandomCharacters } from "..";
-import { greptimeTsParam } from "./queryHelpers";
+import { deriveTraceMinTimestamp, greptimeTsParam } from "./queryHelpers";
 
 /**
  * GreptimeDB sessions UI table reads (04-read-path.md, P2). Replaces the ClickHouse
@@ -371,6 +371,12 @@ const sessionsOrderByClause = (orderBy?: OrderByState): string => {
 // query assembly
 // ---------------------------------------------------------------------------
 
+// GreptimeDB only pushes filters to the per-region scan (where the TIME INDEX and the BLOOM skipping
+// indexes on session_id / start_time can prune) when the filtered table is NOT sitting directly under a
+// JOIN. The flat `FROM traces t LEFT JOIN observations o ... WHERE t.timestamp >= ...` shape defeats that
+// pushdown and full-scans both tables even with the bound present. Pre-filtering each base table in a
+// subquery restores pruning; for a LEFT JOIN, moving the right-side predicates into the subquery is
+// equivalent to keeping them in the ON clause, so the result is identical.
 const buildSessionResultCte = (compiled: CompiledSession): string => `
   session_result AS (
     SELECT
@@ -390,12 +396,19 @@ const buildSessionResultCte = (compiled: CompiledSession): string => `
       sum(coalesce(json_get_float(o.usage_details, 'input'), 0)) AS session_input_usage,
       sum(coalesce(json_get_float(o.usage_details, 'output'), 0)) AS session_output_usage,
       sum(coalesce(json_get_float(o.usage_details, 'total'), 0)) AS session_total_usage
-    FROM traces t
-    LEFT JOIN observations o
-      ON o.trace_id = t.id AND o.project_id = t.project_id AND o.is_deleted = false
-      ${compiled.obsLookback ? "AND o.start_time >= :sessObsLookback" : ""}
-    WHERE t.project_id = :projectId AND t.session_id IS NOT NULL AND t.is_deleted = false
-      ${compiled.preWhere ? `AND ${compiled.preWhere}` : ""}
+    FROM (
+      SELECT t.id, t.project_id, t.session_id, t.timestamp, t.user_id, t.environment
+      FROM traces t
+      WHERE t.project_id = :projectId AND t.session_id IS NOT NULL AND t.is_deleted = false
+        ${compiled.preWhere ? `AND ${compiled.preWhere}` : ""}
+    ) t
+    LEFT JOIN (
+      SELECT o.id, o.project_id, o.trace_id, o.total_cost, o.cost_details,
+        o.usage_details, o.start_time, o.end_time
+      FROM observations o
+      WHERE o.project_id = :projectId AND o.is_deleted = false
+        ${compiled.obsLookback ? "AND o.start_time >= :sessObsLookback" : ""}
+    ) o ON o.trace_id = t.id AND o.project_id = t.project_id
     GROUP BY t.session_id, t.project_id
   )`;
 
@@ -403,10 +416,13 @@ const buildSessionTagsCte = (compiled: CompiledSession): string => `
   session_tags AS (
     SELECT t.session_id AS session_id, t.project_id AS project_id,
       array_to_string(array_agg(DISTINCT mt.tag), :arraySep) AS trace_tags
-    FROM traces t
+    FROM (
+      SELECT t.id, t.project_id, t.session_id
+      FROM traces t
+      WHERE t.project_id = :projectId AND t.session_id IS NOT NULL AND t.is_deleted = false
+        ${compiled.preWhere ? `AND ${compiled.preWhere}` : ""}
+    ) t
     JOIN traces_tags mt ON mt.entity_id = t.id AND mt.project_id = t.project_id AND mt.is_deleted = false
-    WHERE t.project_id = :projectId AND t.session_id IS NOT NULL AND t.is_deleted = false
-      ${compiled.preWhere ? `AND ${compiled.preWhere}` : ""}
     GROUP BY t.session_id, t.project_id
   )`;
 
@@ -424,6 +440,47 @@ const baseParams = (compiled: CompiledSession, projectId: string) => ({
   ...(compiled.obsLookback ? { sessObsLookback: compiled.obsLookback } : {}),
   ...compiled.params,
 });
+
+// Extract a finite session_id set from the filter (the metrics caller passes an `id` IN list). Returns
+// null when there is no enumerable session_id predicate, so the derived-bound optimization is skipped
+// rather than guessed.
+const extractSessionIds = (filter: FilterState): string[] | null => {
+  const ids: string[] = [];
+  for (const f of filter) {
+    if (
+      findUiColumnMapping(sessionCols, f.column)?.clickhouseSelect !==
+      "session_id"
+    )
+      continue;
+    if (f.type === "stringOptions" && f.operator === "any of")
+      ids.push(...f.value);
+    else if (f.type === "string" && f.operator === "=") ids.push(f.value);
+    else return null; // non-enumerable predicate -> cannot derive a finite scope
+  }
+  return ids.length > 0 ? ids : null;
+};
+
+// All-time metrics reads (id-only filter, no UI timestamp bound) leave the observations subquery without
+// an index-eligible predicate once the trace side is bloom-pruned. Derive an observations start_time
+// lower bound from the sessions' earliest trace so the TIME INDEX prunes it too. See
+// deriveTraceMinTimestamp for the documented (deliberate) lookback narrowing.
+const ensureObsLookback = async (
+  compiled: CompiledSession,
+  projectId: string,
+  filter: FilterState,
+): Promise<CompiledSession> => {
+  if (compiled.obsLookback) return compiled;
+  const ids = extractSessionIds(filter);
+  if (!ids) return compiled;
+  const minTs = await deriveTraceMinTimestamp(projectId, "session_id", ids);
+  if (!minTs) return compiled;
+  return {
+    ...compiled,
+    obsLookback: greptimeTsParam(
+      new Date(minTs.getTime() - SESSION_OBS_LOOKBACK_MS),
+    ),
+  };
+};
 
 // ---------------------------------------------------------------------------
 // public reads
@@ -472,7 +529,11 @@ export const getSessionsTableGreptime = async (
 export const getSessionsWithMetricsGreptime = async (
   props: GreptimeSessionsProps,
 ): Promise<SessionWithMetricsReturnType[]> => {
-  const compiled = buildSessionFilters(props.filter);
+  const compiled = await ensureObsLookback(
+    buildSessionFilters(props.filter),
+    props.projectId,
+    props.filter,
+  );
   const page = pagination(props);
   const rows = await greptimeQuery<Record<string, unknown>>({
     query: `

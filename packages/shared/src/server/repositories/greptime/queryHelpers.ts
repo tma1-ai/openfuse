@@ -1,5 +1,6 @@
 import { quoteIdent } from "../../greptime/schemaUtils";
 import { greptimeTimestampLiteral } from "../../greptime/sql/greptime-filter";
+import { greptimeQuery } from "../../greptime/client";
 
 /**
  * Shared SQL fragments for the GreptimeDB read repositories (04-read-path.md, P1).
@@ -47,6 +48,41 @@ const quoteColumnRef = (ref: string): string => {
 
 /** Bind a Date as a ms-precision GreptimeDB timestamp literal (string -> TIMESTAMP coercion). */
 export const greptimeTsParam = (d: Date): string => greptimeTimestampLiteral(d);
+
+/**
+ * Earliest trace `timestamp` for a finite set of session/user ids, scoped by `project_id` and pruned
+ * by the bloom skipping index on `scopeColumn` (04-read-path.md, migration 0006). Returns null when the
+ * set has no live traces.
+ *
+ * Why: the all-time metrics reads (`getSessionsWithMetricsGreptime` with an id-only filter,
+ * `getUserMetrics` with an empty filter) pass no UI timestamp bound. After the join-pushdown fix the
+ * `traces` side prunes via the `session_id`/`user_id` bloom index, but the `observations` side then has
+ * no index-eligible predicate. Feeding `min(timestamp) - INTERVAL` as an `observations.start_time` lower
+ * bound restores TIME-INDEX pruning there.
+ *
+ * IMPORTANT — this is a DELIBERATE lookback-bounded narrowing, NOT strict all-time equivalence: it drops
+ * observations whose `start_time` precedes the group's earliest trace by more than the caller's INTERVAL
+ * (pathological clock skew > INTERVAL or a back-dated import; for sane data the dropped set is empty).
+ * It mirrors the exact heuristic the windowed metrics path already applies (`obsLookback = tsFilter -
+ * INTERVAL`). Callers subtract their own INTERVAL and must document the trade-off.
+ */
+export const deriveTraceMinTimestamp = async (
+  projectId: string,
+  scopeColumn: "session_id" | "user_id",
+  ids: readonly string[],
+): Promise<Date | null> => {
+  if (ids.length === 0) return null;
+  const inClause = greptimeInClause(scopeColumn, ids, "scope");
+  const rows = await greptimeQuery<{ min_ts: Date | string | null }>({
+    query: `SELECT min(${quoteIdent("timestamp")}) AS min_ts FROM traces
+      WHERE ${quoteIdent("project_id")} = :projectId AND ${inClause.sql} AND ${notDeleted()}`,
+    params: { projectId, ...inClause.params },
+    readOnly: true,
+  });
+  const v = rows[0]?.min_ts;
+  if (v == null) return null;
+  return v instanceof Date ? v : new Date(v);
+};
 
 /** UTC calendar-day bounds [start, end) for a same-day match, as ms-precision literals. */
 export const greptimeDayBounds = (d: Date): { start: string; end: string } => {
