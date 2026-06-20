@@ -60,6 +60,7 @@ interface BulkRow {
 /** A gated (decimal-projection) entity: projection goes unary-resolved, EAV is released only if it lands. */
 interface GatedEntity {
   projectionRow?: GreptimeRow;
+  projectionTable?: string;
   eav: { table: string; row: GreptimeRow }[];
 }
 
@@ -100,8 +101,12 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
       // The projection physical table name equals the enum value; everything else is its EAV.
       const entity: GatedEntity = { eav: [] };
       for (const { table: phys, rows } of fanned) {
-        if (phys === table) entity.projectionRow = rows[0];
-        else for (const row of rows) entity.eav.push({ table: phys, row });
+        if (phys === table) {
+          entity.projectionRow = rows[0];
+          entity.projectionTable = phys;
+        } else {
+          for (const row of rows) entity.eav.push({ table: phys, row });
+        }
       }
       this.gated.set(groupId, entity);
       return;
@@ -116,14 +121,10 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
     return instrumentAsync({ name: "write-to-greptime-bulk" }, async () => {
       // 1. Write gated projections unary to a terminal outcome; learn which entities durably landed.
       const projectionGroups = [...this.gated]
-        .filter(([, e]) => e.projectionRow)
+        .filter(([, e]) => e.projectionRow && e.projectionTable)
         .map(([groupId, e]) => ({
-          // The projection table name equals the gating entity's enum value; all of today's gated
-          // entities are observations, so the single projection table is "observations".
           groupId,
-          rows: [
-            { table: GreptimeTable.Observations, rows: [e.projectionRow!] },
-          ],
+          rows: [{ table: e.projectionTable!, rows: [e.projectionRow!] }],
         }));
       const landed = await this.unary.resolveGroups(projectionGroups);
 
@@ -132,6 +133,17 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
         recordIncrement(
           "langfuse.greptime_bulk.gated_projection_not_landed",
           notLanded,
+        );
+      }
+
+      const pendingProjectionRows = this.unary.pendingRows();
+      if (pendingProjectionRows > 0) {
+        recordIncrement(
+          "langfuse.greptime_bulk.gated_projection_pending_rows",
+          pendingProjectionRows,
+        );
+        throw new Error(
+          `GreptimeBulkWriter: ${pendingProjectionRows} gated projection row(s) remain pending`,
         );
       }
 
@@ -170,6 +182,16 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
 
       // 4. Drain the unary lane: grouped fallback rows + any projections requeued on transient failure.
       await this.unary.flushAll(true);
+      const pendingUnaryRows = this.unary.pendingRows();
+      if (pendingUnaryRows > 0) {
+        recordIncrement(
+          "langfuse.greptime_bulk.unary_pending_rows",
+          pendingUnaryRows,
+        );
+        throw new Error(
+          `GreptimeBulkWriter: ${pendingUnaryRows} unary fallback row(s) remain pending`,
+        );
+      }
     });
   }
 

@@ -166,6 +166,13 @@ export class GreptimeWriter implements GreptimeProjectionSink {
     for (const { table, rows } of entries) this.pushAll(table, rows, groupId);
   }
 
+  public pendingRows(): number {
+    return Object.values(this.queues).reduce(
+      (count, queue) => count + queue.length,
+      0,
+    );
+  }
+
   private push(table: string, row: GreptimeRow, groupId: number): void {
     this.queues[table].push({
       createdAt: Date.now(),

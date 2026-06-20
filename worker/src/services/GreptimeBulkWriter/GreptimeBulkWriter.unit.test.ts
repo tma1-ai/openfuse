@@ -17,6 +17,7 @@ import {
   createObservation,
   createTrace,
   recordIncrement,
+  TransportError,
   ValueError,
 } from "@langfuse/shared/src/server";
 
@@ -159,6 +160,32 @@ describe("GreptimeBulkWriter routing", () => {
     ).toHaveLength(1);
   });
 
+  it("fails the flush when the gated projection remains pending", async () => {
+    const { client, created } = fakeBulkClient();
+    const { writer: unary } = fakeUnary(
+      () => new TransportError("unavailable", 14),
+    );
+    const bulk = makeBulkWriter(client, unary);
+
+    bulk.addToQueue(
+      GreptimeTable.Observations,
+      createObservation({
+        project_id: "p",
+        id: "obs-transient",
+        metadata: { k: "v" },
+        usage_details: { input: 10, cache_read: 5 },
+        cost_details: {},
+      }),
+    );
+
+    await expect(bulk.flushAll()).rejects.toThrow(/gated projection row/);
+
+    expect(created).toHaveLength(0);
+    expect(
+      incrementsFor("langfuse.greptime_bulk.gated_projection_pending_rows"),
+    ).toHaveLength(1);
+  });
+
   it("falls a failed bulk table back to the unary writer", async () => {
     const { client } = fakeBulkClient({ failTable: "traces" });
     const { writer: unary, landedIds } = fakeUnary();
@@ -174,6 +201,30 @@ describe("GreptimeBulkWriter routing", () => {
     expect(incrementsFor("langfuse.greptime_bulk.fallback_rows")).toHaveLength(
       1,
     );
+  });
+
+  it("fails the flush when unary fallback remains pending", async () => {
+    const { client } = fakeBulkClient({ failTable: "traces" });
+    const { writer: unary } = fakeUnary(
+      () => new TransportError("unavailable", 14),
+    );
+    const bulk = makeBulkWriter(client, unary);
+
+    bulk.addToQueue(
+      GreptimeTable.Traces,
+      createTrace({
+        project_id: "p",
+        id: "t-fb-transient",
+        metadata: {},
+        tags: [],
+      }),
+    );
+
+    await expect(bulk.flushAll()).rejects.toThrow(/unary fallback row/);
+
+    expect(
+      incrementsFor("langfuse.greptime_bulk.unary_pending_rows"),
+    ).toHaveLength(1);
   });
 
   it("chunks bulk writeRows at batchSize", async () => {
