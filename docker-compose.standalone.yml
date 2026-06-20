@@ -1,0 +1,148 @@
+# Single-container Openfuse standalone deployment.
+#
+# One app container (tma1ai/openfuse-standalone) runs both the web server and the worker, alongside
+# its three backing services: Postgres (relational store + auth), Redis (queues), and GreptimeDB
+# (analytics store, the ClickHouse replacement). This is the simplest way to self-host or evaluate
+# Openfuse on a single node. For independent web/worker scaling, use docker-compose.yml with the
+# split tma1ai/openfuse-web + tma1ai/openfuse-worker images instead.
+#
+# Quickstart:
+#   docker compose -f docker-compose.standalone.yml up
+#   # then open http://localhost:3000
+#
+# Postgres + GreptimeDB schema migrations run automatically inside the container on startup
+# (idempotent; serialised by a Postgres advisory lock). Disable with
+# LANGFUSE_AUTO_POSTGRES_MIGRATION_DISABLED / LANGFUSE_AUTO_GREPTIME_MIGRATION_DISABLED.
+#
+# Replace every value marked # CHANGEME before any non-local use.
+services:
+  openfuse-standalone:
+    build:
+      dockerfile: ./Dockerfile.standalone
+      context: .
+    image: ${OPENFUSE_STANDALONE_IMAGE:-openfuse-standalone:local}
+    restart: always
+    # Give the supervisor room to stop web + worker gracefully (the supervisor SIGKILLs a lingering
+    # child at OPENFUSE_SHUTDOWN_GRACE_MS, default 25s, which must stay below this). Raise both for a
+    # full worker queue drain on stop.
+    stop_grace_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      greptimedb:
+        condition: service_healthy
+    ports:
+      - 3000:3000
+    volumes:
+      - langfuse_media_data:/langfuse_media_data
+      - langfuse_event_data:/langfuse_event_data
+    environment:
+      # --- core ---
+      NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
+      NEXTAUTH_SECRET: ${NEXTAUTH_SECRET:-mysecret} # CHANGEME
+      DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/postgres} # CHANGEME
+      SALT: ${SALT:-mysalt} # CHANGEME
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-0000000000000000000000000000000000000000000000000000000000000000} # CHANGEME: openssl rand -hex 32
+      TELEMETRY_ENABLED: ${TELEMETRY_ENABLED:-true}
+      LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES: ${LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES:-false}
+      # --- GreptimeDB analytics store ---
+      GREPTIME_GRPC_URL: ${GREPTIME_GRPC_URL:-greptimedb:4001}
+      GREPTIME_SQL_HOST: ${GREPTIME_SQL_HOST:-greptimedb}
+      GREPTIME_SQL_PORT: ${GREPTIME_SQL_PORT:-4002}
+      GREPTIME_DB: ${GREPTIME_DB:-openfuse}
+      GREPTIME_USER: ${GREPTIME_USER:-}
+      GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-} # CHANGEME (set if GreptimeDB auth is enabled)
+      # --- redis ---
+      REDIS_HOST: ${REDIS_HOST:-redis}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+      REDIS_AUTH: ${REDIS_AUTH:-myredissecret} # CHANGEME
+      LANGFUSE_BULLMQ_SKIP_REDIS_VERSION_CHECK: ${LANGFUSE_BULLMQ_SKIP_REDIS_VERSION_CHECK:-false}
+      # --- blob storage (local-file backend by default; no MinIO/S3 needed) ---
+      LANGFUSE_MEDIA_STORAGE_BACKEND: ${LANGFUSE_MEDIA_STORAGE_BACKEND:-local}
+      LANGFUSE_MEDIA_LOCAL_PATH: ${LANGFUSE_MEDIA_LOCAL_PATH:-/langfuse_media_data}
+      LANGFUSE_EVENT_STORAGE_BACKEND: ${LANGFUSE_EVENT_STORAGE_BACKEND:-local}
+      LANGFUSE_EVENT_LOCAL_PATH: ${LANGFUSE_EVENT_LOCAL_PATH:-/langfuse_event_data}
+      # --- optional initial bootstrap org/project/user (web only) ---
+      LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
+      LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-}
+      LANGFUSE_INIT_PROJECT_ID: ${LANGFUSE_INIT_PROJECT_ID:-}
+      LANGFUSE_INIT_PROJECT_NAME: ${LANGFUSE_INIT_PROJECT_NAME:-}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:-}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:-}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_INIT_USER_EMAIL:-}
+      LANGFUSE_INIT_USER_NAME: ${LANGFUSE_INIT_USER_NAME:-}
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:-}
+
+  greptimedb:
+    # GreptimeDB analytics store. Standalone mode exposes HTTP (4000), gRPC (4001, ingest SDK),
+    # MySQL wire (4002, read path + migrations), Postgres wire (4003).
+    image: docker.io/greptime/greptimedb:v1.1.1
+    restart: always
+    command:
+      - standalone
+      - start
+      - --http-addr=0.0.0.0:4000
+      - --rpc-bind-addr=0.0.0.0:4001
+      - --mysql-addr=0.0.0.0:4002
+      - --postgres-addr=0.0.0.0:4003
+      - --data-home=/greptimedb_data
+    volumes:
+      - langfuse_greptimedb_data:/greptimedb_data
+    ports:
+      - 127.0.0.1:4000:4000
+      - 127.0.0.1:4002:4002
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 2s
+
+  redis:
+    image: docker.io/redis:7
+    restart: always
+    command: >
+      --requirepass ${REDIS_AUTH:-myredissecret}
+      --maxmemory-policy noeviction
+    ports:
+      - 127.0.0.1:6379:6379
+    volumes:
+      - langfuse_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 10s
+      retries: 10
+
+  postgres:
+    image: docker.io/postgres:${POSTGRES_VERSION:-17}
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres} # CHANGEME
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - 127.0.0.1:5432:5432
+    volumes:
+      - langfuse_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  langfuse_postgres_data:
+    driver: local
+  langfuse_greptimedb_data:
+    driver: local
+  langfuse_media_data:
+    driver: local
+  langfuse_event_data:
+    driver: local
+  langfuse_redis_data:
+    driver: local

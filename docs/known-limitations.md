@@ -10,13 +10,9 @@ For the full engineering detail behind the dashboard items, see the [parity ledg
 
 The one performance lever for the GreptimeDB read path is **SST compaction**, not indexing or query shape. A large backfill (e.g. fleet reconciliation) lands many small SST files; until they compact, by-type dashboard queries degrade, and GreptimeDB enforces a hard **384 SST files per region** ceiling above which even `count(*)` fails. After any large backfill you must compact the hot tables manually, and you should alert on `langfuse.greptime.sst_files_max`. Full procedure: [operations: compaction](operations/compaction.md).
 
-### GreptimeDB schema bootstrap is a manual step
-
-The container entrypoint runs Postgres migrations automatically but **not** the GreptimeDB schema. You must run `pnpm --filter=@langfuse/shared run greptime:migrate` after GreptimeDB is healthy and before serving traffic, and again after pulling new migrations. If you skip it, reads fail later in the product path rather than at startup. See [deployment](deployment.md).
-
 ### GreptimeDB migrations are idempotent DDL, with no ledger
 
-Schema migrations are plain `CREATE ... IF NOT EXISTS` DDL applied by file order; there is no applied-migrations ledger and no down-migrations. Re-running is safe (idempotent), but a migration that needs to alter an existing table's data must be written carefully. A proper migration ledger is on the roadmap.
+The web and standalone container entrypoints apply the GreptimeDB schema automatically on startup (alongside the Postgres migrations), gated by `LANGFUSE_AUTO_GREPTIME_MIGRATION_DISABLED` and serialised across replicas by a Postgres advisory lock. Because there is no applied-migrations ledger, the runner re-applies every `.sql` on each start, so the statements must stay idempotent: plain `CREATE ... IF NOT EXISTS` and declarative `ALTER ... SET INDEX` DDL, applied by file order, with no down-migrations. The runner tolerates only the one common non-idempotent re-run error (`ADD COLUMN` on an existing column, errno 1060); any other migration error fails the container at startup. A migration that needs to alter an existing table's data must be written carefully, and a proper migration ledger is on the roadmap. See [deployment](deployment.md).
 
 ## Behavior differences vs upstream Langfuse
 

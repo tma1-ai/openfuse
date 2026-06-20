@@ -1,0 +1,145 @@
+# Single-container Openfuse standalone image (tma1ai/openfuse-standalone).
+#
+# Bundles the Next.js web server and the worker into one image and runs them side by side under a
+# Node supervisor — the GreptimeDB-standalone analogue for Openfuse: one image, full stack, single
+# node, for self-hosting and evaluation (not for independent web/worker scaling — use the split
+# tma1ai/openfuse-web + tma1ai/openfuse-worker images for that).
+#
+# Layout in the runtime image (the two product trees stay separate, each with its OWN node_modules,
+# so we never have to merge two Next/pnpm dependency closures):
+#   /app/web-standalone/   Next.js standalone output (run: node web/server.js)
+#   /app/worker/           pnpm-deploy worker payload (run: node dist/index.js)
+#   /app/node_modules/     mysql2 + pg, only for the migration runner
+#   /app/greptime-migrate.mjs, /app/standalone-supervisor.mjs, /app/standalone-entrypoint.sh
+#
+# Startup: standalone-entrypoint.sh runs Postgres + GreptimeDB migrations (both gated, fail-closed),
+# then execs the supervisor which spawns web + worker.
+
+FROM --platform=${TARGETPLATFORM:-linux/amd64} node:24-alpine AS alpine
+RUN apk update && apk upgrade --no-cache libcrypto3 libssl3 libc6-compat busybox ssl_client zlib
+
+FROM --platform=${TARGETPLATFORM:-linux/amd64} alpine AS build-base
+RUN npm install turbo@2.9.14 --global
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable
+RUN corepack prepare pnpm@11.4.0 --activate
+
+# Prune the workspace down to web + worker and their internal deps.
+FROM --platform=${TARGETPLATFORM:-linux/amd64} build-base AS pruner
+WORKDIR /app
+COPY . .
+RUN turbo prune --scope=web --scope=worker --docker
+
+# Install deps + build both web and worker from the pruned subworkspace.
+FROM --platform=${TARGETPLATFORM:-linux/amd64} build-base AS builder
+WORKDIR /app
+
+COPY --from=pruner /app/out/pnpm-lock.yaml ./pnpm-lock.yaml
+COPY --from=pruner /app/out/pnpm-workspace.yaml ./pnpm-workspace.yaml
+COPY --from=pruner /app/out/json/ .
+
+# Frozen-lockfile install only materializes the committed+vetted lockfile, so the supply-chain age
+# gate adds latency with no benefit here (see web/Dockerfile for the full rationale).
+RUN pnpm install --frozen-lockfile --config.minimumReleaseAge=0
+
+ENV DOCKER_BUILD 1
+ENV NEXT_MANUAL_SIG_HANDLE true
+ENV NEXT_TELEMETRY_DISABLED 1
+ENV CI true
+
+# Web build-time public vars (kept minimal for the OSS standalone image).
+ARG NEXT_PUBLIC_LANGFUSE_CLOUD_REGION
+ENV NEXT_PUBLIC_LANGFUSE_CLOUD_REGION=$NEXT_PUBLIC_LANGFUSE_CLOUD_REGION
+ARG NEXT_PUBLIC_BUILD_ID
+ENV NEXT_PUBLIC_BUILD_ID=$NEXT_PUBLIC_BUILD_ID
+ENV BUILD_ID=$NEXT_PUBLIC_BUILD_ID
+
+COPY --from=pruner /app/out/full/ .
+
+# Self-hosted standalone does not use the Next middleware (see web/Dockerfile).
+RUN rm -f ./web/src/middleware.ts
+
+RUN NODE_OPTIONS='--max-old-space-size-percentage=75' turbo run build --filter=web... --filter=worker...
+
+# Worker production payload: only prod deps + the generated prisma client/runtime (mirrors
+# worker/Dockerfile's prod-deps stage).
+FROM --platform=${TARGETPLATFORM:-linux/amd64} builder AS prod-deps
+RUN pnpm --filter worker deploy --legacy --prod /prod/worker && \
+    builder_prisma_client_dir="$(find /app/node_modules/.pnpm -path '*/node_modules/@prisma/client' -type d | head -n 1)" && \
+    deployed_prisma_client_dir="$(find /prod/worker/node_modules/.pnpm -path '*/node_modules/@prisma/client' -type d | head -n 1)" && \
+    builder_prisma_runtime_dir="$(dirname "$(dirname "$builder_prisma_client_dir")")/.prisma" && \
+    deployed_prisma_runtime_dir="$(dirname "$(dirname "$deployed_prisma_client_dir")")/.prisma" && \
+    rm -rf "$deployed_prisma_client_dir" "$deployed_prisma_runtime_dir" && \
+    cp -R "$builder_prisma_client_dir" "$deployed_prisma_client_dir" && \
+    cp -R "$builder_prisma_runtime_dir" "$deployed_prisma_runtime_dir"
+
+# ---- Runtime image ----
+FROM --platform=${TARGETPLATFORM:-linux/amd64} alpine AS runner
+ARG TARGETPLATFORM
+ARG BUILDPLATFORM
+WORKDIR /app
+
+ARG NEXT_PUBLIC_BUILD_ID
+ENV BUILD_ID=$NEXT_PUBLIC_BUILD_ID
+ARG NEXT_PUBLIC_LANGFUSE_CLOUD_REGION
+ENV NEXT_PUBLIC_LANGFUSE_CLOUD_REGION=$NEXT_PUBLIC_LANGFUSE_CLOUD_REGION
+
+ENV NODE_ENV production
+ENV NEXT_TELEMETRY_DISABLED 1
+ENV DOCKER_BUILD 0
+ENV NEXT_MANUAL_SIG_HANDLE true
+
+RUN apk add --no-cache dumb-init tzdata
+
+# Single app user for both processes.
+ARG UID=1001
+ARG GID=1001
+RUN addgroup --system --gid ${GID} openfuse && \
+    adduser --system --uid ${UID} openfuse
+
+# prisma CLI for `prisma migrate deploy`; mysql2 + pg only for the GreptimeDB migration runner,
+# installed into an isolated /app/migrate-runtime with its own minimal package.json so npm never
+# walks up into a workspace package.json. Separate from the web/worker trees.
+RUN npm install -g --no-package-lock --no-save prisma@6.19.3 && \
+    mkdir -p /app/migrate-runtime && \
+    printf '{"name":"openfuse-migrate-runtime","private":true}\n' > /app/migrate-runtime/package.json && \
+    npm install --prefix /app/migrate-runtime --no-package-lock --no-save --no-audit --no-fund mysql2@3.11.5 pg@8.13.0 && \
+    rm -rf /usr/local/lib/node_modules/corepack /root/.cache/node/corepack && \
+    rm -f /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg
+
+# Web: Next.js standalone output -> /app/web-standalone (run as `node web/server.js`).
+COPY --from=builder --chown=openfuse:openfuse /app/web/.next/standalone ./web-standalone
+COPY --from=builder --chown=openfuse:openfuse /app/web/.next/static ./web-standalone/web/.next/static
+COPY --from=builder --chown=openfuse:openfuse /app/web/public ./web-standalone/web/public
+COPY --from=builder --chown=openfuse:openfuse /app/web/next.config.mjs ./web-standalone/next.config.mjs
+COPY --from=builder --chown=openfuse:openfuse /app/web/package.json ./web-standalone/web/package.json
+
+# Worker: pnpm-deploy payload -> /app/worker (run as `node dist/index.js`).
+COPY --from=prod-deps --chown=openfuse:openfuse /prod/worker ./worker
+
+# Postgres migration inputs (schema + migrations + cleanup) for prisma migrate deploy from /app.
+COPY --chown=openfuse:openfuse ./packages/shared/prisma ./packages/shared/prisma
+COPY --chown=openfuse:openfuse ./packages/shared/scripts/cleanup.sql ./packages/shared/scripts/cleanup.sql
+
+# GreptimeDB migration runner + its .sql inputs (into the isolated migrate-runtime dir above).
+COPY --chown=openfuse:openfuse ./scripts/greptime-migrate.mjs /app/migrate-runtime/greptime-migrate.mjs
+COPY --chown=openfuse:openfuse ./packages/shared/greptime/migrations /app/migrate-runtime/migrations
+
+# Supervisor + entrypoint.
+COPY --chown=openfuse:openfuse ./scripts/standalone-supervisor.mjs ./standalone-supervisor.mjs
+COPY --chown=openfuse:openfuse ./scripts/standalone-entrypoint.sh ./standalone-entrypoint.sh
+RUN chmod +x ./standalone-entrypoint.sh
+
+# Default local blob-store mounts owned by the app user (see web/Dockerfile).
+RUN mkdir -p /langfuse_media_data /langfuse_event_data && \
+    chown openfuse:openfuse /langfuse_media_data /langfuse_event_data
+
+USER openfuse
+
+# web 3000, worker 3030. Only web needs to be reachable for the UI/API.
+EXPOSE 3000 3030
+ENV PORT 3000
+
+ENTRYPOINT ["dumb-init", "--", "./standalone-entrypoint.sh"]
+CMD ["node", "/app/standalone-supervisor.mjs"]
