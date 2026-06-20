@@ -5,7 +5,8 @@ import {
 } from "@langfuse/shared/src/server";
 
 import { env } from "../../env";
-import { PeriodicExclusiveRunner } from "../../utils/PeriodicExclusiveRunner";
+import { PeriodicRunner } from "../../utils/PeriodicRunner";
+import { RedisLock } from "../../utils/RedisLock";
 
 const METRIC_PREFIX = "langfuse.greptime";
 
@@ -49,36 +50,33 @@ const toNumber = (value: string | number | null): number => {
  * benchmark). `sst_files_max` is the per-region maximum — the value that actually hits the wall.
  *
  * region_statistics is cluster-global, so emitting from every worker would publish N identical
- * series. The Redis lock is used as an interval cooldown: `acquire()` with a TTL of one interval and
- * never release, so a replica ticking mid-interval finds the lock held and skips. `withLock()` is
- * deliberately not used here — it releases on return, which would reopen the duplicate-emit window
- * for staggered replicas.
+ * series. The Redis lock is keyed by wall-clock interval bucket; this lets the next bucket emit on
+ * time while still keeping staggered replicas in the same bucket from duplicating the sample.
  */
-export class GreptimeStatsRunner extends PeriodicExclusiveRunner {
+export class GreptimeStatsRunner extends PeriodicRunner {
+  protected get name(): string {
+    return "greptime-stats-runner";
+  }
+
   protected get defaultIntervalMs(): number {
     return env.LANGFUSE_GREPTIME_STATS_INTERVAL_MS;
   }
 
-  constructor() {
-    super({
-      name: "greptime-stats-runner",
-      lockKey: "langfuse:greptime-stats",
-      // Cover one full interval so staggered replicas skip; the lock expires just before the next
-      // tick (scheduled one interval after the previous run finished), letting that tick re-emit.
-      lockTtlSeconds: Math.ceil(env.LANGFUSE_GREPTIME_STATS_INTERVAL_MS / 1000),
-    });
+  public async processBatch(): Promise<void> {
+    return this.execute();
   }
 
   protected async execute(): Promise<void> {
-    const lockResult = await this.lock.acquire();
+    const lock = this.createBucketLock();
+    const lockResult = await lock.acquire();
     if (lockResult === "held_by_other") {
       logger.debug(
-        `${this.instanceName}: another replica sampled this interval, skipping`,
+        `${this.name}: another replica sampled this interval, skipping`,
       );
       return;
     }
-    // "acquired" holds the cooldown until the TTL expires; "skipped" (Redis unavailable) proceeds so
-    // a single-replica or Redis-less deployment still emits the metric. Intentionally no release().
+    // "acquired" holds the bucket key until the TTL expires; "skipped" (Redis unavailable) proceeds
+    // so a single-replica or Redis-less deployment still emits the metric. Intentionally no release().
 
     const rows = await greptimeQuery<RegionStatsRow>({
       query: REGION_STATS_QUERY,
@@ -111,7 +109,18 @@ export class GreptimeStatsRunner extends PeriodicExclusiveRunner {
     }
 
     logger.debug(
-      `${this.instanceName}: emitted region statistics for ${rows.length} tables`,
+      `${this.name}: emitted region statistics for ${rows.length} tables`,
     );
+  }
+
+  private createBucketLock(nowMs: number = Date.now()): RedisLock {
+    const intervalMs = env.LANGFUSE_GREPTIME_STATS_INTERVAL_MS;
+    const bucket = Math.floor(nowMs / intervalMs);
+    return new RedisLock(`langfuse:greptime-stats:${bucket}`, {
+      // Keep the bucket key long enough for slow or staggered replicas, but do not block the next
+      // bucket because it uses a different key.
+      ttlSeconds: Math.ceil((intervalMs * 2) / 1000),
+      name: this.name,
+    });
   }
 }

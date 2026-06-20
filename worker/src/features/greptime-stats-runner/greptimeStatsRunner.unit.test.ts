@@ -1,7 +1,6 @@
-import { beforeEach, describe, expect, it, vi, type Mock } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// Spy on the GreptimeDB read channel and the metric emitter; keep every other shared export real
-// (RedisLock, logger, instrumentAsync, ...).
+// Spy on the GreptimeDB read channel and the metric emitter; keep every other shared export real.
 const mocks = vi.hoisted(() => ({
   greptimeQuery: vi.fn(),
   recordGauge: vi.fn(),
@@ -18,19 +17,14 @@ vi.mock("@langfuse/shared/src/server", async (importOriginal) => {
 });
 
 import type { LockAcquireResult } from "../../utils/RedisLock";
+import { RedisLock } from "../../utils/RedisLock";
 import { GreptimeStatsRunner } from "./index";
 
 type GaugeCall = [string, number, Record<string, string>];
 
 const buildRunner = (acquire: LockAcquireResult) => {
-  const runner = new GreptimeStatsRunner();
-  // The cooldown lock is the only Redis touchpoint; drive its outcome directly so the test never
-  // needs a live Redis.
-  vi.spyOn(
-    (runner as unknown as { lock: { acquire: Mock } }).lock,
-    "acquire",
-  ).mockResolvedValue(acquire);
-  return runner;
+  vi.spyOn(RedisLock.prototype, "acquire").mockResolvedValue(acquire);
+  return new GreptimeStatsRunner();
 };
 
 const gaugeCall = (stat: string, table: string): GaugeCall | undefined =>
@@ -39,6 +33,7 @@ const gaugeCall = (stat: string, table: string): GaugeCall | undefined =>
   );
 
 beforeEach(() => {
+  vi.restoreAllMocks();
   mocks.greptimeQuery.mockReset();
   mocks.recordGauge.mockReset();
 });
@@ -68,6 +63,7 @@ describe("GreptimeStatsRunner", () => {
 
     await buildRunner("acquired").processBatch();
 
+    expect(RedisLock.prototype.acquire).toHaveBeenCalledTimes(1);
     expect(mocks.greptimeQuery).toHaveBeenCalledTimes(1);
     expect(mocks.greptimeQuery.mock.calls[0][0]).toMatchObject({
       readOnly: true,
@@ -109,6 +105,7 @@ describe("GreptimeStatsRunner", () => {
   it("skips sampling entirely when another replica holds the cooldown lock", async () => {
     await buildRunner("held_by_other").processBatch();
 
+    expect(RedisLock.prototype.acquire).toHaveBeenCalledTimes(1);
     expect(mocks.greptimeQuery).not.toHaveBeenCalled();
     expect(mocks.recordGauge).not.toHaveBeenCalled();
   });
@@ -127,6 +124,7 @@ describe("GreptimeStatsRunner", () => {
 
     await buildRunner("skipped").processBatch();
 
+    expect(RedisLock.prototype.acquire).toHaveBeenCalledTimes(1);
     expect(mocks.greptimeQuery).toHaveBeenCalledTimes(1);
     expect(mocks.recordGauge).toHaveBeenCalledTimes(5);
   });
