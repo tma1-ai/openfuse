@@ -35,9 +35,13 @@ const env = process.env;
 const ADVISORY_LOCK_KEY = "8147390256127364";
 
 const GREPTIME_UNQUOTED_DB = /^[a-z_][a-z0-9_]*$/;
-// Conservative humantime subset (no spaces/quotes) so the value is injection-safe inside the
-// `SET 'ttl'='...'` literal. The full grammar lives in greptimeRetentionDuration.ts.
-const GREPTIME_TTL = /^[0-9]+[0-9a-z]*$/;
+// Humantime subset: one or more `<digits><unit>` groups with no spaces or quotes, so the value is
+// both injection-safe inside the `SET 'ttl'='...'` literal and a real duration. This requires a unit
+// (rejects a unit-less `730`, which would otherwise pass and then crash the ALTER) but is narrower
+// than the app's full grammar in greptimeRetentionDuration.ts (which also allows spaces, e.g.
+// `1h 30m`). Anything this rejects, or that GreptimeDB rejects, is skipped — retention is applied
+// best-effort below and never fails the migration.
+const GREPTIME_TTL = /^([0-9]+[a-z]+)+$/;
 
 const config = {
   host: env.GREPTIME_SQL_HOST || "localhost",
@@ -123,21 +127,30 @@ const applyMigrations = async () => {
       }
     }
 
-    // Database-level retention TTL (idempotent). Skip rather than fail the whole bootstrap on a
-    // malformed value — retention is a policy knob, not schema correctness.
-    if (GREPTIME_TTL.test(config.ttl)) {
-      // ALTER DATABASE must use the UNQUOTED, regex-validated identifier: GreptimeDB forwards a
-      // backtick-quoted ObjectName here as the literal schema name (the quotes become part of the
-      // name), so `openfuse` fails with errno 1210 "Failed to find schema". Verified against v1.1.1;
-      // same contract as retention.ts. (CREATE/USE DATABASE above do accept the quoted form.)
-      await connection.query(
-        `ALTER DATABASE ${config.database} SET 'ttl'='${config.ttl}'`,
-      );
-      log(`retention: database '${config.database}' ttl=${config.ttl}`);
-    } else {
+    // Database-level retention TTL — applied best-effort. It is a policy knob, not schema
+    // correctness, so neither a value this runner's narrower grammar rejects nor one GreptimeDB
+    // rejects should fail the bootstrap (the schema is already in place; the database just keeps its
+    // prior/default TTL). The app process validates LANGFUSE_GREPTIME_TTL against the full grammar
+    // separately at boot.
+    if (!GREPTIME_TTL.test(config.ttl)) {
       warn(
-        `skipping retention: LANGFUSE_GREPTIME_TTL='${config.ttl}' is not a plain duration`,
+        `skipping retention: LANGFUSE_GREPTIME_TTL='${config.ttl}' is not a plain '<n><unit>' duration`,
       );
+    } else {
+      try {
+        // ALTER DATABASE must use the UNQUOTED, regex-validated identifier: GreptimeDB forwards a
+        // backtick-quoted ObjectName here as the literal schema name (the quotes become part of the
+        // name), so `openfuse` fails with errno 1210 "Failed to find schema". Verified against
+        // v1.1.1; same contract as retention.ts. (CREATE/USE DATABASE above do accept the quoted form.)
+        await connection.query(
+          `ALTER DATABASE ${config.database} SET 'ttl'='${config.ttl}'`,
+        );
+        log(`retention: database '${config.database}' ttl=${config.ttl}`);
+      } catch (error) {
+        warn(
+          `skipping retention: ALTER DATABASE rejected ttl='${config.ttl}': ${error.message}`,
+        );
+      }
     }
   } finally {
     await connection.end();

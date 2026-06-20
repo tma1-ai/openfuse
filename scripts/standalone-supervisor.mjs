@@ -22,7 +22,17 @@ import { spawn } from "node:child_process";
 // start, so a moderate default trades a little drain time for a bounded stop. Raise both this and the
 // container's stop_grace_period to give the worker a full drain. Docker SIGKILLs PID 1 at
 // stop_grace_period regardless, so this must stay below it to take effect.
-const GRACE_MS = Number(process.env.OPENFUSE_SHUTDOWN_GRACE_MS || 25_000);
+const DEFAULT_GRACE_MS = 25_000;
+const graceOverride = process.env.OPENFUSE_SHUTDOWN_GRACE_MS;
+const parsedGrace = Number(graceOverride);
+// Guard against an empty/non-numeric/negative override: Number("") is 0 and Number("abc") is NaN,
+// and setTimeout(0 | NaN) fires immediately, which would SIGKILL the children the instant shutdown
+// starts instead of honoring the grace window. Fall back to the default unless the override is a
+// finite, non-negative number (an explicit "0" is honored as "kill immediately").
+const GRACE_MS =
+  graceOverride && Number.isFinite(parsedGrace) && parsedGrace >= 0
+    ? parsedGrace
+    : DEFAULT_GRACE_MS;
 
 const WEB_DIR = process.env.OPENFUSE_WEB_DIR || "/app/web-standalone";
 const WORKER_DIR = process.env.OPENFUSE_WORKER_DIR || "/app/worker";
