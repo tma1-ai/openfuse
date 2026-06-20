@@ -48,7 +48,10 @@ export const getGreptimeIngestClient = (): Client => {
       // in-call retries that could double-append.
       .withRetry({ mode: "conservative" });
 
-    if (env.GREPTIME_USER) {
+    // Send Basic Auth only when a password is configured: GREPTIME_USER defaults to "openfuse",
+    // so gating on the password (not the user) keeps an unauthenticated node truly header-free and
+    // matches the entrypoint, which enables static auth only when GREPTIME_PASSWORD is set.
+    if (env.GREPTIME_PASSWORD) {
       builder = builder.withBasicAuth(env.GREPTIME_USER, env.GREPTIME_PASSWORD);
     }
 
