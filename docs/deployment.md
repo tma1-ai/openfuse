@@ -88,7 +88,7 @@ docker compose -f docker-compose.standalone.yml up -d   # then open http://local
 Or run the published image instead of building locally — set the override in `.env` and pull:
 
 ```bash
-OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha1
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.1
 ```
 
 ```bash
@@ -110,8 +110,8 @@ docker compose up -d   # builds web/worker from source, starts the full stack
 Or run the published images instead of building — pin the tags in `.env`:
 
 ```bash
-OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha1
-OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha1
+OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.1
+OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.1
 ```
 
 ```bash
@@ -122,7 +122,7 @@ This Compose file defines both `build:` and `image:` for web/worker, so `--pull 
 
 ### Published images and tags
 
-Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: `tma1ai/openfuse-web`, `tma1ai/openfuse-worker`, `tma1ai/openfuse-standalone`. The first preview is `1.0.0-alpha1`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha1`) and a commit-SHA tag. The floating `major.minor` and `major` tags are published only for stable releases — `docker/metadata-action` skips them for pre-releases (`-alpha` / `-beta` / `-rc`). `latest` still moves on any non-`-rc` release (so an `-alpha` does move it), so during the alpha pin an explicit tag rather than tracking `latest`. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
+Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: `tma1ai/openfuse-web`, `tma1ai/openfuse-worker`, `tma1ai/openfuse-standalone`. The first preview is `1.0.0-alpha.1`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha.1`) and a commit-SHA tag. The floating `major.minor` and `major` tags are published only for stable releases — `docker/metadata-action` skips them for pre-releases (`-alpha` / `-beta` / `-rc`). `latest` still moves on any non-`-rc` release (so an `-alpha` does move it), so during the alpha pin an explicit tag rather than tracking `latest`. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
 
 ## 4. Verify and persist
 

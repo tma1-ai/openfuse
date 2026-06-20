@@ -7,7 +7,7 @@
 
 ### LLM engineering on a real observability database
 
-[![Release](https://img.shields.io/badge/release-1.0.0--alpha1-f97316)](https://github.com/tma1-ai/openfuse/releases)
+[![Release](https://img.shields.io/badge/release-1.0.0--alpha.1-f97316)](https://github.com/tma1-ai/openfuse/releases)
 [![Status](https://img.shields.io/badge/status-alpha-eab308)](docs/known-limitations.md)
 [![License](https://img.shields.io/badge/license-MIT-3b82f6)](LICENSE)
 [![Based on Langfuse](https://img.shields.io/badge/based%20on-Langfuse%20v3.184.1-0ea5e9)](https://github.com/langfuse/langfuse)
@@ -70,7 +70,7 @@ Release images are published to Docker Hub on each `v*` tag:
 - `tma1ai/openfuse-worker`
 - `tma1ai/openfuse-standalone` — web + worker in one container, for single-node self-hosting
 
-The first preview is `1.0.0-alpha1`. To run the standalone image instead of building locally, pin a tag in `.env` (e.g. `OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha1`) and start with `docker compose -f docker-compose.standalone.yml up -d --pull always`. Full instructions for standalone, split web/worker images, and tag policy: [deployment](docs/deployment.md#published-images-and-tags).
+The first preview is `1.0.0-alpha.1`. To run the standalone image instead of building locally, pin a tag in `.env` (e.g. `OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.1`) and start with `docker compose -f docker-compose.standalone.yml up -d --pull always`. Full instructions for standalone, split web/worker images, and tag policy: [deployment](docs/deployment.md#published-images-and-tags).
 
 ## Architecture
 
@@ -80,7 +80,7 @@ Full write-up: [architecture](docs/architecture.md).
 
 ## Compatibility with Langfuse
 
-Openfuse `1.0.0-alpha1` is based on upstream Langfuse `v3.184.1`. Existing Langfuse SDKs and the public ingestion/REST APIs work unchanged. Dashboard and metrics output is checked byte-for-byte against upstream for the covered query surface; the few intentional divergences, all cases where the fork is equal or more correct, are listed in the [parity ledger](docs/greptimedb-migration/parity/ledger.md). Postgres migrations are upstream Langfuse's and apply as-is; the GreptimeDB schema is fork-specific and migrates automatically on container startup (idempotent, advisory-lock serialised, fail-closed).
+Openfuse `1.0.0-alpha.1` is based on upstream Langfuse `v3.184.1`. Existing Langfuse SDKs and the public ingestion/REST APIs work unchanged. Dashboard and metrics output is checked byte-for-byte against upstream for the covered query surface; the few intentional divergences, all cases where the fork is equal or more correct, are listed in the [parity ledger](docs/greptimedb-migration/parity/ledger.md). Postgres migrations are upstream Langfuse's and apply as-is; the GreptimeDB schema is fork-specific and migrates automatically on container startup (idempotent, advisory-lock serialised, fail-closed).
 
 Openfuse is a community fork and is not affiliated with or endorsed by Langfuse. See [migration from Langfuse](docs/migration-from-langfuse.md) for the full compatibility statement.
 
