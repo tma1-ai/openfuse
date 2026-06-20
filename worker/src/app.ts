@@ -81,6 +81,7 @@ import { MediaRetentionCleaner } from "./features/media-retention-cleaner";
 import { BatchTraceDeletionCleaner } from "./features/batch-trace-deletion-cleaner";
 import { BatchProjectMediaCleaner } from "./features/batch-project-media-cleaner";
 import { QueueMetricsRunner } from "./features/queue-metrics-runner";
+import { GreptimeStatsRunner } from "./features/greptime-stats-runner";
 import { MonitorRunner } from "./features/monitor-runner";
 
 const app = express();
@@ -221,8 +222,7 @@ if (env.QUEUE_CONSUMER_DATASET_DELETE_QUEUE_IS_ENABLED === "true") {
     concurrency: env.LANGFUSE_DATASET_DELETE_CONCURRENCY,
     limiter: {
       max: env.LANGFUSE_DATASET_DELETE_CONCURRENCY,
-      duration:
-        env.LANGFUSE_DATASET_DELETION_CONCURRENCY_DURATION_MS,
+      duration: env.LANGFUSE_DATASET_DELETION_CONCURRENCY_DURATION_MS,
     },
   });
 }
@@ -233,8 +233,7 @@ if (env.QUEUE_CONSUMER_PROJECT_DELETE_QUEUE_IS_ENABLED === "true") {
     limiter: {
       // Process at most `max` delete jobs per LANGFUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS (default 10 min)
       max: env.LANGFUSE_PROJECT_DELETE_CONCURRENCY,
-      duration:
-        env.LANGFUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS,
+      duration: env.LANGFUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS,
     },
   });
 }
@@ -657,6 +656,14 @@ export let queueMetricsRunner: QueueMetricsRunner | null = null;
 if (env.LANGFUSE_QUEUE_METRICS_ENABLED === "true") {
   queueMetricsRunner = new QueueMetricsRunner();
   queueMetricsRunner.start();
+}
+
+// GreptimeDB region-statistics sampler (SST fragmentation observability)
+export let greptimeStatsRunner: GreptimeStatsRunner | null = null;
+
+if (env.LANGFUSE_GREPTIME_STATS_ENABLED === "true") {
+  greptimeStatsRunner = new GreptimeStatsRunner();
+  greptimeStatsRunner.start();
 }
 
 // Monitor runners — one per shard
