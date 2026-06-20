@@ -62,8 +62,13 @@ function isKnownConfigEndpoint(label: string): boolean {
 const PERCENTILE_AGGS = new Set(["p50", "p75", "p90", "p95", "p99"]);
 const NESTED_AGGS = new Set(["avg", "min", "max", "uniq"]);
 const COUNT_MEASURES = new Set([
-  "count", "countScores", "scoresCount", "observationsCount", "countObservations",
-  "uniqueUserIds", "uniqueSessionIds",
+  "count",
+  "countScores",
+  "scoresCount",
+  "observationsCount",
+  "countObservations",
+  "uniqueUserIds",
+  "uniqueSessionIds",
 ]);
 
 /**
@@ -98,13 +103,14 @@ function isKnownLimitationPath(path: string): boolean {
 function policyFor(extraDrop?: string[]): NormalizePolicy {
   const drop = new Set(DEFAULT_DROP);
   for (const d of extraDrop ?? []) drop.add(d);
-  return { drop, costFloatKeys: COST_FLOAT_KEYS, latencyFloatKeys: LATENCY_FLOAT_KEYS };
+  return {
+    drop,
+    costFloatKeys: COST_FLOAT_KEYS,
+    latencyFloatKeys: LATENCY_FLOAT_KEYS,
+  };
 }
 
-async function runCase(
-  cfg: ParityConfig,
-  rc: ReadCase,
-): Promise<CaseResult> {
+async function runCase(cfg: ParityConfig, rc: ReadCase): Promise<CaseResult> {
   const [fk, up] = await Promise.all([
     apiGet(cfg, cfg.fork, rc.path),
     apiGet(cfg, cfg.upstream, rc.path),
@@ -144,10 +150,22 @@ function classify(
     }
     // Fork intentionally stricter (e.g. rejects sum on a string measure, narrower histogram
     // scope): explicit InvalidRequestError vs upstream 200 → documented divergence, not a bug.
-    if (fk.status === 400 && errorType(fk.body) === "InvalidRequestError" && up.ok) {
-      return { ...base, status: "KNOWN_LIMITATION", note: `fork stricter: ${errorMessage(fk.body)}` };
+    if (
+      fk.status === 400 &&
+      errorType(fk.body) === "InvalidRequestError" &&
+      up.ok
+    ) {
+      return {
+        ...base,
+        status: "KNOWN_LIMITATION",
+        note: `fork stricter: ${errorMessage(fk.body)}`,
+      };
     }
-    return { ...base, status: "STATUS_MISMATCH", note: `fork:${errorMessage(fk.body) ?? fk.status} up:${errorMessage(up.body) ?? up.status}` };
+    return {
+      ...base,
+      status: "STATUS_MISMATCH",
+      note: `fork:${errorMessage(fk.body) ?? fk.status} up:${errorMessage(up.body) ?? up.status}`,
+    };
   }
   if (!fk.ok) {
     return { ...base, status: fk.status >= 500 ? "ERROR_BOTH" : "PASS" };
@@ -163,10 +181,14 @@ function classify(
   const knownConfig = isKnownConfigEndpoint(label);
   // Image-config endpoints: any value diff is a documented env difference, not a backend bug.
   const realDiffs = knownConfig ? [] : d.diffs;
-  const known = knownConfig ? [...d.knownLimitations, ...d.diffs] : d.knownLimitations;
+  const known = knownConfig
+    ? [...d.knownLimitations, ...d.diffs]
+    : d.knownLimitations;
 
   let status: CaseStatus = "PASS";
-  let note = knownConfig ? "image-shipped model catalog differs (fork 166 vs upstream 87)" : undefined;
+  let note = knownConfig
+    ? "image-shipped model catalog differs (fork 166 vs upstream 87)"
+    : undefined;
   let finalDiffs = realDiffs;
   let finalKnown = known;
   if (realDiffs.length > 0) {
@@ -190,7 +212,11 @@ function classify(
   };
 }
 
-async function createModel(cfg: ParityConfig, p: PayloadSet, stack: StackConfig) {
+async function createModel(
+  cfg: ParityConfig,
+  p: PayloadSet,
+  stack: StackConfig,
+) {
   await apiPost(cfg, stack, "/api/public/models", {
     modelName: p.model.modelName,
     matchPattern: p.model.matchPattern,
@@ -201,7 +227,11 @@ async function createModel(cfg: ParityConfig, p: PayloadSet, stack: StackConfig)
   });
 }
 
-async function createDatasets(cfg: ParityConfig, p: PayloadSet, stack: StackConfig) {
+async function createDatasets(
+  cfg: ParityConfig,
+  p: PayloadSet,
+  stack: StackConfig,
+) {
   await apiPost(cfg, stack, "/api/public/datasets", {
     name: p.dataset.datasetName,
     description: "parity dataset",
@@ -224,7 +254,12 @@ async function createDatasets(cfg: ParityConfig, p: PayloadSet, stack: StackConf
   }
 }
 
-async function waitDatasetRun(cfg: ParityConfig, p: PayloadSet, stack: StackConfig, timeoutMs = 60_000) {
+async function waitDatasetRun(
+  cfg: ParityConfig,
+  p: PayloadSet,
+  stack: StackConfig,
+  timeoutMs = 60_000,
+) {
   const start = Date.now();
   const path = `/api/public/datasets/${encodeURIComponent(p.dataset.datasetName)}/runs/${encodeURIComponent(p.dataset.runName)}`;
   while (Date.now() - start < timeoutMs) {
@@ -241,17 +276,24 @@ async function main() {
   const log = (s: string) => console.error(`[parity ${cfg.runId}] ${s}`);
 
   log(`run window ${p.window.from} .. ${p.window.to}`);
-  log(`fork=${cfg.fork.baseUrl} upstream=${cfg.upstream.baseUrl} project=${cfg.projectId}`);
+  log(
+    `fork=${cfg.fork.baseUrl} upstream=${cfg.upstream.baseUrl} project=${cfg.projectId}`,
+  );
 
   // versions (env manifest sanity)
   const [fh, uh] = await Promise.all([
     apiGet(cfg, cfg.fork, "/api/public/health"),
     apiGet(cfg, cfg.upstream, "/api/public/health"),
   ]);
-  log(`fork health=${JSON.stringify(fh.body)} upstream health=${JSON.stringify(uh.body)}`);
+  log(
+    `fork health=${JSON.stringify(fh.body)} upstream health=${JSON.stringify(uh.body)}`,
+  );
 
   // 0. custom model on both (must exist before generations are cost-projected)
-  await Promise.all([createModel(cfg, p, cfg.fork), createModel(cfg, p, cfg.upstream)]);
+  await Promise.all([
+    createModel(cfg, p, cfg.fork),
+    createModel(cfg, p, cfg.upstream),
+  ]);
   log(`custom model ${p.model.modelName} created on both`);
 
   // 1. ingest identical batch to both
@@ -265,27 +307,42 @@ async function main() {
   }
 
   // 2. datasets / items / run-items on both
-  await Promise.all([createDatasets(cfg, p, cfg.fork), createDatasets(cfg, p, cfg.upstream)]);
+  await Promise.all([
+    createDatasets(cfg, p, cfg.fork),
+    createDatasets(cfg, p, cfg.upstream),
+  ]);
 
   // 3. wait for deterministic projection on each stack
   const [fw, uw] = await Promise.all([
     waitForProjection(cfg, cfg.fork, p.manifest),
     waitForProjection(cfg, cfg.upstream, p.manifest),
   ]);
-  log(`wait fork: ${fw.ok ? "ready" : "TIMEOUT"} (${fw.elapsedMs}ms) ${fw.detail}`);
-  log(`wait upstream: ${uw.ok ? "ready" : "TIMEOUT"} (${uw.elapsedMs}ms) ${uw.detail}`);
-  await Promise.all([waitDatasetRun(cfg, p, cfg.fork), waitDatasetRun(cfg, p, cfg.upstream)]);
+  log(
+    `wait fork: ${fw.ok ? "ready" : "TIMEOUT"} (${fw.elapsedMs}ms) ${fw.detail}`,
+  );
+  log(
+    `wait upstream: ${uw.ok ? "ready" : "TIMEOUT"} (${uw.elapsedMs}ms) ${uw.detail}`,
+  );
+  await Promise.all([
+    waitDatasetRun(cfg, p, cfg.fork),
+    waitDatasetRun(cfg, p, cfg.upstream),
+  ]);
   // small settle for any trailing denormalization
   await sleep(3000);
 
   // 4. build cases
   const readCases = buildReadCases(p);
-  const metricCases = buildMetricsMatrix(p.window.from, p.window.to, [p.facets.envProd, p.facets.envStaging]).map((mc) => ({
+  const metricCases = buildMetricsMatrix(p.window.from, p.window.to, [
+    p.facets.envProd,
+    p.facets.envStaging,
+  ]).map((mc) => ({
     label: `metrics/${mc.label}`,
     path: `/api/public/metrics?query=${encodeURIComponent(JSON.stringify(mc.query))}`,
   }));
   const allCases: ReadCase[] = [...readCases, ...metricCases];
-  log(`cases: ${readCases.length} read + ${metricCases.length} metrics = ${allCases.length}`);
+  log(
+    `cases: ${readCases.length} read + ${metricCases.length} metrics = ${allCases.length}`,
+  );
 
   // 5. execute (bounded concurrency)
   const results: CaseResult[] = [];
@@ -297,27 +354,61 @@ async function main() {
   }
 
   // 6. report
-  writeReport(cfg, p, { fork: fw, upstream: uw }, { fork: fh.body, upstream: uh.body }, results);
+  writeReport(
+    cfg,
+    p,
+    { fork: fw, upstream: uw },
+    { fork: fh.body, upstream: uh.body },
+    results,
+  );
 }
 
 function writeReport(
   cfg: ParityConfig,
   p: PayloadSet,
-  wait: { fork: { ok: boolean; detail: string }; upstream: { ok: boolean; detail: string } },
+  wait: {
+    fork: { ok: boolean; detail: string };
+    upstream: { ok: boolean; detail: string };
+  },
   health: { fork: unknown; upstream: unknown },
   results: CaseResult[],
 ) {
   const dir = dirname(fileURLToPath(import.meta.url));
   const outDir = join(dir, "..");
   const tally: Record<CaseStatus, number> = {
-    PASS: 0, FAIL: 0, SKIPPED_FORK_REMOVED: 0, KNOWN_LIMITATION: 0, TYPE_REPR: 0, STATUS_MISMATCH: 0, ERROR_BOTH: 0,
+    PASS: 0,
+    FAIL: 0,
+    SKIPPED_FORK_REMOVED: 0,
+    KNOWN_LIMITATION: 0,
+    TYPE_REPR: 0,
+    STATUS_MISMATCH: 0,
+    ERROR_BOTH: 0,
   };
   for (const r of results) tally[r.status]++;
 
   const jsonPath = join(outDir, `report-${cfg.runId}.json`);
-  writeFileSync(jsonPath, JSON.stringify({ cfg: { ...cfg }, window: p.window, wait, health, tally, results }, null, 2));
+  writeFileSync(
+    jsonPath,
+    JSON.stringify(
+      {
+        cfg: reportConfig(cfg),
+        window: p.window,
+        wait,
+        health,
+        tally,
+        results,
+      },
+      null,
+      2,
+    ),
+  );
 
-  const fails = results.filter((r) => r.status === "FAIL" || r.status === "STATUS_MISMATCH" || r.status === "ERROR_BOTH");
+  const fails = results.filter(
+    (r) =>
+      r.status === "FAIL" ||
+      r.status === "STATUS_MISMATCH" ||
+      r.status === "ERROR_BOTH",
+  );
   const known = results.filter((r) => r.status === "KNOWN_LIMITATION");
   const typeReprCases = results.filter((r) => r.status === "TYPE_REPR");
   const skipped = results.filter((r) => r.status === "SKIPPED_FORK_REMOVED");
@@ -326,21 +417,32 @@ function writeReport(
   md.push(`# Parity report — run ${cfg.runId}`);
   md.push("");
   md.push(`- window: \`${p.window.from}\` .. \`${p.window.to}\``);
-  md.push(`- fork: ${cfg.fork.baseUrl} health=\`${JSON.stringify(health.fork)}\``);
-  md.push(`- upstream: ${cfg.upstream.baseUrl} health=\`${JSON.stringify(health.upstream)}\``);
-  md.push(`- projection wait: fork=${wait.fork.ok ? "ready" : "TIMEOUT " + wait.fork.detail}, upstream=${wait.upstream.ok ? "ready" : "TIMEOUT " + wait.upstream.detail}`);
+  md.push(
+    `- fork: ${cfg.fork.baseUrl} health=\`${JSON.stringify(health.fork)}\``,
+  );
+  md.push(
+    `- upstream: ${cfg.upstream.baseUrl} health=\`${JSON.stringify(health.upstream)}\``,
+  );
+  md.push(
+    `- projection wait: fork=${wait.fork.ok ? "ready" : "TIMEOUT " + wait.fork.detail}, upstream=${wait.upstream.ok ? "ready" : "TIMEOUT " + wait.upstream.detail}`,
+  );
   md.push("");
   md.push(`## Tally`);
   md.push("");
   md.push(`| status | count |`);
   md.push(`|---|---|`);
-  for (const k of Object.keys(tally) as CaseStatus[]) md.push(`| ${k} | ${tally[k]} |`);
+  for (const k of Object.keys(tally) as CaseStatus[])
+    md.push(`| ${k} | ${tally[k]} |`);
   md.push("");
 
   const section = (title: string, rs: CaseResult[]) => {
     md.push(`## ${title} (${rs.length})`);
     md.push("");
-    if (rs.length === 0) { md.push("_none_"); md.push(""); return; }
+    if (rs.length === 0) {
+      md.push("_none_");
+      md.push("");
+      return;
+    }
     for (const r of rs) {
       md.push(`### ${r.status} — \`${r.label}\``);
       md.push(`- path: \`${r.path}\``);
@@ -349,7 +451,9 @@ function writeReport(
       const shown = [...r.diffs, ...r.knownLimitations, ...r.typeRepr];
       const total = shown.length;
       for (const d of shown.slice(0, 25)) {
-        md.push(`  - \`${d.path}\` [${d.kind}] fork=\`${trunc(d.fork)}\` up=\`${trunc(d.upstream)}\``);
+        md.push(
+          `  - \`${d.path}\` [${d.kind}] fork=\`${trunc(d.fork)}\` up=\`${trunc(d.upstream)}\``,
+        );
       }
       if (total > 25) md.push(`  - … (+${total - 25} more)`);
       md.push("");
@@ -358,13 +462,20 @@ function writeReport(
 
   section("FAILURES (real divergences to triage)", fails);
   section("KNOWN LIMITATIONS (ledger candidates)", known);
-  section("TYPE REPRESENTATION (numeric value equal, JSON type differs)", typeReprCases);
+  section(
+    "TYPE REPRESENTATION (numeric value equal, JSON type differs)",
+    typeReprCases,
+  );
   section("SKIPPED — fork-removed", skipped);
 
   const mdPath = join(outDir, `report-${cfg.runId}.md`);
   writeFileSync(mdPath, md.join("\n"));
   console.error(`[parity ${cfg.runId}] report: ${mdPath}`);
   console.error(`[parity ${cfg.runId}] tally: ${JSON.stringify(tally)}`);
+}
+
+function reportConfig(cfg: ParityConfig): ParityConfig {
+  return { ...cfg, secretKey: "<redacted>" };
 }
 
 function trunc(v: unknown): string {
