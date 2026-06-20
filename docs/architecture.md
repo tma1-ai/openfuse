@@ -49,7 +49,7 @@ BullMQ job queues for ingestion, evals, exports, and reconciliation. Unchanged f
 
 ### Object storage (optional)
 
-With the event store in GreptimeDB, S3 or MinIO is no longer required to ingest. The remaining consumers (media uploads, the OTel ingestion carrier, the eval blob store, and batch/blob exports) all support a local-filesystem backend and default to it. Only opt-in batch/blob _exports_ need an S3-compatible bucket.
+With the event store in GreptimeDB, S3 or MinIO is no longer required to ingest. Media uploads, the OTel ingestion carrier, and the eval blob store support a local-filesystem backend, and the bundled Compose files default them to it. Opt-in batch/blob _exports_ still need an S3-compatible bucket.
 
 ## Write path: source of truth and replay
 

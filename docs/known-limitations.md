@@ -6,10 +6,6 @@ For the full engineering detail behind the dashboard items, see the [parity ledg
 
 ## Operational
 
-### Backfill and large-query performance depend on compaction
-
-The one performance lever for the GreptimeDB read path is **SST compaction**, not indexing or query shape. A large backfill (e.g. fleet reconciliation) lands many small SST files; until they compact, by-type dashboard queries degrade, and GreptimeDB enforces a hard **384 SST files per region** ceiling above which even `count(*)` fails. After any large backfill you must compact the hot tables manually, and you should alert on `langfuse.greptime.sst_files_max`. Full procedure: [operations: compaction](operations/compaction.md).
-
 ### GreptimeDB migrations are idempotent DDL, with no ledger
 
 The web and standalone container entrypoints apply the GreptimeDB schema automatically on startup (alongside the Postgres migrations), gated by `LANGFUSE_AUTO_GREPTIME_MIGRATION_DISABLED` and serialised across replicas by a Postgres advisory lock. Because there is no applied-migrations ledger, the runner re-applies every `.sql` on each start, so the statements must stay idempotent: plain `CREATE ... IF NOT EXISTS` and declarative `ALTER ... SET INDEX` DDL, applied by file order, with no down-migrations. The runner tolerates only the one common non-idempotent re-run error (`ADD COLUMN` on an existing column, errno 1060); any other migration error fails the container at startup. A migration that needs to alter an existing table's data must be written carefully, and a proper migration ledger is on the roadmap. See [deployment](deployment.md).
@@ -48,5 +44,6 @@ Traces, observations, and scores delete by appending a tombstone to `raw_events`
 
 ## Not blockers, but worth knowing
 
-- Object storage is optional but not gone. Ingestion needs no S3/MinIO, but media uploads, the OTel carrier, and batch/blob exports still use a storage backend, defaulting to a local filesystem volume. See [deployment](deployment.md).
+- Object storage is optional but not gone. Ingestion needs no S3/MinIO; media uploads, the OTel carrier, and the eval blob store default to local filesystem volumes in the bundled Compose files. Opt-in batch/blob exports still need an S3-compatible bucket. See [deployment](deployment.md).
+- Read performance hinges on GreptimeDB SST compaction, not query shape — a normal operational concern (especially after a large backfill), not a functional limitation. Covered in [operations · performance](operations.md#performance-compaction).
 - Alpha posture: no long-term support or backports; only the latest pre-release is maintained. See [SECURITY.md](../SECURITY.md).
