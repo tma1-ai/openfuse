@@ -72,11 +72,11 @@ type Granularity = z.infer<typeof granularities>;
 type Aggregation = z.infer<typeof metricAggregations>;
 
 export type PostProcess = {
-  // Output metric columns (`<agg>_<measure>` or `count`). Their values come back from mysql2 as
-  // strings for DECIMAL/BIGINT; the executor coerces them to numbers to match the ClickHouse shape.
-  // Output metric columns + whether ClickHouse serializes each as a string (integer) or number.
+  // Output metric columns (`<agg>_<measure>` or `count`) + whether ClickHouse serializes each as a
+  // string (integer-typed: count/uniq/sum-of-int) or a number (float-typed: avg/cost/percentiles).
+  // The executor's shapeRow pass applies this per-column.
   metricColumns: Array<{ col: string; integer: boolean }>;
-  // Whether the query produced a `time_dimension` column (coerced to an ISO string on output).
+  // Whether the query produced a `time_dimension` column (formatted to the ClickHouse string on output).
   hasTimeDimension: boolean;
   // Gap-fill descriptor (present when the query buckets by time).
   timeFill?: {
@@ -151,14 +151,19 @@ const FLOAT_RESULT_AGGS = new Set([
  * JSON strings) vs float-typed (serialized as JSON numbers). count/uniq are always UInt64; avg and
  * percentiles are always Float64; sum/min/max preserve the measure's declared type.
  */
-const isIntegerResult = (aggregation: string, measureType?: string): boolean => {
+const isIntegerResult = (
+  aggregation: string,
+  measureType?: string,
+): boolean => {
   if (aggregation === "count" || aggregation === "uniq") return true;
   if (FLOAT_RESULT_AGGS.has(aggregation)) return false;
   return measureType === "integer";
 };
 
 /** Output metric column descriptor: alias + whether ClickHouse serializes it as a string (integer). */
-const metricColumnDescriptor = (m: AppliedMeasure): { col: string; integer: boolean } => ({
+const metricColumnDescriptor = (
+  m: AppliedMeasure,
+): { col: string; integer: boolean } => ({
   col: `${m.aggregation}_${m.alias}`,
   integer: isIntegerResult(m.aggregation, m.type),
 });

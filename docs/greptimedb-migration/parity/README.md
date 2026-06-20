@@ -56,6 +56,7 @@ packages/shared/node_modules/.bin/tsx docs/greptimedb-migration/parity/harness/r
 Output: `report-<runId>.md` (human) + `.json` (machine). Tally is printed to stderr.
 
 ### Config (env overrides)
+
 `PARITY_FORK_URL` (`:3000`), `PARITY_UPSTREAM_URL` (`:3001`), `PARITY_PUBLIC_KEY`,
 `PARITY_SECRET_KEY`, `PARITY_PROJECT_ID` (`parity-proj`), `PARITY_NOW_MS` (pin the run anchor for a
 reproducible window).
@@ -69,17 +70,20 @@ same project never contaminate each other. No raw inserts, no ad-hoc data — pu
 
 ## Interpreting results — GREEN criteria
 
-A run is release-green when the only `FAIL` is the documented tags-dimension item (ledger **L1**) and
-no new FAIL class appears. `KNOWN_LIMITATION` and `TYPE_REPR` are expected engine/representation
-divergences enumerated in `ledger.md` — review that file when the counts change. A **new** FAIL, a
-new `STATUS_MISMATCH`, or an `ERROR_BOTH` (both stacks 5xx) means triage.
+A run is release-green when `FAIL == 0` **and** `TYPE_REPR == 0` and there is no new
+`STATUS_MISMATCH` or `ERROR_BOTH` (both stacks 5xx). `KNOWN_LIMITATION` is the set of expected
+engine/config divergences enumerated in `ledger.md` — review that file when the counts change. Any
+new `FAIL` or `TYPE_REPR` means triage.
 
 ## Known findings (see ledger.md)
-- **L1 (FAIL):** metrics grouped by `tags` returns the raw Arrow array buffer (fork bug, metrics-only).
-- L2–L9: numeric/datetime representation, quantile approximation (uddsketch), timeseries gap-fill,
+
+- **L1–L3 (FIXED in this PR):** metrics `by:tags` array decoding, integer-vs-float serialization, and
+  `time_dimension` format now match ClickHouse.
+- **L4–L9 (KNOWN, non-blocking):** quantile approximation (uddsketch), timeseries gap-fill,
   fork-stricter validation, degenerate count-aggregations, histogram binning, model-catalog size.
 
 ## Teardown
+
 ```bash
 docker compose -p langfuse-upstream -f docs/greptimedb-migration/parity/docker-compose.upstream.parity.yml down       # keep data
 docker compose -p langfuse-upstream -f docs/greptimedb-migration/parity/docker-compose.upstream.parity.yml down -v    # wipe volumes

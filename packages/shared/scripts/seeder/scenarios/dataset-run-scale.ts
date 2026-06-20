@@ -141,7 +141,9 @@ const run = async (
       duplicatesPerKey: duplicates,
     },
     verified: { datasetRunItemsPhysical: verifiedPhysical },
-    links: [`${ctx.baseUrl}/project/${ctx.projectId}/datasets/${datasetId}`],
+    // No UI deep link: this scenario writes only GreptimeDB dataset_run_items (no Postgres
+    // dataset/run rows), so a /datasets/<id> link would 404. It is a benchmark, not a UI scenario.
+    links: [],
     dryRun: false,
     durationMs: Date.now() - startedAt,
   };
@@ -153,13 +155,24 @@ export const datasetRunScaleScenario: ScenarioDefinition = {
     "Bulk dataset_run_items with duplicate physical rows per logical (run,item) key for the F7 ROW_NUMBER dedup benchmark. GreptimeDB-only (no Postgres/traces) — a performance scenario, not a UI scenario.",
   supportsV4: false,
   flags: [
-    { flag: "runs", type: "number", default: 30, description: "number of dataset runs (1-1000)" },
-    { flag: "items", type: "number", default: 100, description: "dataset items per run (1-5000)" },
+    {
+      flag: "runs",
+      type: "number",
+      default: 30,
+      description: "number of dataset runs (1-1000)",
+    },
+    {
+      flag: "items",
+      type: "number",
+      default: 100,
+      description: "dataset items per run (1-5000)",
+    },
     {
       flag: "duplicates",
       type: "number",
       default: 3,
-      description: "physical rows per logical (run,item) key — re-run/update churn (1-100)",
+      description:
+        "physical rows per logical (run,item) key — re-run/update churn (1-100)",
     },
   ],
   run,
