@@ -126,19 +126,12 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
   private async runEavCleanup(): Promise<void> {
     if (this.pendingEavCleanup.size === 0) return;
     const snapshot = [...this.pendingEavCleanup];
-    this.pendingEavCleanup = new Map();
     for (const [projectionTable, byProject] of snapshot) {
       for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ?? []) {
-        try {
-          await this.deleteEav(eavTable, byProject);
-        } catch (err) {
-          logger.error(
-            `GreptimeBulkWriter EAV cleanup delete failed for ${eavTable}`,
-            err,
-          );
-        }
+        await this.deleteEav(eavTable, byProject);
       }
     }
+    this.pendingEavCleanup = new Map();
   }
 
   public addToQueue(
@@ -227,7 +220,12 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
 
       // 2b. Clear stale EAV rows for all recorded entities BEFORE writing their current set, so a
       // key/tag/tool dropped from an updated entity does not survive the rebuild.
-      await this.runEavCleanup();
+      try {
+        await this.runEavCleanup();
+      } catch (err) {
+        logger.error("GreptimeBulkWriter EAV cleanup failed", err);
+        throw err;
+      }
 
       // 3. Bulk-flush per physical table; on a table failure fall back to unary grouped by entity.
       const byTable = new Map<string, BulkRow[]>();

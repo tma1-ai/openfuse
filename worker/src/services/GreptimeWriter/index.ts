@@ -202,25 +202,18 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * Snapshot + clear the pending cleanup map (synchronous, so it stays consistent with the queue
    * splice taken in the same flush turn), then batch-delete each entity's existing EAV rows. Must run
    * BEFORE the flush writes the new EAV rows, so a key/tag/tool dropped from an updated entity does
-   * not survive. On a delete failure the rows are still written (the writer's own retry/rebuild heals
-   * a transient stale row); cleanup never blocks the projection write.
+   * not survive. Cleanup failure blocks the write and leaves the pending cleanup snapshot intact; a
+   * later flush retries the delete before the same rows can land.
    */
   private async runEavCleanup(): Promise<void> {
     if (this.pendingEavCleanup.size === 0) return;
     const snapshot = [...this.pendingEavCleanup];
-    this.pendingEavCleanup.clear();
     for (const [projectionTable, byProject] of snapshot) {
       for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ?? []) {
-        try {
-          await this.deleteEav(eavTable, byProject);
-        } catch (err) {
-          logger.error(
-            `GreptimeWriter EAV cleanup delete failed for ${eavTable}`,
-            err,
-          );
-        }
+        await this.deleteEav(eavTable, byProject);
       }
     }
+    this.pendingEavCleanup.clear();
   }
 
   /**
@@ -340,6 +333,15 @@ export class GreptimeWriter implements GreptimeProjectionSink {
     this.requeueItems(items);
   }
 
+  /** Put a spliced batch back without bumping attempts; used when pre-write cleanup fails. */
+  private restoreSpliced(
+    spliced: { table: string; items: QueueItem[] }[],
+  ): void {
+    for (const { table, items } of spliced) {
+      this.queues[table].unshift(...items);
+    }
+  }
+
   /**
    * Terminal action for a single deterministically-failing group. An `oversize` group gets one
    * reactive-truncation retry (cap each whitelisted field, rewrite); if that lands it is saved, if it
@@ -449,10 +451,15 @@ export class GreptimeWriter implements GreptimeProjectionSink {
       const total = spliced.reduce((n, s) => n + s.items.length, 0);
       recordHistogram("langfuse.queue.greptime_writer.batch_size", total);
 
-      // Clear stale EAV rows for this batch's entities before writing their current set. Snapshot is
-      // synchronous (taken here, consistent with the splice above) so rows enqueued during the delete
-      // await belong to the next flush, which cleans them before writing.
-      await this.runEavCleanup();
+      // Clear stale EAV rows before writing the current set. If cleanup fails, no projection/EAV row
+      // from this batch may land; restore the splice and retry cleanup on a later flush.
+      try {
+        await this.runEavCleanup();
+      } catch (err) {
+        this.restoreSpliced(spliced);
+        logger.error("GreptimeWriter EAV cleanup failed; batch restored", err);
+        throw err;
+      }
 
       let landedRows = 0;
       await this.writeWithIsolation(this.regroup(spliced), {

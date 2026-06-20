@@ -422,7 +422,7 @@ describe("GreptimeWriter EAV shrink consistency", () => {
       write: wrappedWrite,
       deleteEav,
     });
-    return { writer, order, deletes };
+    return { writer, order, deletes, write: wrappedWrite, deleteEav };
   };
 
   it("deletes a trace's metadata + tags EAV before writing, keyed by the projection entity", async () => {
@@ -472,5 +472,29 @@ describe("GreptimeWriter EAV shrink consistency", () => {
       "observations_usage_cost",
     ]);
     for (const d of deletes) expect(d.entities).toEqual({ p: ["o1"] });
+  });
+
+  it("does not write and keeps the batch queued when EAV cleanup fails", async () => {
+    const { writer, write, deleteEav } = setup();
+    deleteEav.mockRejectedValueOnce(new Error("delete failed"));
+
+    writer.addToQueue(
+      GreptimeTable.Traces,
+      createTrace({
+        project_id: "p",
+        id: "t-retry",
+        metadata: { stale: "gone" },
+        tags: ["x"],
+      }),
+    );
+
+    await expect(writer.flushAll(true)).rejects.toThrow("delete failed");
+    expect(write).not.toHaveBeenCalled();
+    expect(writer.pendingRows()).toBeGreaterThan(0);
+
+    await writer.flushAll(true);
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(deleteEav).toHaveBeenCalledTimes(3);
   });
 });
