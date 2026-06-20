@@ -20,7 +20,9 @@ docker compose -f docker-compose.dev.yml up -d
 pnpm run db:deploy
 
 # GreptimeDB schema (fork-specific) — required, run before the app
-pnpm --filter=@langfuse/shared run greptime:migrate
+GREPTIME_GRPC_URL=localhost:4001 \
+  GREPTIME_SQL_HOST=localhost \
+  pnpm --filter=@langfuse/shared run greptime:migrate
 
 pnpm run dev          # all packages
 # or: pnpm run dev:web / pnpm run dev:worker

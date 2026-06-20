@@ -32,9 +32,11 @@ cp .env.prod.example .env          # then edit every `# CHANGEME` value (secrets
 # 1. bring up infra first
 docker compose up -d greptimedb postgres redis
 
-# 2. bootstrap the GreptimeDB schema (once per environment, before serving traffic)
+# 2. bootstrap the GreptimeDB schema from the host (once per environment, before serving traffic)
 pnpm install
-pnpm --filter=@langfuse/shared run greptime:migrate
+GREPTIME_GRPC_URL=localhost:4001 \
+  GREPTIME_SQL_HOST=localhost \
+  pnpm --filter=@langfuse/shared run greptime:migrate
 
 # 3. start the app
 docker compose up -d              # langfuse-web + langfuse-worker
@@ -42,7 +44,7 @@ docker compose up -d              # langfuse-web + langfuse-worker
 
 Open <http://localhost:3000>, create an org/project/user, and point any Langfuse SDK at it.
 
-> **Important — schema bootstrap is a required step.** The container entrypoint runs Postgres migrations automatically but **not** the GreptimeDB schema. Run `greptime:migrate` after GreptimeDB is healthy and before the web/worker serve traffic, and again after pulling new `packages/shared/greptime/migrations/*.sql`. The migrations are idempotent (`CREATE ... IF NOT EXISTS`), so re-running is safe. Full guide: [deployment](docs/deployment.md).
+> **Important — schema bootstrap is a required step.** The container entrypoint runs Postgres migrations automatically but **not** the GreptimeDB schema. Run `greptime:migrate` after GreptimeDB is healthy and before the web/worker serve traffic, and again after pulling new `packages/shared/greptime/migrations/*.sql`. The `.env` file points containers at the `greptimedb` service name; when running the migration from your host shell, override it to `localhost` as shown above. The migrations are idempotent (`CREATE ... IF NOT EXISTS`), so re-running is safe. Full guide: [deployment](docs/deployment.md).
 
 ## Published images
 

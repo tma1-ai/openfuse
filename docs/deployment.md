@@ -45,10 +45,12 @@ Ingestion and eval-generated scores persist to GreptimeDB `raw_events`, not to a
 
 Postgres migrations run automatically from the web container entrypoint. **The GreptimeDB schema does not** — the entrypoint deliberately leaves it out. Apply it out of band, once per environment, **before** the web/worker containers serve traffic, and again after pulling new `packages/shared/greptime/migrations/*.sql`:
 
+For the default Compose deployment, run the migration from your host shell and override the container-only service name from `.env`:
+
 ```bash
-# GreptimeDB must be running and reachable at GREPTIME_SQL_HOST:GREPTIME_SQL_PORT.
-# The script reads GREPTIME_* from .env.
-pnpm --filter=@langfuse/shared run greptime:migrate
+GREPTIME_GRPC_URL=localhost:4001 \
+  GREPTIME_SQL_HOST=localhost \
+  pnpm --filter=@langfuse/shared run greptime:migrate
 ```
 
 Migrations are idempotent (`CREATE DATABASE / TABLE IF NOT EXISTS`), so re-running is safe. The same command also applies the **database-level retention TTL** — an idempotent `ALTER DATABASE ... SET 'ttl'` built from `LANGFUSE_GREPTIME_TTL` (default `730d`), covering every table at once. To change retention, set `LANGFUSE_GREPTIME_TTL` and re-run; a manual `ALTER DATABASE` is reverted on the next bootstrap.
@@ -66,7 +68,9 @@ cp .env.prod.example .env                          # edit every # CHANGEME value
 
 docker compose up -d greptimedb postgres redis     # infra first (add `minio` only if using S3)
 # wait for greptimedb /health, then:
-pnpm --filter=@langfuse/shared run greptime:migrate # schema bootstrap (section 2)
+GREPTIME_GRPC_URL=localhost:4001 \
+  GREPTIME_SQL_HOST=localhost \
+  pnpm --filter=@langfuse/shared run greptime:migrate # schema bootstrap (section 2)
 
 docker compose up -d                               # start web + worker
 ```
