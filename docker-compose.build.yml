@@ -40,8 +40,8 @@ services:
       GREPTIME_SQL_HOST: ${GREPTIME_SQL_HOST:-greptimedb}
       GREPTIME_SQL_PORT: ${GREPTIME_SQL_PORT:-4002}
       GREPTIME_DB: ${GREPTIME_DB:-openfuse}
-      GREPTIME_USER: ${GREPTIME_USER:-}
-      GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-}
+      GREPTIME_USER: ${GREPTIME_USER:-openfuse}
+      GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-} # CHANGEME (set to enforce GreptimeDB auth; required for any non-local deployment)
       # Object storage is OPTIONAL: media, the OTel ingestion carrier, and the eval observation blob
       # store default to a local-file backend (shared volumes below), so no MinIO is started. Enable
       # the optional `minio` service with `--profile s3` for S3-backed storage / batch exports.
@@ -115,17 +115,17 @@ services:
   greptimedb:
     # GreptimeDB analytics store (replaces ClickHouse). Standalone mode exposes HTTP (4000),
     # gRPC (4001, ingest SDK), MySQL wire (4002, read path + migrations), Postgres wire (4003).
+    # The entrypoint wrapper loads docker/greptimedb/config.toml as a tuning starting point and
+    # turns on enforced static auth when GREPTIME_PASSWORD is set (empty -> no auth).
     image: docker.io/greptime/greptimedb:v1.1.1
-    command:
-      - standalone
-      - start
-      - --http-addr=0.0.0.0:4000
-      - --rpc-bind-addr=0.0.0.0:4001
-      - --mysql-addr=0.0.0.0:4002
-      - --postgres-addr=0.0.0.0:4003
-      - --data-home=/greptimedb_data
+    entrypoint: ["/bin/sh", "/usr/local/bin/openfuse-greptime-entrypoint.sh"]
+    environment:
+      GREPTIME_USER: ${GREPTIME_USER:-openfuse}
+      GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-} # CHANGEME (set to enforce GreptimeDB auth; required for any non-local deployment)
     volumes:
       - langfuse_greptimedb_data:/greptimedb_data
+      - ./docker/greptimedb/config.toml:/etc/greptime/config.toml:ro
+      - ./docker/greptimedb/entrypoint.sh:/usr/local/bin/openfuse-greptime-entrypoint.sh:ro
     ports:
       - "4000:4000"
       - "4001:4001"

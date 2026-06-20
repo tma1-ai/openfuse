@@ -152,7 +152,11 @@ describe("PUT /api/public/media/[mediaId]/upload (local backend)", () => {
 
   test("rejects a Content-Length that does not match the token", async () => {
     const res = await run(
-      makeReq({ token: tokenFor(), data: body, contentLength: body.length + 1 }),
+      makeReq({
+        token: tokenFor(),
+        data: body,
+        contentLength: body.length + 1,
+      }),
     );
     expect(res.statusCode).toBe(400);
     expect(await exists(filePath)).toBe(false);

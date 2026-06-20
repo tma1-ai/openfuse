@@ -110,14 +110,9 @@ const t = initTRPC.context<typeof createTRPCContext>().create({
         zodError:
           error.cause instanceof ZodError ? z.flattenError(error.cause) : null,
         errorName:
-          error.cause instanceof DbResourceError
-            ? "DbResourceError"
-            : null,
+          error.cause instanceof DbResourceError ? "DbResourceError" : null,
         // do not expose stack traces for DB resource errors as they may contain sensitive info
-        stack:
-          error.cause instanceof DbResourceError
-            ? null
-            : shape.data.stack,
+        stack: error.cause instanceof DbResourceError ? null : shape.data.stack,
       },
     };
   },

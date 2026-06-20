@@ -106,9 +106,9 @@ export class IngestionReadSkipCache {
     // Check explicit project ID list first
     if (
       env.LANGFUSE_SKIP_INGESTION_READ_PROJECT_IDS &&
-      env.LANGFUSE_SKIP_INGESTION_READ_PROJECT_IDS.split(
-        ",",
-      ).includes(projectId)
+      env.LANGFUSE_SKIP_INGESTION_READ_PROJECT_IDS.split(",").includes(
+        projectId,
+      )
     ) {
       return true;
     }

@@ -97,7 +97,8 @@ const mockEvalExecutionResult = {
 describe("processObservationEval", () => {
   const projectId = "test-project-123";
   const jobExecutionId = "job-exec-456";
-  const observationBlobPath = "evals/test-project-123/observations/obs-789.json";
+  const observationBlobPath =
+    "evals/test-project-123/observations/obs-789.json";
 
   const baseEvent = {
     projectId,

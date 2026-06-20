@@ -48,7 +48,10 @@ export const getGreptimeIngestClient = (): Client => {
       // in-call retries that could double-append.
       .withRetry({ mode: "conservative" });
 
-    if (env.GREPTIME_USER) {
+    // Send Basic Auth only when a password is configured: GREPTIME_USER defaults to "openfuse",
+    // so gating on the password (not the user) keeps an unauthenticated node truly header-free and
+    // matches the entrypoint, which enables static auth only when GREPTIME_PASSWORD is set.
+    if (env.GREPTIME_PASSWORD) {
       builder = builder.withBasicAuth(env.GREPTIME_USER, env.GREPTIME_PASSWORD);
     }
 
@@ -64,7 +67,7 @@ const buildSqlPool = (host: string): mysql.Pool =>
   mysql.createPool({
     host,
     port: env.GREPTIME_SQL_PORT,
-    user: env.GREPTIME_USER || "root",
+    user: env.GREPTIME_USER || "openfuse",
     password: env.GREPTIME_PASSWORD || undefined,
     database: env.GREPTIME_DB,
     connectionLimit: env.GREPTIME_SQL_MAX_OPEN_CONNECTIONS,

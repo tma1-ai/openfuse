@@ -25,8 +25,8 @@ GreptimeDB-specific variables:
 | `GREPTIME_SQL_PORT`                 | `4002`           | MySQL-wire port.                                                                       |
 | `GREPTIME_SQL_READ_ONLY_HOST`       | _(unset)_        | Optional dedicated read host; falls back to `GREPTIME_SQL_HOST`.                       |
 | `GREPTIME_DB`                       | `openfuse`       | Target database.                                                                       |
-| `GREPTIME_USER`                     | `""`             | Empty for an unauthenticated single node; set for a secured deployment.                |
-| `GREPTIME_PASSWORD`                 | `""`             | Set together with `GREPTIME_USER` when auth is enabled.                                |
+| `GREPTIME_USER`                     | `openfuse`       | GreptimeDB user. App and server must agree on it.                                      |
+| `GREPTIME_PASSWORD`                 | `""`             | Empty = unauthenticated single node; set it to enforce GreptimeDB static auth.         |
 | `GREPTIME_SQL_MAX_OPEN_CONNECTIONS` | `25`             | MySQL read-pool size.                                                                  |
 | `GREPTIME_RAW_EVENTS_TABLE`         | `raw_events`     | Write-path source-of-truth table.                                                      |
 

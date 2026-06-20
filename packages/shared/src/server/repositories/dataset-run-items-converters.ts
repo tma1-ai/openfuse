@@ -78,9 +78,7 @@ export function convertDatasetRunItemDbRecordToDomain<
     datasetRunId: row.dataset_run_id,
     datasetRunName: row.dataset_run_name,
     datasetRunDescription: row.dataset_run_description ?? null,
-    datasetRunCreatedAt: parseDbUtcDateTimeFormat(
-      row.dataset_run_created_at,
-    ),
+    datasetRunCreatedAt: parseDbUtcDateTimeFormat(row.dataset_run_created_at),
     datasetItemId: row.dataset_item_id,
     datasetItemVersion: row.dataset_item_version
       ? parseDbUtcDateTimeFormat(row.dataset_item_version)

@@ -43,23 +43,23 @@ Read [Known limitations](docs/known-limitations.md) before you deploy.
 
 ## 5-minute quickstart (Docker Compose)
 
-Requirements: Docker and Docker Compose. The stack is `langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, and `redis`, with object storage off by default. Both schemas migrate automatically inside the container on startup.
+Requirements: Docker and Docker Compose. The quickest path is the single `openfuse-standalone` container — web + worker in one process — wired to Postgres, Redis, and GreptimeDB. Both schemas migrate automatically on startup; object storage is off by default.
 
 ```bash
 git clone https://github.com/tma1-ai/openfuse.git
 cd openfuse
-cp .env.quickstart.example .env   # working dev defaults — no edits needed
-docker compose up -d              # builds web/worker, starts the full stack
+cp .env.quickstart.example .env                        # working dev defaults — no edits needed
+docker compose -f docker-compose.standalone.yml up -d  # one app container + Postgres/Redis/GreptimeDB
 ```
 
-Open <http://localhost:3000>. The quickstart env auto-creates a demo project, so you can log in as `demo@example.com` / `langfuse-dev` or point any Langfuse SDK at the bundled keys (`pk-lf-1234567890` / `sk-lf-1234567890`) right away. Those values are insecure dev defaults — for a real deployment start from `.env.prod.example` and set your own secrets. Full guide: [deployment](docs/deployment.md).
+Open <http://localhost:3000>. The quickstart env auto-creates a demo project, so you can log in as `demo@example.com` / `langfuse-dev` or point any Langfuse SDK at the bundled keys (`pk-lf-1234567890` / `sk-lf-1234567890`) right away. Those values are insecure dev defaults — for a real deployment start from `.env.prod.example` and set your own secrets, including a GreptimeDB password (`GREPTIME_PASSWORD`) to turn on enforced auth on the analytics store. Full guide: [deployment](docs/deployment.md).
 
-### Single container (standalone)
+### Split web + worker
 
-For a single node, `tma1ai/openfuse-standalone` runs web + worker in one container (the GreptimeDB-standalone analogue):
+To scale web and worker independently, use the default `docker-compose.yml` (separate `langfuse-web` and `langfuse-worker` images) instead:
 
 ```bash
-docker compose -f docker-compose.standalone.yml up   # then open http://localhost:3000
+docker compose up -d   # builds web/worker, starts the full stack
 ```
 
 ## Published images

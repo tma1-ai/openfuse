@@ -18,7 +18,7 @@ There are two starting points:
 | `ENCRYPTION_KEY`                      | Encrypts sensitive data at rest; must be 256-bit (64 hex chars). | `openssl rand -hex 32`                                                            |
 | `POSTGRES_PASSWORD` + `DATABASE_URL`  | Postgres password (the server's and the app's must match).       | Pick a strong password; use it for `POSTGRES_PASSWORD` and inside `DATABASE_URL`. |
 | `REDIS_AUTH`                          | Redis password (the server's and the app's must match).          | Pick a strong password.                                                           |
-| `GREPTIME_USER` / `GREPTIME_PASSWORD` | GreptimeDB credentials — only if your GreptimeDB enforces auth.  | Leave empty for an unauthenticated single node; otherwise match your GreptimeDB.  |
+| `GREPTIME_USER` / `GREPTIME_PASSWORD` | GreptimeDB credentials. A non-empty password turns on enforced auth. | User defaults to `openfuse`. Set a strong `GREPTIME_PASSWORD` for any real deployment (see "GreptimeDB authentication" below). |
 
 The source of truth for every `GREPTIME_*` variable is `packages/shared/src/env.ts`; `.env.prod.example` is the full deploy-time reference.
 
@@ -31,12 +31,23 @@ GreptimeDB variables:
 | `GREPTIME_SQL_PORT`                   | `4002`           | MySQL-wire port.                                                                       |
 | `GREPTIME_SQL_READ_ONLY_HOST`         | _(unset)_        | Optional dedicated read host; falls back to `GREPTIME_SQL_HOST`.                       |
 | `GREPTIME_DB`                         | `openfuse`       | Target database.                                                                       |
-| `GREPTIME_USER` / `GREPTIME_PASSWORD` | `""`             | Empty for an unauthenticated single node; set both for a secured deployment.           |
+| `GREPTIME_USER` / `GREPTIME_PASSWORD` | `openfuse` / `""` | Empty password = unauthenticated single node; set a password to enforce auth.          |
 | `GREPTIME_SQL_MAX_OPEN_CONNECTIONS`   | `25`             | MySQL read-pool size.                                                                  |
 | `GREPTIME_RAW_EVENTS_TABLE`           | `raw_events`     | Write-path source-of-truth table.                                                      |
 | `LANGFUSE_GREPTIME_TTL`               | `730d`           | Database-level retention, applied automatically at startup (see §2).                   |
 
 For a Compose deployment these point at the `greptimedb` service name. The non-GreptimeDB requirements (Postgres, Redis, `NEXTAUTH_SECRET`, `SALT`, `ENCRYPTION_KEY`, …) are unchanged from upstream Langfuse and also live in `.env.prod.example`; for the full set and their meaning, see [Langfuse · Configuration](https://langfuse.com/self-hosting/configuration).
+
+### GreptimeDB authentication
+
+GreptimeDB only enforces credentials when it is started with a [static user provider](https://docs.greptime.com/user-guide/deployments-administration/authentication/static/); a node started without one accepts any connection. The Compose files wire this for you through a small entrypoint (`docker/greptimedb/entrypoint.sh`):
+
+- **`GREPTIME_PASSWORD` empty (default)** — the `greptimedb` container starts without a user provider, so it is unauthenticated. Fine for a local single node you fully control (quickstart, dev). Do not expose it.
+- **`GREPTIME_PASSWORD` set** — the container writes a `user=password` credentials file (mode `600`) and starts with `--user-provider=static_user_provider:file:…`, so the password is actually enforced. The app authenticates with the same `GREPTIME_USER` (default `openfuse`) and `GREPTIME_PASSWORD`, so **the app and server values must match**. Set both in `.env` for any real deployment, just like `POSTGRES_PASSWORD` and `REDIS_AUTH`.
+
+### GreptimeDB server config
+
+The fork ships a small server config at `docker/greptimedb/config.toml`, mounted read-only and passed via `--config-file`. It keeps GreptimeDB's defaults and carries commented performance-tuning hints (cache and write-buffer sizes default to `Auto`, sized from machine memory — right for a single node). Tune it per the [GreptimeDB performance-tuning guide](https://docs.greptime.com/user-guide/deployments-administration/performance-tuning/performance-tuning-tips/); see also [operations](operations.md).
 
 ### Object storage is optional
 
@@ -122,7 +133,7 @@ This Compose file defines both `build:` and `image:` for web/worker, so `--pull 
 
 ### Published images and tags
 
-Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: `tma1ai/openfuse-web`, `tma1ai/openfuse-worker`, `tma1ai/openfuse-standalone`. The first preview is `1.0.0-alpha.1`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha.1`) and a commit-SHA tag. The floating `major.minor` and `major` tags are published only for stable releases — `docker/metadata-action` skips them for pre-releases (`-alpha` / `-beta` / `-rc`). `latest` still moves on any non-`-rc` release (so an `-alpha` does move it), so during the alpha pin an explicit tag rather than tracking `latest`. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
+Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: `tma1ai/openfuse-web`, `tma1ai/openfuse-worker`, `tma1ai/openfuse-standalone`. The first preview is `1.0.0-alpha.1`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha.1`) and a commit-SHA tag. The floating `major.minor` and `major` tags and `latest` are published only for stable releases — the workflow skips all of them for any SemVer pre-release (`-alpha` / `-beta` / `-rc`), which get only the exact `{{version}}` and commit-SHA tags. So during the alpha, `latest` does not move; pin an explicit tag. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
 
 ## 4. Verify and persist
 
