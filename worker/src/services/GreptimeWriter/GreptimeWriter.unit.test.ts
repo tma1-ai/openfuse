@@ -393,3 +393,84 @@ describe("GreptimeWriter.resolveGroups (backfill projection gating)", () => {
     expect(result.size).toBe(0);
   });
 });
+
+describe("GreptimeWriter EAV shrink consistency", () => {
+  // Record cleanup deletes and writes in one ordered log to assert delete-before-write.
+  const setup = () => {
+    const order: string[] = [];
+    const deletes: { table: string; entities: Record<string, string[]> }[] = [];
+    const { write } = fakeWriter(() => null);
+    const wrappedWrite = vi.fn(async (tables: Parameters<typeof write>[0]) => {
+      order.push("write");
+      return write(tables);
+    });
+    const deleteEav = vi.fn(
+      async (
+        table: string,
+        byProject: ReadonlyMap<string, ReadonlySet<string>>,
+      ) => {
+        order.push(`delete:${table}`);
+        deletes.push({
+          table,
+          entities: Object.fromEntries(
+            [...byProject].map(([p, ids]) => [p, [...ids]]),
+          ),
+        });
+      },
+    );
+    const writer = GreptimeWriter.createForTest({
+      write: wrappedWrite,
+      deleteEav,
+    });
+    return { writer, order, deletes };
+  };
+
+  it("deletes a trace's metadata + tags EAV before writing, keyed by the projection entity", async () => {
+    const { writer, order, deletes } = setup();
+    writer.addToQueue(
+      GreptimeTable.Traces,
+      createTrace({
+        project_id: "p",
+        id: "t1",
+        metadata: { a: "1" },
+        tags: ["x"],
+      }),
+    );
+    await writer.flushAll(true);
+
+    const tables = deletes.map((d) => d.table).sort();
+    expect(tables).toEqual(["traces_metadata", "traces_tags"]);
+    for (const d of deletes) expect(d.entities).toEqual({ p: ["t1"] });
+    // every delete precedes the single write
+    expect(order.indexOf("write")).toBe(order.length - 1);
+    expect(order.filter((o) => o.startsWith("delete:"))).toHaveLength(2);
+  });
+
+  it("still cleans an observation whose EAV set shrank to empty (no fanned EAV rows)", async () => {
+    const { writer, deletes } = setup();
+    // No tools, no custom usage/cost, no metadata -> the fan-out emits only the projection row, but
+    // the entity must still be cleaned so any prior tool/metadata rows are removed.
+    writer.addToQueue(
+      GreptimeTable.Observations,
+      createObservation({
+        project_id: "p",
+        id: "o1",
+        metadata: {},
+        usage_details: {},
+        cost_details: {},
+        tool_definitions: {},
+        tool_call_names: [],
+      }),
+    );
+    await writer.flushAll(true);
+
+    const cleaned = deletes.map((d) => d.table).sort();
+    expect(cleaned).toEqual([
+      "observations_metadata",
+      "observations_tool_calls",
+      "observations_tool_definitions",
+      "observations_usage_cost",
+    ]);
+    for (const d of deletes) expect(d.entities).toEqual({ p: ["o1"] });
+  });
+});

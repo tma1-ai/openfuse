@@ -173,6 +173,30 @@ export const toolNameTable = (name: string): Table =>
     .addTimestampColumn("timestamp", Precision.Millisecond)
     .addFieldColumn("is_deleted", DataType.Bool);
 
+/**
+ * The EAV derived-index tables fanned out from each projection entity (mirrors the per-table groups
+ * `buildGreptimeRowsForRecord` emits). Used by the write path to clear an entity's stale EAV rows
+ * before re-writing its current set: an EAV key/tag/tool that drops out of an updated entity (a
+ * shrunk metadata map, a removed tool) leaves no row in the new fan-out, so without an up-front
+ * delete the old row would linger and keep matching `EXISTS` filters / breakdown joins. ClickHouse
+ * had no such gap — `tool_definitions`/`metadata` are whole `Map` columns read off the latest
+ * ReplacingMergeTree row, so a shrink is naturally reflected. `dataset_run_items` has no EAV tables.
+ *
+ * MUST stay in sync with the fan-out in `rowBuilders.buildGreptimeRowsForRecord`.
+ */
+export const EAV_TABLES_FOR_PROJECTION: Partial<
+  Record<GreptimeTable, readonly string[]>
+> = {
+  [GreptimeTable.Traces]: ["traces_metadata", "traces_tags"],
+  [GreptimeTable.Observations]: [
+    "observations_metadata",
+    "observations_usage_cost",
+    "observations_tool_definitions",
+    "observations_tool_calls",
+  ],
+  [GreptimeTable.Scores]: ["scores_metadata"],
+};
+
 /** Physical table name -> fresh `Table` schema builder. The writer keeps one queue per key. */
 export const PHYSICAL_TABLES: Record<string, () => Table> = {
   traces: tracesTable,

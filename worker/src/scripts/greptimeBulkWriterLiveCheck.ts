@@ -140,6 +140,60 @@ async function main() {
     check(`no orphan ${eavTable} rows`, orphans.length === 0, orphans);
   }
 
+  // EAV shrink consistency: re-write obs-1 with a SMALLER tool set + no custom usage/cost keys. The
+  // write path must clear the old EAV rows before writing the new set, so the dropped keys do not
+  // linger and keep matching filters (the ClickHouse Map column would shrink naturally).
+  const shrinkBulk = new GreptimeBulkWriter({
+    client,
+    unary: GreptimeWriter.createManual({
+      write: (tables) => client.write(tables),
+    }),
+    batchSize: 1000,
+  });
+  shrinkBulk.addToQueue(
+    GreptimeTable.Observations,
+    createObservation({
+      project_id: PROJECT,
+      id: "obs-1",
+      trace_id: "trace-1",
+      metadata: { k: "v" },
+      usage_details: { input: 10, output: 20, total: 30 }, // dropped the custom cache_read key
+      cost_details: { input: 0.1, total: 0.3 },
+      total_cost: 0.3,
+      tool_definitions: { calculator: "do math" }, // dropped `search`
+      tool_call_names: ["calculator"], // dropped `search`
+    }),
+  );
+  await shrinkBulk.flushAll();
+
+  const toolDefs = await greptimeQuery<{ tool_name: string }>({
+    query: `SELECT tool_name FROM observations_tool_definitions WHERE project_id = :p AND entity_id = 'obs-1' AND is_deleted = false`,
+    params: { p: PROJECT },
+  });
+  check(
+    "tool definitions shrank to {calculator} (stale `search` cleared)",
+    toolDefs.length === 1 && toolDefs[0].tool_name === "calculator",
+    toolDefs,
+  );
+  const toolCalls = await greptimeQuery<{ tool_name: string }>({
+    query: `SELECT tool_name FROM observations_tool_calls WHERE project_id = :p AND entity_id = 'obs-1' AND is_deleted = false`,
+    params: { p: PROJECT },
+  });
+  check(
+    "tool calls shrank to {calculator} (stale `search` cleared)",
+    toolCalls.length === 1 && toolCalls[0].tool_name === "calculator",
+    toolCalls,
+  );
+  const usageCostKeys = await greptimeQuery<{ key: string }>({
+    query: `SELECT \`key\` FROM observations_usage_cost WHERE project_id = :p AND entity_id = 'obs-1' AND is_deleted = false`,
+    params: { p: PROJECT },
+  });
+  check(
+    "usage/cost EAV cleared after dropping the custom cache_read key",
+    usageCostKeys.length === 0,
+    usageCostKeys,
+  );
+
   // Cleanup.
   for (const t of [
     "traces",

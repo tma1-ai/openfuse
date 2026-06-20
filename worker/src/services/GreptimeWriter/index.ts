@@ -6,6 +6,9 @@ import {
   buildGreptimeRowsForRecord,
   classifyGreptimeWriteError,
   DatasetRunItemRecordInsertType,
+  type DeleteEavRowsFn,
+  deleteEavRowsForEntities,
+  EAV_TABLES_FOR_PROJECTION,
   getGreptimeIngestClient,
   GreptimeRow,
   GreptimeTable,
@@ -74,14 +77,31 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   private readonly maxFieldBytes: number;
   private readonly queues: Record<string, QueueItem[]>;
   private readonly write: WriteFn;
+  private readonly deleteEav: DeleteEavRowsFn;
+  /**
+   * Projection entities enqueued since the last flush, per projection table -> projectId -> ids.
+   * Drained at flush start to delete each entity's stale EAV rows BEFORE its current set is written
+   * (see EAV_TABLES_FOR_PROJECTION). Driven by the projection entity, not the EAV rows, so an entity
+   * whose EAV set shrank to empty (no fanned EAV rows) is still cleared.
+   */
+  private readonly pendingEavCleanup = new Map<
+    GreptimeTable,
+    Map<string, Set<string>>
+  >();
   /** Size-triggered background flush is only armed on the running singleton; a test writer is fully manual. */
   private readonly autoFlush: boolean;
   private intervalId: NodeJS.Timeout | null = null;
   private isFlushInProgress = false;
   private nextGroupId = 0;
 
-  private constructor(deps: { write: WriteFn; autoStart: boolean }) {
+  private constructor(deps: {
+    write: WriteFn;
+    autoStart: boolean;
+    deleteEav?: DeleteEavRowsFn;
+  }) {
     this.write = deps.write;
+    // Default to the real batched SQL delete; tests inject a spy/noop so flushAll needs no live DB.
+    this.deleteEav = deps.deleteEav ?? deleteEavRowsForEntities;
     this.batchSize = env.LANGFUSE_INGESTION_WRITE_BATCH_SIZE;
     this.writeInterval = env.LANGFUSE_INGESTION_WRITE_INTERVAL_MS;
     this.maxAttempts = env.LANGFUSE_INGESTION_WRITE_MAX_ATTEMPTS;
@@ -107,8 +127,16 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * Build an isolated instance for tests: an injected `write` and no interval, so `flushAll` can be
    * driven explicitly against a fake that throws per row-predicate. Never touches the singleton.
    */
-  public static createForTest(deps: { write: WriteFn }): GreptimeWriter {
-    return new GreptimeWriter({ write: deps.write, autoStart: false });
+  public static createForTest(deps: {
+    write: WriteFn;
+    deleteEav?: DeleteEavRowsFn;
+  }): GreptimeWriter {
+    return new GreptimeWriter({
+      write: deps.write,
+      autoStart: false,
+      // Default to a noop so existing flush tests need no live DB; pass a spy to assert cleanup.
+      deleteEav: deps.deleteEav ?? (async () => {}),
+    });
   }
 
   /**
@@ -152,7 +180,47 @@ export class GreptimeWriter implements GreptimeProjectionSink {
       | ScoreRecordInsertType
       | DatasetRunItemRecordInsertType,
   ): void {
+    // Record the projection entity so its stale EAV rows are cleared before the current set is
+    // written (the live ingestion path; the bulk writer runs the equivalent step itself).
+    if (EAV_TABLES_FOR_PROJECTION[table]) {
+      let byProject = this.pendingEavCleanup.get(table);
+      if (!byProject) {
+        byProject = new Map();
+        this.pendingEavCleanup.set(table, byProject);
+      }
+      let ids = byProject.get(record.project_id);
+      if (!ids) {
+        ids = new Set();
+        byProject.set(record.project_id, ids);
+      }
+      ids.add(record.id);
+    }
     this.enqueueRows(buildGreptimeRowsForRecord(table, record));
+  }
+
+  /**
+   * Snapshot + clear the pending cleanup map (synchronous, so it stays consistent with the queue
+   * splice taken in the same flush turn), then batch-delete each entity's existing EAV rows. Must run
+   * BEFORE the flush writes the new EAV rows, so a key/tag/tool dropped from an updated entity does
+   * not survive. On a delete failure the rows are still written (the writer's own retry/rebuild heals
+   * a transient stale row); cleanup never blocks the projection write.
+   */
+  private async runEavCleanup(): Promise<void> {
+    if (this.pendingEavCleanup.size === 0) return;
+    const snapshot = [...this.pendingEavCleanup];
+    this.pendingEavCleanup.clear();
+    for (const [projectionTable, byProject] of snapshot) {
+      for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ?? []) {
+        try {
+          await this.deleteEav(eavTable, byProject);
+        } catch (err) {
+          logger.error(
+            `GreptimeWriter EAV cleanup delete failed for ${eavTable}`,
+            err,
+          );
+        }
+      }
+    }
   }
 
   /**
@@ -380,6 +448,11 @@ export class GreptimeWriter implements GreptimeProjectionSink {
       if (spliced.length === 0) return;
       const total = spliced.reduce((n, s) => n + s.items.length, 0);
       recordHistogram("langfuse.queue.greptime_writer.batch_size", total);
+
+      // Clear stale EAV rows for this batch's entities before writing their current set. Snapshot is
+      // synchronous (taken here, consistent with the splice above) so rows enqueued during the delete
+      // await belong to the next flush, which cleans them before writing.
+      await this.runEavCleanup();
 
       let landedRows = 0;
       await this.writeWithIsolation(this.regroup(spliced), {
