@@ -48,9 +48,9 @@ The fork ships a larger default `default-model-prices.json` than the tracked ups
 
 ### `dataset_run_items` deletion is a projection hard-delete
 
-Traces, observations, and scores delete by appending a tombstone to `raw_events`, so replay rebuilds a soft-deleted row. `dataset_run_items` instead hard-deletes the projection and relies on the replay path skipping deleted items — it does not keep a per-entity tombstone in `raw_events`. This is a deliberate, documented exception ("`raw_events` is the complete source of truth" holds for traces/observations/scores, not DRI). It works operationally; it is called out so the invariant is explicit.
+Traces, observations, and scores delete by appending a tombstone to `raw_events`, so replay rebuilds a soft-deleted row. `dataset_run_items` instead hard-deletes the projection and relies on the replay path skipping deleted items; it does not keep a per-entity tombstone in `raw_events`. This is a deliberate, documented exception ("`raw_events` is the complete source of truth" holds for traces/observations/scores, not DRI). It works operationally; it is called out so the invariant is explicit.
 
 ## Not blockers, but worth knowing
 
-- **Object storage is optional but not gone.** Ingestion needs no S3/MinIO, but media uploads, the OTel carrier, and batch/blob exports still use a storage backend — they default to a local filesystem volume. See [deployment](deployment.md).
-- **Alpha posture.** No long-term support or backports; only the latest pre-release is maintained. See [SECURITY.md](../SECURITY.md).
+- Object storage is optional but not gone. Ingestion needs no S3/MinIO, but media uploads, the OTel carrier, and batch/blob exports still use a storage backend, defaulting to a local filesystem volume. See [deployment](deployment.md).
+- Alpha posture: no long-term support or backports; only the latest pre-release is maintained. See [SECURITY.md](../SECURITY.md).

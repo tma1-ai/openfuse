@@ -20,17 +20,17 @@ Only the **latest pre-release** is supported. There is no long-term support or b
 
 ## Scope
 
-In scope — issues introduced or controlled by this fork:
+In scope (issues introduced or controlled by this fork):
 
 - the fork's application code and the GreptimeDB integration (write path, read path, deletion/replay, EAV filtering),
 - the deployment templates in this repo (Docker Compose, env examples, schema bootstrap),
 - the published `tma1ai/openfuse-web` / `tma1ai/openfuse-worker` images,
 - public API behavior where it differs from upstream Langfuse because of the GreptimeDB backend.
 
-Out of scope — report these to their respective projects:
+Out of scope (report these to their respective projects):
 
-- **upstream Langfuse** code, Langfuse Cloud, and the Langfuse SDK repositories — report to [Langfuse](https://github.com/langfuse/langfuse) (`security@langfuse.com`),
-- the **GreptimeDB** server itself, unless the vulnerability is triggered specifically by how this fork uses it — report to [GreptimeDB](https://github.com/GreptimeTeam/greptimedb),
+- upstream Langfuse code, Langfuse Cloud, and the Langfuse SDK repositories: report to [Langfuse](https://github.com/langfuse/langfuse) (`security@langfuse.com`),
+- the GreptimeDB server itself, unless the vulnerability is triggered specifically by how this fork uses it: report to [GreptimeDB](https://github.com/GreptimeTeam/greptimedb),
 - vulnerabilities requiring a pre-compromised host, or social-engineering of a maintainer.
 
 ## Disclosure

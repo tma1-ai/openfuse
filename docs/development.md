@@ -4,7 +4,7 @@ Local development setup for Openfuse (Langfuse on GreptimeDB). For deploying a s
 
 ## Prerequisites
 
-- Node — see `.nvmrc`.
+- Node (see `.nvmrc`).
 - `corepack` enabled (pnpm version is pinned in `package.json`; use `corepack pnpm@<pinned>` to avoid resolution issues).
 - Docker + Docker Compose.
 
@@ -19,7 +19,7 @@ docker compose -f docker-compose.dev.yml up -d
 # Postgres schema (upstream Langfuse migrations)
 pnpm run db:deploy
 
-# GreptimeDB schema (fork-specific) — required, run before the app
+# GreptimeDB schema (fork-specific), required before the app
 GREPTIME_GRPC_URL=localhost:4001 \
   GREPTIME_SQL_HOST=localhost \
   pnpm --filter=@langfuse/shared run greptime:migrate
@@ -28,11 +28,11 @@ pnpm run dev          # all packages
 # or: pnpm run dev:web / pnpm run dev:worker
 ```
 
-`docker-compose.dev.yml` brings up GreptimeDB (gRPC `:4001`, MySQL wire `:4002`), Postgres, and Redis with no app containers — it is the reference for the `greptimedb` service definition. MinIO is gated behind the `s3` profile and is off by default (media and the eval blob store use local volumes).
+`docker-compose.dev.yml` brings up GreptimeDB (gRPC `:4001`, MySQL wire `:4002`), Postgres, and Redis with no app containers; it is the reference for the `greptimedb` service definition. MinIO is gated behind the `s3` profile and is off by default (media and the eval blob store use local volumes).
 
 ## GreptimeDB schema
 
-The schema lives in `packages/shared/greptime/migrations/*.sql` and is applied by `greptime:migrate` (the runner is `packages/shared/src/server/greptime/applyMigrations.ts`). It discovers `.sql` files by name order, strips comments, and applies idempotent DDL. Re-run `greptime:migrate` whenever you add or pull a migration — it is safe to run repeatedly.
+The schema lives in `packages/shared/greptime/migrations/*.sql` and is applied by `greptime:migrate` (the runner is `packages/shared/src/server/greptime/applyMigrations.ts`). It discovers `.sql` files by name order, strips comments, and applies idempotent DDL. Re-run `greptime:migrate` whenever you add or pull a migration; it is safe to run repeatedly.
 
 Migrations are plain `CREATE ... IF NOT EXISTS` DDL with no ledger and no down-migrations (see [known limitations](known-limitations.md)). To inspect the schema directly:
 

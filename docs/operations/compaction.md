@@ -13,15 +13,15 @@ Measured (GreptimeDB 1.1.x, ~3.5M observations / ~14M EAV rows), same query:
 | 1022 un-compacted SST files    | **9.6 s** |
 | After `compact_table` (1 file) | **0.2 s** |
 
-`EXPLAIN ANALYZE` attributes the cost to merging the SST files, not the join or aggregation. A `key` skipping index does **not** help (the guard is anti-selective and the group-by happens after the scan) — do not add one.
+`EXPLAIN ANALYZE` attributes the cost to merging the SST files, not the join or aggregation. A `key` skipping index does not help (the guard is anti-selective and the group-by happens after the scan), so do not add one.
 
 GreptimeDB enforces a hard per-region ceiling: once a region exceeds **384 SST files**, even `count(*)` fails with `Too many files (max allowed: 384)` until background compaction catches up. The writer flushes roughly every second under load, so high ingest or a bulk backfill produces small SSTs fast.
 
 At healthy scale with compacted tables, index pruning is present and effective (bloom narrowed a `trace_id` lookup to the exact matching rows) and read queries run in tens of milliseconds. Background TWCS compaction transiently leaves a freshly-merged SST un-indexed (lazy index build), so monitor SST count and let compaction settle after big merges.
 
-## After a large backfill — mandatory manual compaction
+## After a large backfill: mandatory manual compaction
 
-Fleet reconciliation/backfill replays history through the write path, landing many small SSTs (measured: backfilling ~2.5M observations created ~4032 SST files on `observations_usage_cost` — enough to trip the 384-file wall and degrade every by-type dashboard to ~10 s).
+Fleet reconciliation/backfill replays history through the write path, landing many small SSTs. Measured: backfilling ~2.5M observations created ~4032 SST files on `observations_usage_cost`, enough to trip the 384-file wall and degrade every by-type dashboard to ~10 s.
 
 **After the backfill drains, compact the affected tables once**, over the MySQL wire (`:4002`) against `GREPTIME_DB` (`openfuse`):
 
@@ -30,7 +30,7 @@ ADMIN compact_table('observations_usage_cost', 'strict_window', 86400);
 ADMIN compact_table('observations',            'strict_window', 86400);
 ```
 
-`strict_window` with an explicit window (86400 s = 1 day) compacts within day-aligned windows. Prefer a real window over a bare `0`: `window=0` collapses the whole table into the fewest files in one pass — fine for a short-lived test table, expensive and disruptive on a production table with a long TTL (default 730d). Compaction of `observations` can take a while at scale; run it fire-and-forget and watch the SST metric drop back to single digits.
+`strict_window` with an explicit window (86400 s = 1 day) compacts within day-aligned windows. Prefer a real window over a bare `0`: `window=0` collapses the whole table into the fewest files in one pass, which is fine for a short-lived test table but expensive and disruptive on a production table with a long TTL (default 730d). Compaction of `observations` can take a while at scale; run it fire-and-forget and watch the SST metric drop back to single digits.
 
 ### `compact_table` reference
 
@@ -39,19 +39,19 @@ ADMIN compact_table(<table> [, <type> [, <options>]])
 ```
 
 - `<type>`: `regular` (default, TWCS; option `parallelism=N`) or `strict_window` / `swcs` (window compaction; option = window seconds, or `window=<seconds>,parallelism=<N>`).
-- `window_seconds = 0` — no windowing, fewest output files. Avoid on long-TTL production tables.
+- `window_seconds = 0`: no windowing, fewest output files. Avoid on long-TTL production tables.
 
 ## Steady-state monitoring
 
 The worker samples per-table region statistics every 60 s (`GreptimeStatsRunner`, gated by `LANGFUSE_GREPTIME_STATS_ENABLED`, period `LANGFUSE_GREPTIME_STATS_INTERVAL_MS`) and emits gauges, all tagged by `table`:
 
-| Metric                            | Meaning                                            |
-| --------------------------------- | -------------------------------------------------- |
-| `langfuse.greptime.sst_files_max` | Per-region **maximum** SST count — hits 384 first. |
-| `langfuse.greptime.sst_files`     | Sum of SST files across the table's regions.       |
-| `langfuse.greptime.region_rows`   | Row count.                                         |
-| `langfuse.greptime.disk_size`     | On-disk bytes.                                     |
-| `langfuse.greptime.memtable_size` | In-memory (un-flushed) bytes.                      |
+| Metric                            | Meaning                                       |
+| --------------------------------- | --------------------------------------------- |
+| `langfuse.greptime.sst_files_max` | Per-region maximum SST count; hits 384 first. |
+| `langfuse.greptime.sst_files`     | Sum of SST files across the table's regions.  |
+| `langfuse.greptime.region_rows`   | Row count.                                    |
+| `langfuse.greptime.disk_size`     | On-disk bytes.                                |
+| `langfuse.greptime.memtable_size` | In-memory (un-flushed) bytes.                 |
 
 **Alert on `langfuse.greptime.sst_files_max` approaching 384** (e.g. warn at ~200). That is the value that trips the wall, so it is a better signal than the sum. A steady climb means ingest is outrunning background compaction.
 

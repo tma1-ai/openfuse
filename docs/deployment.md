@@ -1,8 +1,8 @@
 # Deployment
 
-How to self-host Openfuse (Langfuse on GreptimeDB) with Docker Compose. The store is GreptimeDB — gRPC `:4001` for ingest writes, MySQL wire `:4002` for reads + migrations. There is no ClickHouse in this build.
+How to self-host Openfuse (Langfuse on GreptimeDB) with Docker Compose. The store is GreptimeDB: gRPC `:4001` for ingest writes, MySQL wire `:4002` for reads and migrations. There is no ClickHouse in this build.
 
-For local development (no app containers), see [development](development.md). For the one performance lever — compaction — see [operations: compaction](operations/compaction.md).
+For local development (no app containers), see [development](development.md). For the one performance lever, compaction, see [operations: compaction](operations/compaction.md).
 
 ## 1. Configuration
 
@@ -43,7 +43,7 @@ Ingestion and eval-generated scores persist to GreptimeDB `raw_events`, not to a
 
 ## 2. Bootstrap the GreptimeDB schema (required, before first start)
 
-Postgres migrations run automatically from the web container entrypoint. **The GreptimeDB schema does not** — the entrypoint deliberately leaves it out. Apply it out of band, once per environment, **before** the web/worker containers serve traffic, and again after pulling new `packages/shared/greptime/migrations/*.sql`:
+Postgres migrations run automatically from the web container entrypoint. The GreptimeDB schema does not; the entrypoint deliberately leaves it out. Apply it out of band, once per environment, before the web/worker containers serve traffic, and again after pulling new `packages/shared/greptime/migrations/*.sql`:
 
 For the default Compose deployment, run the migration from your host shell and override the container-only service name from `.env`:
 
@@ -53,9 +53,9 @@ GREPTIME_GRPC_URL=localhost:4001 \
   pnpm --filter=@langfuse/shared run greptime:migrate
 ```
 
-Migrations are idempotent (`CREATE DATABASE / TABLE IF NOT EXISTS`), so re-running is safe. The same command also applies the **database-level retention TTL** — an idempotent `ALTER DATABASE ... SET 'ttl'` built from `LANGFUSE_GREPTIME_TTL` (default `730d`), covering every table at once. To change retention, set `LANGFUSE_GREPTIME_TTL` and re-run; a manual `ALTER DATABASE` is reverted on the next bootstrap.
+Migrations are idempotent (`CREATE DATABASE / TABLE IF NOT EXISTS`), so re-running is safe. The same command also applies the database-level retention TTL: an idempotent `ALTER DATABASE ... SET 'ttl'` built from `LANGFUSE_GREPTIME_TTL` (default `730d`) that covers every table at once. To change retention, set `LANGFUSE_GREPTIME_TTL` and re-run; a manual `ALTER DATABASE` is reverted on the next bootstrap.
 
-> If you skip this step, the stack starts but reads fail later in the product path. There is no automatic schema check at startup yet — treat `greptime:migrate` as a mandatory deploy step.
+> If you skip this step, the stack starts but reads fail later in the product path. There is no automatic schema check at startup yet, so treat `greptime:migrate` as a mandatory deploy step.
 
 ## 3. The Docker Compose stack
 

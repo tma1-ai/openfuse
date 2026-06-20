@@ -6,13 +6,15 @@ Openfuse is a fork of Langfuse with the analytics store swapped from ClickHouse 
 
 ## Version tracked
 
-This fork currently tracks upstream Langfuse **`v3.184.1`**. The web app, public APIs, Postgres schema, and SDK contracts come from that release.
+This fork currently tracks upstream Langfuse `v3.184.1`. The web app, public APIs, Postgres schema, and SDK contracts come from that release.
 
 ## SDK and API compatibility
 
-- **Existing Langfuse SDKs work unchanged.** The public ingestion API and OTel ingestion endpoint are the same; point any Langfuse SDK at your Openfuse URL with project keys and it ingests normally.
-- **Public REST GET endpoints** (traces, observations, sessions, scores, datasets, metrics) are served from GreptimeDB and return the same shapes. Dashboard/metrics outputs are verified byte-for-byte against upstream for the covered surface; the few intentional divergences are listed in [known limitations](known-limitations.md) and the [parity ledger](greptimedb-migration/parity/ledger.md) (all are cases where the fork is equal or more correct).
-- **Stricter validation:** a handful of nonsensical dashboard queries that upstream silently accepts return `400 InvalidRequestError` here. A client relying on upstream's leniency may need to adjust.
+Existing Langfuse SDKs work unchanged: the public ingestion API and the OTel endpoint are the same, so pointing any Langfuse SDK at your Openfuse URL with project keys ingests normally.
+
+The public REST GET endpoints (traces, observations, sessions, scores, datasets, metrics) are served from GreptimeDB and return the same shapes. Dashboard and metrics output is checked byte-for-byte against upstream for the covered surface; the few intentional divergences are listed in [known limitations](known-limitations.md) and the [parity ledger](greptimedb-migration/parity/ledger.md), all cases where the fork is equal or more correct.
+
+One thing to watch: the fork rejects a handful of nonsensical dashboard queries with `400 InvalidRequestError` that upstream silently accepts, so a client relying on upstream's leniency may need to adjust.
 
 ## What differs from upstream
 
@@ -29,14 +31,14 @@ See [architecture](architecture.md) for the full picture and [known limitations]
 
 ## Can I migrate an existing Langfuse deployment's data?
 
-**Not in place, and not automatically.** Openfuse is a fresh-install target: there is no tool to copy historical ClickHouse data into GreptimeDB. Treat it as a new analytics backend — stand up a fresh Openfuse stack and start ingesting. Postgres (app/config data) uses upstream Langfuse's schema and migrations, so that side is compatible, but the analytics history does not transfer.
+Not in place, and not automatically. Openfuse is a fresh-install target: there is no tool to copy historical ClickHouse data into GreptimeDB. Treat it as a new analytics backend, stand up a fresh Openfuse stack, and start ingesting. Postgres (app/config data) uses upstream Langfuse's schema and migrations, so that side is compatible, but the analytics history does not transfer.
 
 If you need historical analytics data, keep it in your existing Langfuse deployment; this fork is for evaluating and running GreptimeDB-backed Langfuse on new data.
 
 ## Upstream Langfuse migrations
 
-- **Postgres** migrations are upstream Langfuse's and are applied as-is by the web entrypoint.
-- **Analytics-store** migrations from upstream (ClickHouse DDL) do **not** apply here — the GreptimeDB schema is fork-specific (`packages/shared/greptime/migrations/*.sql`). When porting upstream changes that touch the analytics store, re-express them against the GreptimeDB layer; see [CONTRIBUTING.md](../CONTRIBUTING.md).
+- Postgres migrations are upstream Langfuse's and are applied as-is by the web entrypoint.
+- Analytics-store migrations from upstream (ClickHouse DDL) do not apply here; the GreptimeDB schema is fork-specific (`packages/shared/greptime/migrations/*.sql`). When porting upstream changes that touch the analytics store, re-express them against the GreptimeDB layer; see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Posture
 
