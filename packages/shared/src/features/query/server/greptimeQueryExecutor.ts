@@ -37,8 +37,22 @@ const FIXED_BUCKET_MS: Record<string, number> = {
   "1w": 604_800_000,
 };
 
-const isoOf = (v: unknown): string =>
-  v instanceof Date ? v.toISOString() : new Date(String(v)).toISOString();
+const msOf = (v: unknown): number =>
+  v instanceof Date ? v.getTime() : new Date(String(v)).getTime();
+
+// Granularities ClickHouse formats as a bare date (YYYY-MM-DD); the rest as ISO seconds + Z.
+const DATE_GRANULARITIES = new Set(["day", "week", "month", "1d", "2d", "1w"]);
+
+/**
+ * Format a bucket epoch to match the ClickHouse `time_dimension` string exactly:
+ *  - day/week/month -> `YYYY-MM-DD`
+ *  - minute/hour (and sub-hour windows) -> `YYYY-MM-DDTHH:mm:ssZ` (no milliseconds)
+ */
+const formatBucket = (ms: number, granularity?: string): string => {
+  const iso = new Date(ms).toISOString();
+  if (granularity && DATE_GRANULARITIES.has(granularity)) return iso.slice(0, 10);
+  return iso.replace(/\.\d{3}Z$/, "Z");
+};
 
 /** Bucket start epochs across [from, to], matching date_trunc (week/month) / date_bin (fixed). */
 const bucketGrid = (
@@ -79,26 +93,38 @@ const bucketGrid = (
   return starts;
 };
 
-/** Coerce a raw GreptimeDB row to the ClickHouse output shape (numeric metrics + ISO time bucket). */
-const coerceRow = (
+/**
+ * Single result-shaping pass ("middleware") applied to every output row so the GreptimeDB result
+ * matches the ClickHouse row shape exactly:
+ *  - integer-typed metrics (count/uniq/sum of integers) -> JSON string ("2"), as ClickHouse serializes
+ *    UInt64/Int64; float-typed metrics (avg, costs, percentiles) -> JSON number (0.0028, trailing
+ *    zeros trimmed), as ClickHouse serializes Float64;
+ *  - `time_dimension` -> ClickHouse's per-granularity string (idempotent if already formatted).
+ * Array dimensions (tags) are returned natively by GreptimeDB (the query builder groups them raw
+ * instead of `min()`, which would emit a binary buffer) so they need no shaping here.
+ */
+const shapeRow = (
   row: Record<string, unknown>,
-  metricColumns: string[],
+  metricColumns: Array<{ col: string; integer: boolean }>,
   hasTime: boolean,
+  granularity?: string,
 ): Record<string, unknown> => {
-  const out: Record<string, unknown> = { ...row };
-  for (const col of metricColumns) {
-    if (col in out && out[col] != null) out[col] = Number(out[col]);
+  for (const { col, integer } of metricColumns) {
+    if (col in row && row[col] != null) {
+      row[col] = integer ? String(row[col]) : Number(row[col]);
+    }
   }
-  if (hasTime && out.time_dimension != null) {
-    out.time_dimension = isoOf(out.time_dimension);
+  if (hasTime && row.time_dimension != null) {
+    row.time_dimension = formatBucket(msOf(row.time_dimension), granularity);
   }
-  return out;
+  return row;
 };
 
 /** Expand a per-entity raw JSON fetch into one row per (bucket, group dims, dynamic key). */
 const expandByType = (
   rows: Array<Record<string, unknown>>,
   desc: NonNullable<PostProcess["byType"]>,
+  granularity?: string,
 ): Array<Record<string, unknown>> => {
   const groups = new Map<
     string,
@@ -106,7 +132,7 @@ const expandByType = (
   >();
   for (const row of rows) {
     const map = greptimeJson<Record<string, number>>(row[desc.jsonColumn], {});
-    const time = desc.hasTime ? isoOf(row.time_dimension) : null;
+    const time = desc.hasTime ? formatBucket(msOf(row.time_dimension), granularity) : null;
     const dims = desc.groupDimensionAliases.map((a) => row[a]);
     const key = JSON.stringify([time, ...dims]);
     const g = groups.get(key) ?? { time, dims, sums: {} };
@@ -121,7 +147,7 @@ const expandByType = (
       desc.groupDimensionAliases.forEach((a, i) => (r[a] = g.dims[i]));
       r[desc.keyDimensionAlias] = k;
       if (desc.hasTime) r.time_dimension = g.time;
-      r[desc.valueMetricAlias] = v;
+      r[desc.valueMetricAlias] = v; // raw; shapeRow applies the int/float ClickHouse representation
       out.push(r);
     }
   }
@@ -152,7 +178,7 @@ const gapFill = (
 
   const out: Array<Record<string, unknown>> = [];
   for (const b of grid) {
-    const iso = new Date(b).toISOString();
+    const iso = formatBucket(b, fill.granularity);
     for (const tup of tuples.values()) {
       const existing = byKey.get(JSON.stringify([b, ...tup]));
       if (existing) {
@@ -161,7 +187,7 @@ const gapFill = (
       }
       const r: Record<string, unknown> = { time_dimension: iso };
       dims.forEach((a, i) => (r[a] = tup[i]));
-      for (const m of fill.metricAliases) r[m] = 0;
+      for (const m of fill.metricAliases) r[m] = 0; // raw; shapeRow applies the ClickHouse repr
       out.push(r);
     }
   }
@@ -230,17 +256,19 @@ export async function executeGreptimeQuery(
     return runHistogram(rows, parameters, postProcess.histogram);
   }
 
-  let result: Array<Record<string, unknown>>;
-  if (postProcess.byType) {
-    result = expandByType(rows, postProcess.byType);
-  } else {
-    result = rows.map((r) =>
-      coerceRow(r, postProcess.metricColumns, postProcess.hasTimeDimension),
-    );
-  }
+  // Granularity for ClickHouse-matching time_dimension formatting ("auto" resolves in timeFill).
+  const granularity =
+    postProcess.timeFill?.granularity ?? query.timeDimension?.granularity;
 
+  // Expand/gap-fill operate on raw rows; the single shapeRow pass below applies the ClickHouse
+  // output shape (int->string / float->number / time format) uniformly to the final result.
+  let result = postProcess.byType
+    ? expandByType(rows, postProcess.byType, granularity)
+    : rows;
   if (postProcess.timeFill) {
     result = gapFill(result, postProcess.timeFill);
   }
-  return result;
+  return result.map((r) =>
+    shapeRow(r, postProcess.metricColumns, postProcess.hasTimeDimension, granularity),
+  );
 }

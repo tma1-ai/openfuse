@@ -11,7 +11,12 @@ pnpm run seed -- list          # scenarios and flags (--json for machines)
 pnpm run seed -- trace-tree --observations 5000 --breadth 500 --v4
 pnpm run seed -- long-session --traces 300 --observations-per-trace 8
 pnpm run seed -- many-traces --count 100000 --days 14
+pnpm run seed -- dataset-run-scale --runs 100 --items 500 --duplicates 5
 ```
+
+`dataset-run-scale` bulk-writes `dataset_run_items` with duplicate physical rows per logical
+(run,item) key for the F7 ROW_NUMBER dedup benchmark — GreptimeDB-only (no Postgres/traces), a
+performance scenario, not a UI scenario.
 
 The last stdout line of a run is a JSON summary with `traceIds`,
 `sessionIds`, `counts`, `verified` (ClickHouse readback), and `links` (UI

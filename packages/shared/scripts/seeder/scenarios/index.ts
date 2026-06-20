@@ -1,4 +1,5 @@
 import { datasetExperimentScenario } from "./dataset-experiment";
+import { datasetRunScaleScenario } from "./dataset-run-scale";
 import { longSessionScenario } from "./long-session";
 import { manyTracesScenario } from "./many-traces";
 import { traceTreeScenario } from "./trace-tree";
@@ -12,6 +13,7 @@ export const scenarios: Record<string, ScenarioDefinition> = {
   "long-session": longSessionScenario,
   "many-traces": manyTracesScenario,
   "dataset-experiment": datasetExperimentScenario,
+  "dataset-run-scale": datasetRunScaleScenario,
 };
 
 export * from "./types";
