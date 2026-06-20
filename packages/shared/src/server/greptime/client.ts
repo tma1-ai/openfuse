@@ -64,7 +64,7 @@ const buildSqlPool = (host: string): mysql.Pool =>
   mysql.createPool({
     host,
     port: env.GREPTIME_SQL_PORT,
-    user: env.GREPTIME_USER || "root",
+    user: env.GREPTIME_USER || "openfuse",
     password: env.GREPTIME_PASSWORD || undefined,
     database: env.GREPTIME_DB,
     connectionLimit: env.GREPTIME_SQL_MAX_OPEN_CONNECTIONS,

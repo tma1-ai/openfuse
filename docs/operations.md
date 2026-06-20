@@ -13,7 +13,8 @@ Configuration is split by store, so there is no single config file to learn:
 
 - **Fork-specific** `GREPTIME_*`, retention (`LANGFUSE_GREPTIME_TTL`), object-storage, and the migration toggles are documented in [deployment · Configuration](deployment.md#1-configuration); the source of truth is `packages/shared/src/env.ts`.
 - **Everything else** (auth/SSO, Postgres, Redis, secrets, headers, scaling) is upstream Langfuse and unchanged — see [Langfuse · Configuration](https://langfuse.com/self-hosting/configuration).
-- **GreptimeDB server config** (data dir, object storage, WAL, table options) is GreptimeDB's own — see [GreptimeDB · Configuration](https://docs.greptime.com/user-guide/deployments-administration/configuration/).
+- **GreptimeDB server config** ships at `docker/greptimedb/config.toml` (mounted read-only, passed via `--config-file`): GreptimeDB defaults plus commented tuning hints. Everything else (data dir, object storage, WAL, table options) is GreptimeDB's own — see [GreptimeDB · Configuration](https://docs.greptime.com/user-guide/deployments-administration/configuration/).
+- **GreptimeDB authentication** is off by default and turns on when `GREPTIME_PASSWORD` is set: the `greptimedb` container then enforces a [static user](https://docs.greptime.com/user-guide/deployments-administration/authentication/static/) and the app authenticates with the matching `GREPTIME_USER`/`GREPTIME_PASSWORD`. Set both for any real deployment — see [deployment · GreptimeDB authentication](deployment.md#greptimedb-authentication).
 
 ## Monitoring
 

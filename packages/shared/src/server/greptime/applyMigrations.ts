@@ -62,7 +62,7 @@ export const applyGreptimeMigrations = async (
   const connection = await mysql.createConnection({
     host: env.GREPTIME_SQL_HOST,
     port: env.GREPTIME_SQL_PORT,
-    user: env.GREPTIME_USER || "root",
+    user: env.GREPTIME_USER || "openfuse",
     password: env.GREPTIME_PASSWORD || undefined,
     database: "public",
   });

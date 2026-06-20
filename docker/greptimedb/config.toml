@@ -1,0 +1,26 @@
+# GreptimeDB standalone configuration for Openfuse.
+#
+# Mounted read-only into the greptimedb container and passed via `--config-file` (see
+# docker/greptimedb/entrypoint.sh and the docker-compose*.yml files). Network addresses,
+# `data_home`, and static auth are set by the entrypoint/CLI flags, not here.
+#
+# This ships GreptimeDB's defaults. The performance knobs below are left commented at their "Auto"
+# defaults — "Auto" sizes caches and buffers from system memory, which is the right choice for a
+# single node. Tune only if the metrics in the perf guide say so:
+# https://docs.greptime.com/user-guide/deployments-administration/performance-tuning/performance-tuning-tips/
+
+[logging]
+level = "info"
+
+# Storage engine tuning. Defaults are "Auto" (sized from system memory) and fit a single node.
+# Uncomment and raise only when the perf guide's metrics justify it:
+#   - page_cache_size: raise toward 1/4 of RAM if the read-path cache hit ratio drops below 50%.
+#   - global_write_buffer_size: raise under sustained high ingest to flush fewer, larger SST files.
+#   - enable_write_cache + write_cache_size: enable only when storage is object storage (S3/OSS),
+#     allowing at least ~1/10 of disk for the write cache.
+# [[region_engine]]
+# [region_engine.mito]
+# page_cache_size = "Auto"
+# global_write_buffer_size = "Auto"
+# enable_write_cache = false
+# write_cache_size = "5GiB"

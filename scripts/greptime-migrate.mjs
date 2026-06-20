@@ -17,7 +17,7 @@
 //   4. Release the advisory lock and close both connections.
 //
 // Config comes from env (same names/defaults as packages/shared/src/env.ts):
-//   GREPTIME_SQL_HOST (localhost), GREPTIME_SQL_PORT (4002), GREPTIME_USER (root if empty),
+//   GREPTIME_SQL_HOST (localhost), GREPTIME_SQL_PORT (4002), GREPTIME_USER (openfuse if empty),
 //   GREPTIME_PASSWORD, GREPTIME_DB (openfuse), LANGFUSE_GREPTIME_TTL (730d),
 //   GREPTIME_MIGRATIONS_DIR (defaults to ./packages/shared/greptime/migrations from cwd),
 //   DIRECT_URL || DATABASE_URL (Postgres, for the advisory lock).
@@ -46,7 +46,7 @@ const GREPTIME_TTL = /^([0-9]+[a-z]+)+$/;
 const config = {
   host: env.GREPTIME_SQL_HOST || "localhost",
   port: Number(env.GREPTIME_SQL_PORT || 4002),
-  user: env.GREPTIME_USER || "root",
+  user: env.GREPTIME_USER || "openfuse",
   password: env.GREPTIME_PASSWORD || undefined,
   database: env.GREPTIME_DB || "openfuse",
   ttl: (env.LANGFUSE_GREPTIME_TTL || "730d").trim().toLowerCase(),

@@ -5,481 +5,498 @@ import {
   isValidGreptimeDuration,
 } from "./utils/greptimeRetentionDuration";
 
-const EnvSchema = z.object({
-  NEXT_PUBLIC_LANGFUSE_CLOUD_REGION: z.string().optional(),
-  // Dev-only override: set to an ISO datetime string to shift the legacy blob
-  // export cutoff for local testing (e.g. "2020-01-01T00:00:00.000Z" makes
-  // every project post-cutoff; "2099-01-01T00:00:00.000Z" grandfathers all).
-  NEXT_PUBLIC_LANGFUSE_BLOB_EXPORT_CUTOFF: z.iso.datetime().optional(),
-  NODE_ENV: z
-    .enum(["development", "test", "production"])
-    .default("development"),
-  NEXTAUTH_URL: z.url().optional(),
-  EMAIL_FROM_ADDRESS: z.string().optional(),
-  // Standard SMTP URL (`smtp://`, `smtps://`) or `ses://<region>` to send via
-  // AWS SES using the default AWS credential chain (IAM role, SSO, env vars).
-  // Example: `ses://us-east-1`.
-  SMTP_CONNECTION_URL: z.string().optional(),
-  CLOUD_CRM_EMAIL: z.string().optional(),
-  REDIS_HOST: z.string().nullish(),
-  REDIS_PORT: z.coerce
-    .number() // .env files convert numbers to strings, therefore we have to enforce them to be numbers
-    .positive()
-    .max(65536, `options.port should be >= 0 and < 65536`)
-    .default(6379)
-    .nullable(),
-  REDIS_AUTH: z.string().nullish(),
-  REDIS_USERNAME: z.string().nullish(),
-  REDIS_CONNECTION_STRING: z.string().nullish(),
-  // Optional prefix for Redis keys. Used by BullMQ queues via their native prefix option
-  // and by the singleton cache instance via ioredis keyPrefix. Useful for multi-tenant Redis.
-  REDIS_KEY_PREFIX: z.string().nullish(),
-  REDIS_TLS_ENABLED: z.enum(["true", "false"]).default("false"),
-  REDIS_TLS_CA_PATH: z.string().optional(),
-  REDIS_TLS_CERT_PATH: z.string().optional(),
-  REDIS_TLS_KEY_PATH: z.string().optional(),
-  REDIS_TLS_SERVERNAME: z.string().optional(),
-  REDIS_TLS_REJECT_UNAUTHORIZED: z.enum(["true", "false"]).optional(),
-  REDIS_TLS_CHECK_SERVER_IDENTITY: z.enum(["true", "false"]).optional(),
-  REDIS_TLS_SECURE_PROTOCOL: z.string().optional(),
-  REDIS_TLS_CIPHERS: z.string().optional(),
-  REDIS_TLS_HONOR_CIPHER_ORDER: z.enum(["true", "false"]).optional(),
-  REDIS_TLS_KEY_PASSPHRASE: z.string().optional(),
-  REDIS_ENABLE_AUTO_PIPELINING: z.enum(["true", "false"]).default("true"),
-  LANGFUSE_BULLMQ_SKIP_REDIS_VERSION_CHECK: z
-    .enum(["true", "false"])
-    .default("false"),
-  // Redis Cluster Configuration
-  REDIS_CLUSTER_ENABLED: z.enum(["true", "false"]).default("false"),
-  REDIS_CLUSTER_NODES: z.string().optional(),
-  REDIS_CLUSTER_SLOTS_REFRESH_TIMEOUT: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(5000),
-  REDIS_SENTINEL_ENABLED: z.enum(["true", "false"]).default("false"),
-  REDIS_SENTINEL_NODES: z.string().optional(),
-  REDIS_SENTINEL_MASTER_NAME: z.string().optional(),
-  REDIS_SENTINEL_USERNAME: z.string().optional(),
-  REDIS_SENTINEL_PASSWORD: z.string().optional(),
-  ENCRYPTION_KEY: z
-    .string()
-    .length(
-      64,
-      "ENCRYPTION_KEY must be 256 bits, 64 string characters in hex format, generate via: openssl rand -hex 32",
-    )
-    .optional(),
-  LANGFUSE_CACHE_MODEL_MATCH_ENABLED: z.enum(["true", "false"]).default("true"),
-  LANGFUSE_CACHE_MODEL_MATCH_TTL_SECONDS: z.coerce.number().default(86400), // 24 hours
-  LANGFUSE_LOCAL_CACHE_MODEL_MATCH_ENABLED: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_LOCAL_CACHE_MODEL_MATCH_TTL_MS: z.coerce
-    .number()
-    .positive()
-    .default(10_000),
-  LANGFUSE_LOCAL_CACHE_MODEL_MATCH_MAX: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(20_000),
-  LANGFUSE_CACHE_PROMPT_ENABLED: z.enum(["true", "false"]).default("true"),
-  LANGFUSE_CACHE_PROMPT_TTL_SECONDS: z.coerce.number().default(3600), // 1h
-  // GreptimeDB write path (02-write-path.md). gRPC endpoint for the ingester (writes);
-  // MySQL-wire endpoint for the full-history read + read path. Local dev defaults match a
-  // single-node GreptimeDB (gRPC 4001, MySQL 4002, no auth).
-  // Comma-separated for a cluster's multiple frontends (e.g. "fe1:4001,fe2:4001"); the SDK
-  // load-balances and fails over across them. A single value keeps single-endpoint behaviour.
-  GREPTIME_GRPC_URL: z.string().default("localhost:4001"),
-  GREPTIME_SQL_HOST: z.string().default("localhost"),
-  GREPTIME_SQL_PORT: z.coerce.number().int().positive().default(4002),
-  // Optional dedicated read-only MySQL host; falls back to GREPTIME_SQL_HOST.
-  GREPTIME_SQL_READ_ONLY_HOST: z.string().optional(),
-  GREPTIME_DB: z
-    .string()
-    .default("openfuse")
-    .refine(isValidGreptimeDatabaseName, {
-      message:
-        "GREPTIME_DB must be an unquoted GreptimeDB identifier (a lowercase letter or underscore, then lowercase letters, digits, or underscores) so ALTER DATABASE retention can target it",
-    }),
-  GREPTIME_USER: z.string().default(""),
-  GREPTIME_PASSWORD: z.string().default(""),
-  GREPTIME_SQL_MAX_OPEN_CONNECTIONS: z.coerce.number().int().default(25),
-  GREPTIME_RAW_EVENTS_TABLE: z.string().default("raw_events"),
-  // GreptimeDB database-level retention (TTL). Applies to every table in the database (raw_events,
-  // projections, EAV) with one shared expiry; default 730d (2 years). humantime duration, e.g.
-  // "730d", "104w", "2y". Applied idempotently at schema bootstrap (greptime:migrate). Change
-  // retention for the whole store at any time with a single `ALTER DATABASE ... SET 'ttl'`.
-  LANGFUSE_GREPTIME_TTL: z
-    .string()
-    .default("730d")
-    .refine(isValidGreptimeDuration, {
-      message:
-        "LANGFUSE_GREPTIME_TTL must be a humantime duration such as '730d', '104w', or '2y'",
-    }),
-  LANGFUSE_ENABLE_SINGLE_LEVEL_QUERY_OPTIMIZATION: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_ROOT_EVENT_CONDITION_MAX_WINDOW_HOURS: z.coerce
-    .number()
-    .int()
-    .nonnegative()
-    .default(168), // 7 days
-  LANGFUSE_INGESTION_QUEUE_DELAY_MS: z.coerce
-    .number()
-    .nonnegative()
-    .default(15_000),
-  LANGFUSE_INGESTION_QUEUE_SHARD_COUNT: z.coerce.number().positive().default(1),
-  LANGFUSE_INGESTION_SECONDARY_QUEUE_SHARD_COUNT: z.coerce
-    .number()
-    .positive()
-    .default(1),
-  LANGFUSE_OTEL_INGESTION_QUEUE_SHARD_COUNT: z.coerce
-    .number()
-    .positive()
-    .default(1),
-  LANGFUSE_OTEL_INGESTION_SECONDARY_QUEUE_SHARD_COUNT: z.coerce
-    .number()
-    .positive()
-    .default(1),
-  LANGFUSE_OTEL_MAX_SPAN_BYTES: z.coerce.number().positive().default(9_500_000), // 9.5MB — just under ClickHouse's 10MB min_chunk_bytes_for_parallel_parsing default
-  LANGFUSE_EVAL_EXECUTION_QUEUE_SHARD_COUNT: z.coerce
-    .number()
-    .positive()
-    .default(1),
-  LANGFUSE_EVAL_EXECUTION_SECONDARY_QUEUE_SHARD_COUNT: z.coerce
-    .number()
-    .positive()
-    .default(1),
-  LANGFUSE_LLM_AS_JUDGE_EXECUTION_QUEUE_SHARD_COUNT: z.coerce
-    .number()
-    .positive()
-    .default(1),
-  LANGFUSE_CODE_EVAL_EXECUTION_QUEUE_SHARD_COUNT: z.coerce
-    .number()
-    .positive()
-    .default(1),
-  LANGFUSE_CODE_EVAL_DISPATCHER: z
-    .enum(["insecure-local", "aws-lambda"])
-    .optional(),
-  LANGFUSE_CODE_EVAL_AWS_LAMBDA_ENDPOINT: z.string().optional(),
-  LANGFUSE_CODE_EVAL_AWS_LAMBDA_NODE_FUNCTION_NAME: z
-    .string()
-    .default("code-based-eval-executor-node"),
-  LANGFUSE_CODE_EVAL_AWS_LAMBDA_PYTHON_FUNCTION_NAME: z
-    .string()
-    .default("code-based-eval-executor-python"),
-  LANGFUSE_CODE_EVAL_LOCAL_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(2_000),
-  LANGFUSE_TRACE_UPSERT_QUEUE_SHARD_COUNT: z.coerce
-    .number()
-    .positive()
-    .default(1),
-  LANGFUSE_TRACE_UPSERT_QUEUE_ATTEMPTS: z.coerce.number().positive().default(2),
-  LANGFUSE_TRACE_DELETE_DELAY_MS: z.coerce
-    .number()
-    .nonnegative()
-    .default(5_000),
-  LANGFUSE_DELETE_SKIP_PROJECT_IDS: z
-    .string()
-    .optional()
-    .transform((s) => (s ? s.split(",").map((id) => id.trim()) : [])),
-  SALT: z.string().optional(), // used by components imported by web package
-  LANGFUSE_LOG_LEVEL: z
-    .enum(["trace", "debug", "info", "warn", "error", "fatal"])
-    .optional(),
-  LANGFUSE_LOG_FORMAT: z.enum(["text", "json"]).default("text"),
-  LANGFUSE_LOG_PROPAGATED_HEADERS: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
-    ),
-  ENABLE_AWS_CLOUDWATCH_METRIC_PUBLISHING: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_S3_CONCURRENT_WRITES: z.coerce.number().positive().default(50),
-  LANGFUSE_S3_UPLOAD_ENABLE_BUFFERED: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_S3_UPLOAD_MAX_PART_ATTEMPTS: z.coerce
-    .number()
-    .min(1)
-    .max(10)
-    .default(3),
-  LANGFUSE_S3_UPLOAD_MAX_CONCURRENT_PARTS: z.coerce
-    .number()
-    .min(1)
-    .max(10)
-    .default(3),
-  // Optional: ingestion and eval-generated scores persist to GreptimeDB raw_events, not S3. A bucket
-  // is only needed when LANGFUSE_EVENT_STORAGE_BACKEND is "s3" (the OTel ingestion carrier and the
-  // eval observation blob store). The schema default is "s3", but the Compose stack overrides both
-  // blob backends to "local", so a stock deployment needs no object store.
-  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string().optional(),
-  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: z.string().default(""),
-  LANGFUSE_S3_EVENT_UPLOAD_REGION: z.string().optional(),
-  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: z.string().optional(),
-  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: z.string().optional(),
-  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: z.string().optional(),
-  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_S3_EVENT_UPLOAD_SSE: z.enum(["AES256", "aws:kms"]).optional(),
-  LANGFUSE_S3_EVENT_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
-  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: z.string().optional(),
-  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: z.string().default(""),
-  LANGFUSE_S3_MEDIA_UPLOAD_REGION: z.string().optional(),
-  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: z.string().optional(),
-  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: z.string().optional(),
-  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: z.string().optional(),
-  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_S3_MEDIA_UPLOAD_SSE: z.enum(["AES256", "aws:kms"]).optional(),
-  LANGFUSE_S3_MEDIA_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
-  LANGFUSE_MEDIA_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
-  LANGFUSE_MEDIA_LOCAL_PATH: z.string().optional(),
-  // Backend for the event blob store: the OTel ingestion carrier (resourceSpans passed from the API
-  // to the worker) and the eval observation blob store. "local" persists to a shared filesystem
-  // volume so neither needs an object store.
-  LANGFUSE_EVENT_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
-  LANGFUSE_EVENT_LOCAL_PATH: z.string().optional(),
-  LANGFUSE_USE_AZURE_BLOB: z.enum(["true", "false"]).default("false"),
-  LANGFUSE_AZURE_SKIP_CONTAINER_CHECK: z
-    .enum(["true", "false"])
-    .default("true"),
-  LANGFUSE_USE_GOOGLE_CLOUD_STORAGE: z.enum(["true", "false"]).default("false"),
-  LANGFUSE_GOOGLE_CLOUD_STORAGE_CREDENTIALS: z.string().optional(),
-  GOOGLE_CLOUD_UNIVERSE_DOMAIN: z.string().default("googleapis.com"),
-  LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_OCI_AUTH_TYPE: z
-    .enum([
-      "workload_identity",
-      "instance_principal",
-      "resource_principal",
-      "oci_profile",
-      "session_token",
-    ])
-    .optional(),
-  LANGFUSE_OCI_CONFIG_FILE: z.string().optional(),
-  LANGFUSE_OCI_CONFIG_PROFILE: z.string().optional(),
-  NODE_EXTRA_CA_CERTS: z.string().optional(),
-  STRIPE_SECRET_KEY: z.string().optional(),
+const EnvSchema = z
+  .object({
+    NEXT_PUBLIC_LANGFUSE_CLOUD_REGION: z.string().optional(),
+    // Dev-only override: set to an ISO datetime string to shift the legacy blob
+    // export cutoff for local testing (e.g. "2020-01-01T00:00:00.000Z" makes
+    // every project post-cutoff; "2099-01-01T00:00:00.000Z" grandfathers all).
+    NEXT_PUBLIC_LANGFUSE_BLOB_EXPORT_CUTOFF: z.iso.datetime().optional(),
+    NODE_ENV: z
+      .enum(["development", "test", "production"])
+      .default("development"),
+    NEXTAUTH_URL: z.url().optional(),
+    EMAIL_FROM_ADDRESS: z.string().optional(),
+    // Standard SMTP URL (`smtp://`, `smtps://`) or `ses://<region>` to send via
+    // AWS SES using the default AWS credential chain (IAM role, SSO, env vars).
+    // Example: `ses://us-east-1`.
+    SMTP_CONNECTION_URL: z.string().optional(),
+    CLOUD_CRM_EMAIL: z.string().optional(),
+    REDIS_HOST: z.string().nullish(),
+    REDIS_PORT: z.coerce
+      .number() // .env files convert numbers to strings, therefore we have to enforce them to be numbers
+      .positive()
+      .max(65536, `options.port should be >= 0 and < 65536`)
+      .default(6379)
+      .nullable(),
+    REDIS_AUTH: z.string().nullish(),
+    REDIS_USERNAME: z.string().nullish(),
+    REDIS_CONNECTION_STRING: z.string().nullish(),
+    // Optional prefix for Redis keys. Used by BullMQ queues via their native prefix option
+    // and by the singleton cache instance via ioredis keyPrefix. Useful for multi-tenant Redis.
+    REDIS_KEY_PREFIX: z.string().nullish(),
+    REDIS_TLS_ENABLED: z.enum(["true", "false"]).default("false"),
+    REDIS_TLS_CA_PATH: z.string().optional(),
+    REDIS_TLS_CERT_PATH: z.string().optional(),
+    REDIS_TLS_KEY_PATH: z.string().optional(),
+    REDIS_TLS_SERVERNAME: z.string().optional(),
+    REDIS_TLS_REJECT_UNAUTHORIZED: z.enum(["true", "false"]).optional(),
+    REDIS_TLS_CHECK_SERVER_IDENTITY: z.enum(["true", "false"]).optional(),
+    REDIS_TLS_SECURE_PROTOCOL: z.string().optional(),
+    REDIS_TLS_CIPHERS: z.string().optional(),
+    REDIS_TLS_HONOR_CIPHER_ORDER: z.enum(["true", "false"]).optional(),
+    REDIS_TLS_KEY_PASSPHRASE: z.string().optional(),
+    REDIS_ENABLE_AUTO_PIPELINING: z.enum(["true", "false"]).default("true"),
+    LANGFUSE_BULLMQ_SKIP_REDIS_VERSION_CHECK: z
+      .enum(["true", "false"])
+      .default("false"),
+    // Redis Cluster Configuration
+    REDIS_CLUSTER_ENABLED: z.enum(["true", "false"]).default("false"),
+    REDIS_CLUSTER_NODES: z.string().optional(),
+    REDIS_CLUSTER_SLOTS_REFRESH_TIMEOUT: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(5000),
+    REDIS_SENTINEL_ENABLED: z.enum(["true", "false"]).default("false"),
+    REDIS_SENTINEL_NODES: z.string().optional(),
+    REDIS_SENTINEL_MASTER_NAME: z.string().optional(),
+    REDIS_SENTINEL_USERNAME: z.string().optional(),
+    REDIS_SENTINEL_PASSWORD: z.string().optional(),
+    ENCRYPTION_KEY: z
+      .string()
+      .length(
+        64,
+        "ENCRYPTION_KEY must be 256 bits, 64 string characters in hex format, generate via: openssl rand -hex 32",
+      )
+      .optional(),
+    LANGFUSE_CACHE_MODEL_MATCH_ENABLED: z
+      .enum(["true", "false"])
+      .default("true"),
+    LANGFUSE_CACHE_MODEL_MATCH_TTL_SECONDS: z.coerce.number().default(86400), // 24 hours
+    LANGFUSE_LOCAL_CACHE_MODEL_MATCH_ENABLED: z
+      .enum(["true", "false"])
+      .default("false"),
+    LANGFUSE_LOCAL_CACHE_MODEL_MATCH_TTL_MS: z.coerce
+      .number()
+      .positive()
+      .default(10_000),
+    LANGFUSE_LOCAL_CACHE_MODEL_MATCH_MAX: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(20_000),
+    LANGFUSE_CACHE_PROMPT_ENABLED: z.enum(["true", "false"]).default("true"),
+    LANGFUSE_CACHE_PROMPT_TTL_SECONDS: z.coerce.number().default(3600), // 1h
+    // GreptimeDB write path (02-write-path.md). gRPC endpoint for the ingester (writes);
+    // MySQL-wire endpoint for the full-history read + read path. Local dev defaults match a
+    // single-node GreptimeDB (gRPC 4001, MySQL 4002). The default user is "openfuse"; a node with
+    // no static-user provider ignores credentials, so this stays frictionless until a deployment
+    // sets GREPTIME_PASSWORD to turn on enforced auth (see docker/greptimedb/entrypoint.sh).
+    // Comma-separated for a cluster's multiple frontends (e.g. "fe1:4001,fe2:4001"); the SDK
+    // load-balances and fails over across them. A single value keeps single-endpoint behaviour.
+    GREPTIME_GRPC_URL: z.string().default("localhost:4001"),
+    GREPTIME_SQL_HOST: z.string().default("localhost"),
+    GREPTIME_SQL_PORT: z.coerce.number().int().positive().default(4002),
+    // Optional dedicated read-only MySQL host; falls back to GREPTIME_SQL_HOST.
+    GREPTIME_SQL_READ_ONLY_HOST: z.string().optional(),
+    GREPTIME_DB: z
+      .string()
+      .default("openfuse")
+      .refine(isValidGreptimeDatabaseName, {
+        message:
+          "GREPTIME_DB must be an unquoted GreptimeDB identifier (a lowercase letter or underscore, then lowercase letters, digits, or underscores) so ALTER DATABASE retention can target it",
+      }),
+    GREPTIME_USER: z.string().default("openfuse"),
+    GREPTIME_PASSWORD: z.string().default(""),
+    GREPTIME_SQL_MAX_OPEN_CONNECTIONS: z.coerce.number().int().default(25),
+    GREPTIME_RAW_EVENTS_TABLE: z.string().default("raw_events"),
+    // GreptimeDB database-level retention (TTL). Applies to every table in the database (raw_events,
+    // projections, EAV) with one shared expiry; default 730d (2 years). humantime duration, e.g.
+    // "730d", "104w", "2y". Applied idempotently at schema bootstrap (greptime:migrate). Change
+    // retention for the whole store at any time with a single `ALTER DATABASE ... SET 'ttl'`.
+    LANGFUSE_GREPTIME_TTL: z
+      .string()
+      .default("730d")
+      .refine(isValidGreptimeDuration, {
+        message:
+          "LANGFUSE_GREPTIME_TTL must be a humantime duration such as '730d', '104w', or '2y'",
+      }),
+    LANGFUSE_ENABLE_SINGLE_LEVEL_QUERY_OPTIMIZATION: z
+      .enum(["true", "false"])
+      .default("false"),
+    LANGFUSE_ROOT_EVENT_CONDITION_MAX_WINDOW_HOURS: z.coerce
+      .number()
+      .int()
+      .nonnegative()
+      .default(168), // 7 days
+    LANGFUSE_INGESTION_QUEUE_DELAY_MS: z.coerce
+      .number()
+      .nonnegative()
+      .default(15_000),
+    LANGFUSE_INGESTION_QUEUE_SHARD_COUNT: z.coerce
+      .number()
+      .positive()
+      .default(1),
+    LANGFUSE_INGESTION_SECONDARY_QUEUE_SHARD_COUNT: z.coerce
+      .number()
+      .positive()
+      .default(1),
+    LANGFUSE_OTEL_INGESTION_QUEUE_SHARD_COUNT: z.coerce
+      .number()
+      .positive()
+      .default(1),
+    LANGFUSE_OTEL_INGESTION_SECONDARY_QUEUE_SHARD_COUNT: z.coerce
+      .number()
+      .positive()
+      .default(1),
+    LANGFUSE_OTEL_MAX_SPAN_BYTES: z.coerce
+      .number()
+      .positive()
+      .default(9_500_000), // 9.5MB — just under ClickHouse's 10MB min_chunk_bytes_for_parallel_parsing default
+    LANGFUSE_EVAL_EXECUTION_QUEUE_SHARD_COUNT: z.coerce
+      .number()
+      .positive()
+      .default(1),
+    LANGFUSE_EVAL_EXECUTION_SECONDARY_QUEUE_SHARD_COUNT: z.coerce
+      .number()
+      .positive()
+      .default(1),
+    LANGFUSE_LLM_AS_JUDGE_EXECUTION_QUEUE_SHARD_COUNT: z.coerce
+      .number()
+      .positive()
+      .default(1),
+    LANGFUSE_CODE_EVAL_EXECUTION_QUEUE_SHARD_COUNT: z.coerce
+      .number()
+      .positive()
+      .default(1),
+    LANGFUSE_CODE_EVAL_DISPATCHER: z
+      .enum(["insecure-local", "aws-lambda"])
+      .optional(),
+    LANGFUSE_CODE_EVAL_AWS_LAMBDA_ENDPOINT: z.string().optional(),
+    LANGFUSE_CODE_EVAL_AWS_LAMBDA_NODE_FUNCTION_NAME: z
+      .string()
+      .default("code-based-eval-executor-node"),
+    LANGFUSE_CODE_EVAL_AWS_LAMBDA_PYTHON_FUNCTION_NAME: z
+      .string()
+      .default("code-based-eval-executor-python"),
+    LANGFUSE_CODE_EVAL_LOCAL_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(2_000),
+    LANGFUSE_TRACE_UPSERT_QUEUE_SHARD_COUNT: z.coerce
+      .number()
+      .positive()
+      .default(1),
+    LANGFUSE_TRACE_UPSERT_QUEUE_ATTEMPTS: z.coerce
+      .number()
+      .positive()
+      .default(2),
+    LANGFUSE_TRACE_DELETE_DELAY_MS: z.coerce
+      .number()
+      .nonnegative()
+      .default(5_000),
+    LANGFUSE_DELETE_SKIP_PROJECT_IDS: z
+      .string()
+      .optional()
+      .transform((s) => (s ? s.split(",").map((id) => id.trim()) : [])),
+    SALT: z.string().optional(), // used by components imported by web package
+    LANGFUSE_LOG_LEVEL: z
+      .enum(["trace", "debug", "info", "warn", "error", "fatal"])
+      .optional(),
+    LANGFUSE_LOG_FORMAT: z.enum(["text", "json"]).default("text"),
+    LANGFUSE_LOG_PROPAGATED_HEADERS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
+      ),
+    ENABLE_AWS_CLOUDWATCH_METRIC_PUBLISHING: z
+      .enum(["true", "false"])
+      .default("false"),
+    LANGFUSE_S3_CONCURRENT_WRITES: z.coerce.number().positive().default(50),
+    LANGFUSE_S3_UPLOAD_ENABLE_BUFFERED: z
+      .enum(["true", "false"])
+      .default("false"),
+    LANGFUSE_S3_UPLOAD_MAX_PART_ATTEMPTS: z.coerce
+      .number()
+      .min(1)
+      .max(10)
+      .default(3),
+    LANGFUSE_S3_UPLOAD_MAX_CONCURRENT_PARTS: z.coerce
+      .number()
+      .min(1)
+      .max(10)
+      .default(3),
+    // Optional: ingestion and eval-generated scores persist to GreptimeDB raw_events, not S3. A bucket
+    // is only needed when LANGFUSE_EVENT_STORAGE_BACKEND is "s3" (the OTel ingestion carrier and the
+    // eval observation blob store). The schema default is "s3", but the Compose stack overrides both
+    // blob backends to "local", so a stock deployment needs no object store.
+    LANGFUSE_S3_EVENT_UPLOAD_BUCKET: z.string().optional(),
+    LANGFUSE_S3_EVENT_UPLOAD_PREFIX: z.string().default(""),
+    LANGFUSE_S3_EVENT_UPLOAD_REGION: z.string().optional(),
+    LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: z.string().optional(),
+    LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: z.string().optional(),
+    LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: z.string().optional(),
+    LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: z
+      .enum(["true", "false"])
+      .default("false"),
+    LANGFUSE_S3_EVENT_UPLOAD_SSE: z.enum(["AES256", "aws:kms"]).optional(),
+    LANGFUSE_S3_EVENT_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
+    LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: z.string().optional(),
+    LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: z.string().default(""),
+    LANGFUSE_S3_MEDIA_UPLOAD_REGION: z.string().optional(),
+    LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: z.string().optional(),
+    LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: z.string().optional(),
+    LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: z.string().optional(),
+    LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: z
+      .enum(["true", "false"])
+      .default("false"),
+    LANGFUSE_S3_MEDIA_UPLOAD_SSE: z.enum(["AES256", "aws:kms"]).optional(),
+    LANGFUSE_S3_MEDIA_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
+    LANGFUSE_MEDIA_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
+    LANGFUSE_MEDIA_LOCAL_PATH: z.string().optional(),
+    // Backend for the event blob store: the OTel ingestion carrier (resourceSpans passed from the API
+    // to the worker) and the eval observation blob store. "local" persists to a shared filesystem
+    // volume so neither needs an object store.
+    LANGFUSE_EVENT_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
+    LANGFUSE_EVENT_LOCAL_PATH: z.string().optional(),
+    LANGFUSE_USE_AZURE_BLOB: z.enum(["true", "false"]).default("false"),
+    LANGFUSE_AZURE_SKIP_CONTAINER_CHECK: z
+      .enum(["true", "false"])
+      .default("true"),
+    LANGFUSE_USE_GOOGLE_CLOUD_STORAGE: z
+      .enum(["true", "false"])
+      .default("false"),
+    LANGFUSE_GOOGLE_CLOUD_STORAGE_CREDENTIALS: z.string().optional(),
+    GOOGLE_CLOUD_UNIVERSE_DOMAIN: z.string().default("googleapis.com"),
+    LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: z
+      .enum(["true", "false"])
+      .default("false"),
+    LANGFUSE_OCI_AUTH_TYPE: z
+      .enum([
+        "workload_identity",
+        "instance_principal",
+        "resource_principal",
+        "oci_profile",
+        "session_token",
+      ])
+      .optional(),
+    LANGFUSE_OCI_CONFIG_FILE: z.string().optional(),
+    LANGFUSE_OCI_CONFIG_PROFILE: z.string().optional(),
+    NODE_EXTRA_CA_CERTS: z.string().optional(),
+    STRIPE_SECRET_KEY: z.string().optional(),
 
-  LANGFUSE_S3_LIST_MAX_KEYS: z.coerce.number().positive().default(200),
-  LANGFUSE_S3_CORE_DATA_EXPORT_IS_ENABLED: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_S3_CORE_DATA_EXPORT_SSE: z.enum(["AES256", "aws:kms"]).optional(),
-  LANGFUSE_S3_CORE_DATA_EXPORT_SSE_KMS_KEY_ID: z.string().optional(),
-  LANGFUSE_POSTGRES_METERING_DATA_EXPORT_IS_ENABLED: z
-    .enum(["true", "false"])
-    .default("false"),
+    LANGFUSE_S3_LIST_MAX_KEYS: z.coerce.number().positive().default(200),
+    LANGFUSE_S3_CORE_DATA_EXPORT_IS_ENABLED: z
+      .enum(["true", "false"])
+      .default("false"),
+    LANGFUSE_S3_CORE_DATA_EXPORT_SSE: z.enum(["AES256", "aws:kms"]).optional(),
+    LANGFUSE_S3_CORE_DATA_EXPORT_SSE_KMS_KEY_ID: z.string().optional(),
+    LANGFUSE_POSTGRES_METERING_DATA_EXPORT_IS_ENABLED: z
+      .enum(["true", "false"])
+      .default("false"),
 
-  LANGFUSE_CUSTOM_SSO_EMAIL_CLAIM: z.string().default("email"),
-  LANGFUSE_CUSTOM_SSO_NAME_CLAIM: z.string().default("name"),
-  LANGFUSE_CUSTOM_SSO_SUB_CLAIM: z.string().default("sub"),
-  LANGFUSE_API_TRACE_OBSERVATIONS_SIZE_LIMIT_BYTES: z.coerce
-    .number()
-    .default(80e6), // 80MB
-  LANGFUSE_INGESTION_PROCESSING_SAMPLED_PROJECTS: z
-    .string()
-    .optional()
-    .transform((val) => {
-      try {
-        if (!val) return new Map<string, number>();
+    LANGFUSE_CUSTOM_SSO_EMAIL_CLAIM: z.string().default("email"),
+    LANGFUSE_CUSTOM_SSO_NAME_CLAIM: z.string().default("name"),
+    LANGFUSE_CUSTOM_SSO_SUB_CLAIM: z.string().default("sub"),
+    LANGFUSE_API_TRACE_OBSERVATIONS_SIZE_LIMIT_BYTES: z.coerce
+      .number()
+      .default(80e6), // 80MB
+    LANGFUSE_INGESTION_PROCESSING_SAMPLED_PROJECTS: z
+      .string()
+      .optional()
+      .transform((val) => {
+        try {
+          if (!val) return new Map<string, number>();
 
-        const map = new Map<string, number>();
-        const parts = val.split(",");
+          const map = new Map<string, number>();
+          const parts = val.split(",");
 
-        for (const part of parts) {
-          const [projectId, sampleRateStr] = part.split(":");
+          for (const part of parts) {
+            const [projectId, sampleRateStr] = part.split(":");
 
-          if (!projectId || sampleRateStr === undefined) {
-            throw new Error(`Invalid format: ${part}`);
+            if (!projectId || sampleRateStr === undefined) {
+              throw new Error(`Invalid format: ${part}`);
+            }
+
+            // Validate sample rate is between 0 and 1
+            const sampleRate = z.coerce
+              .number()
+              .min(0)
+              .max(1)
+              .parse(sampleRateStr);
+
+            map.set(projectId, sampleRate);
           }
 
-          // Validate sample rate is between 0 and 1
-          const sampleRate = z.coerce
-            .number()
-            .min(0)
-            .max(1)
-            .parse(sampleRateStr);
-
-          map.set(projectId, sampleRate);
+          return map;
+        } catch {
+          return new Map<string, number>();
         }
+      }),
+    LANGFUSE_WEBHOOK_WHITELISTED_IPS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
+      ),
+    LANGFUSE_WEBHOOK_WHITELISTED_IP_SEGMENTS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
+      ),
+    LANGFUSE_WEBHOOK_WHITELISTED_HOST: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
+      ),
+    LANGFUSE_LLM_CONNECTION_WHITELISTED_IPS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
+      ),
+    LANGFUSE_LLM_CONNECTION_WHITELISTED_IP_SEGMENTS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
+      ),
+    LANGFUSE_LLM_CONNECTION_WHITELISTED_HOST: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
+      ),
+    LANGFUSE_BLOB_STORAGE_ENDPOINT_WHITELISTED_IPS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
+      ),
+    LANGFUSE_BLOB_STORAGE_ENDPOINT_WHITELISTED_IP_SEGMENTS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
+      ),
+    LANGFUSE_BLOB_STORAGE_ENDPOINT_WHITELISTED_HOST: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
+      ),
+    SLACK_CLIENT_ID: z.string().optional(),
+    SLACK_CLIENT_SECRET: z.string().optional(),
+    SLACK_STATE_SECRET: z.string().optional(),
+    SLACK_FETCH_LIMIT: z.coerce
+      .number()
+      .positive()
+      .optional()
+      .default(5_000)
+      .describe(
+        "How many records should be fetched from Slack, before we give up",
+      ),
+    SLACK_PAGE_SIZE: z.coerce
+      .number()
+      .positive()
+      .int()
+      .max(1000)
+      .optional()
+      .default(1000) // Use high default to minimize number of API calls and hence avoid rate limits
+      .describe("Number of channels to fetch per Slack API page"),
+    HTTPS_PROXY: z.string().optional(),
 
-        return map;
-      } catch {
-        return new Map<string, number>();
-      }
-    }),
-  LANGFUSE_WEBHOOK_WHITELISTED_IPS: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
-    ),
-  LANGFUSE_WEBHOOK_WHITELISTED_IP_SEGMENTS: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
-    ),
-  LANGFUSE_WEBHOOK_WHITELISTED_HOST: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
-    ),
-  LANGFUSE_LLM_CONNECTION_WHITELISTED_IPS: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
-    ),
-  LANGFUSE_LLM_CONNECTION_WHITELISTED_IP_SEGMENTS: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
-    ),
-  LANGFUSE_LLM_CONNECTION_WHITELISTED_HOST: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
-    ),
-  LANGFUSE_BLOB_STORAGE_ENDPOINT_WHITELISTED_IPS: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
-    ),
-  LANGFUSE_BLOB_STORAGE_ENDPOINT_WHITELISTED_IP_SEGMENTS: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
-    ),
-  LANGFUSE_BLOB_STORAGE_ENDPOINT_WHITELISTED_HOST: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((s) => s.toLowerCase().trim()) : [],
-    ),
-  SLACK_CLIENT_ID: z.string().optional(),
-  SLACK_CLIENT_SECRET: z.string().optional(),
-  SLACK_STATE_SECRET: z.string().optional(),
-  SLACK_FETCH_LIMIT: z.coerce
-    .number()
-    .positive()
-    .optional()
-    .default(5_000)
-    .describe(
-      "How many records should be fetched from Slack, before we give up",
-    ),
-  SLACK_PAGE_SIZE: z.coerce
-    .number()
-    .positive()
-    .int()
-    .max(1000)
-    .optional()
-    .default(1000) // Use high default to minimize number of API calls and hence avoid rate limits
-    .describe("Number of channels to fetch per Slack API page"),
-  HTTPS_PROXY: z.string().optional(),
+    LANGFUSE_SERVER_SIDE_IO_CHAR_LIMIT: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(1_000),
 
-  LANGFUSE_SERVER_SIDE_IO_CHAR_LIMIT: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(1_000),
+    LANGFUSE_FETCH_LLM_COMPLETION_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(120_000), // 2 minutes
 
-  LANGFUSE_FETCH_LLM_COMPLETION_TIMEOUT_MS: z.coerce
-    .number()
-    .int()
-    .positive()
-    .default(120_000), // 2 minutes
+    LANGFUSE_AWS_BEDROCK_REGION: z.string().optional(),
+    LANGFUSE_IN_APP_AGENT_AWS_PROFILE: z.string().optional(),
 
-  LANGFUSE_AWS_BEDROCK_REGION: z.string().optional(),
-  LANGFUSE_IN_APP_AGENT_AWS_PROFILE: z.string().optional(),
+    // API Performance Flags
+    // Enable Redis-based tracking of projects using OTEL API to optimize ClickHouse queries.
+    // When enabled, projects ingesting via OTEL API skip the FINAL modifier on some observations queries for better performance.
+    LANGFUSE_SKIP_FINAL_FOR_OTEL_PROJECTS: z
+      .enum(["true", "false"])
+      .default("false"),
 
-  // API Performance Flags
-  // Enable Redis-based tracking of projects using OTEL API to optimize ClickHouse queries.
-  // When enabled, projects ingesting via OTEL API skip the FINAL modifier on some observations queries for better performance.
-  LANGFUSE_SKIP_FINAL_FOR_OTEL_PROJECTS: z
-    .enum(["true", "false"])
-    .default("false"),
+    // Langfuse AI Features
+    LANGFUSE_AI_FEATURES_PUBLIC_KEY: z.string().optional(),
+    LANGFUSE_AI_FEATURES_SECRET_KEY: z.string().optional(),
+    LANGFUSE_AI_FEATURES_HOST: z.string().optional(),
+    LANGFUSE_AI_FEATURES_PROJECT_ID: z.string().optional(),
 
-  // Langfuse AI Features
-  LANGFUSE_AI_FEATURES_PUBLIC_KEY: z.string().optional(),
-  LANGFUSE_AI_FEATURES_SECRET_KEY: z.string().optional(),
-  LANGFUSE_AI_FEATURES_HOST: z.string().optional(),
-  LANGFUSE_AI_FEATURES_PROJECT_ID: z.string().optional(),
+    // Dataset Service
+    LANGFUSE_DATASET_SERVICE_WRITE_TO_VERSIONED_IMPLEMENTATION: z
+      .enum(["true", "false"])
+      .default("true"),
+    LANGFUSE_DATASET_SERVICE_READ_FROM_VERSIONED_IMPLEMENTATION: z
+      .enum(["true", "false"])
+      .default("true"),
 
-  // Dataset Service
-  LANGFUSE_DATASET_SERVICE_WRITE_TO_VERSIONED_IMPLEMENTATION: z
-    .enum(["true", "false"])
-    .default("true"),
-  LANGFUSE_DATASET_SERVICE_READ_FROM_VERSIONED_IMPLEMENTATION: z
-    .enum(["true", "false"])
-    .default("true"),
+    // EE License
+    LANGFUSE_EE_LICENSE_KEY: z.string().optional(),
 
-  // EE License
-  LANGFUSE_EE_LICENSE_KEY: z.string().optional(),
-
-  // Ingestion Masking (EE feature)
-  LANGFUSE_INGESTION_MASKING_CALLBACK_URL: z.url().optional(),
-  LANGFUSE_INGESTION_MASKING_CALLBACK_TIMEOUT_MS: z.coerce
-    .number()
-    .positive()
-    .default(500),
-  LANGFUSE_INGESTION_MASKING_CALLBACK_FAIL_CLOSED: z
-    .enum(["true", "false"])
-    .default("false"),
-  LANGFUSE_INGESTION_MASKING_MAX_RETRIES: z.coerce
-    .number()
-    .nonnegative()
-    .default(1),
-  LANGFUSE_INGESTION_MASKING_PROPAGATED_HEADERS: z
-    .string()
-    .optional()
-    .transform((s) =>
-      s ? s.split(",").map((h) => h.toLowerCase().trim()) : [],
-    ),
-}).superRefine((env, ctx) => {
-  // The local media backend cannot resolve any path without an explicit base
-  // directory. Fail fast at startup instead of crashing on the first media
-  // operation with an indirect error.
-  if (
-    env.LANGFUSE_MEDIA_STORAGE_BACKEND === "local" &&
-    !env.LANGFUSE_MEDIA_LOCAL_PATH
-  ) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["LANGFUSE_MEDIA_LOCAL_PATH"],
-      message:
-        "LANGFUSE_MEDIA_LOCAL_PATH is required when LANGFUSE_MEDIA_STORAGE_BACKEND is 'local'",
-    });
-  }
-  if (
-    env.LANGFUSE_EVENT_STORAGE_BACKEND === "local" &&
-    !env.LANGFUSE_EVENT_LOCAL_PATH
-  ) {
-    ctx.addIssue({
-      code: "custom",
-      path: ["LANGFUSE_EVENT_LOCAL_PATH"],
-      message:
-        "LANGFUSE_EVENT_LOCAL_PATH is required when LANGFUSE_EVENT_STORAGE_BACKEND is 'local'",
-    });
-  }
-});
+    // Ingestion Masking (EE feature)
+    LANGFUSE_INGESTION_MASKING_CALLBACK_URL: z.url().optional(),
+    LANGFUSE_INGESTION_MASKING_CALLBACK_TIMEOUT_MS: z.coerce
+      .number()
+      .positive()
+      .default(500),
+    LANGFUSE_INGESTION_MASKING_CALLBACK_FAIL_CLOSED: z
+      .enum(["true", "false"])
+      .default("false"),
+    LANGFUSE_INGESTION_MASKING_MAX_RETRIES: z.coerce
+      .number()
+      .nonnegative()
+      .default(1),
+    LANGFUSE_INGESTION_MASKING_PROPAGATED_HEADERS: z
+      .string()
+      .optional()
+      .transform((s) =>
+        s ? s.split(",").map((h) => h.toLowerCase().trim()) : [],
+      ),
+  })
+  .superRefine((env, ctx) => {
+    // The local media backend cannot resolve any path without an explicit base
+    // directory. Fail fast at startup instead of crashing on the first media
+    // operation with an indirect error.
+    if (
+      env.LANGFUSE_MEDIA_STORAGE_BACKEND === "local" &&
+      !env.LANGFUSE_MEDIA_LOCAL_PATH
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["LANGFUSE_MEDIA_LOCAL_PATH"],
+        message:
+          "LANGFUSE_MEDIA_LOCAL_PATH is required when LANGFUSE_MEDIA_STORAGE_BACKEND is 'local'",
+      });
+    }
+    if (
+      env.LANGFUSE_EVENT_STORAGE_BACKEND === "local" &&
+      !env.LANGFUSE_EVENT_LOCAL_PATH
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["LANGFUSE_EVENT_LOCAL_PATH"],
+        message:
+          "LANGFUSE_EVENT_LOCAL_PATH is required when LANGFUSE_EVENT_STORAGE_BACKEND is 'local'",
+      });
+    }
+  });
 
 export type SharedEnv = z.infer<typeof EnvSchema>;
 

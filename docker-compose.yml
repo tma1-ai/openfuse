@@ -39,8 +39,8 @@ services:
       GREPTIME_SQL_HOST: ${GREPTIME_SQL_HOST:-greptimedb}
       GREPTIME_SQL_PORT: ${GREPTIME_SQL_PORT:-4002}
       GREPTIME_DB: ${GREPTIME_DB:-openfuse}
-      GREPTIME_USER: ${GREPTIME_USER:-}
-      GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-} # CHANGEME (set if GreptimeDB auth is enabled)
+      GREPTIME_USER: ${GREPTIME_USER:-openfuse}
+      GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-} # CHANGEME (set to enforce GreptimeDB auth; required for any non-local deployment)
       LANGFUSE_USE_AZURE_BLOB: ${LANGFUSE_USE_AZURE_BLOB:-false}
       LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE: ${LANGFUSE_USE_OCI_NATIVE_OBJECT_STORAGE:-false}
       LANGFUSE_OCI_AUTH_TYPE: ${LANGFUSE_OCI_AUTH_TYPE:-workload_identity}
@@ -118,18 +118,18 @@ services:
   greptimedb:
     # GreptimeDB analytics store (replaces ClickHouse). Standalone mode exposes HTTP (4000),
     # gRPC (4001, ingest SDK), MySQL wire (4002, read path + migrations), Postgres wire (4003).
+    # The entrypoint wrapper loads docker/greptimedb/config.toml as a tuning starting point and
+    # turns on enforced static auth when GREPTIME_PASSWORD is set (empty -> no auth).
     image: docker.io/greptime/greptimedb:v1.1.1
     restart: always
-    command:
-      - standalone
-      - start
-      - --http-addr=0.0.0.0:4000
-      - --rpc-bind-addr=0.0.0.0:4001
-      - --mysql-addr=0.0.0.0:4002
-      - --postgres-addr=0.0.0.0:4003
-      - --data-home=/greptimedb_data
+    entrypoint: ["/bin/sh", "/usr/local/bin/openfuse-greptime-entrypoint.sh"]
+    environment:
+      GREPTIME_USER: ${GREPTIME_USER:-openfuse}
+      GREPTIME_PASSWORD: ${GREPTIME_PASSWORD:-} # CHANGEME (set to enforce GreptimeDB auth; required for any non-local deployment)
     volumes:
       - langfuse_greptimedb_data:/greptimedb_data
+      - ./docker/greptimedb/config.toml:/etc/greptime/config.toml:ro
+      - ./docker/greptimedb/entrypoint.sh:/usr/local/bin/openfuse-greptime-entrypoint.sh:ro
     ports:
       - 127.0.0.1:4000:4000
       - 127.0.0.1:4001:4001
