@@ -1,49 +1,41 @@
 # Known limitations
 
-Openfuse is an alpha. The GreptimeDB migration is functionally complete and parity-verified for the covered surface, but the items below are real and you should know them before deploying. None are silent: each is either a documented behavior difference or an operational requirement.
+Openfuse is an alpha. The GreptimeDB migration is functionally complete and parity-verified for the covered surface. This page lists the genuine limitations — constraints and caveats that affect how you deploy, query, or recover.
 
-For the full engineering detail behind the dashboard items, see the [parity ledger](greptimedb-migration/parity/ledger.md).
+It is **not** a list of output differences. Where the fork's dashboard/metrics output diverges from upstream Langfuse, the fork is equal or more correct; those intentional differences are summarised at the end and detailed in the [parity ledger](greptimedb-migration/parity/ledger.md).
+
+## Functional
+
+### Indexed full-text search is whole-term only
+
+Full-text indexes on `input`, `output`, and metadata values back the explicit FTS operator through whole-term `matches_term`. Substring matching (`contains` / `starts with` / `ends with`) is not indexed — it compiles to case-insensitive `LIKE` and scans, which is correct but can be slow on large payload columns over wide time windows.
 
 ## Operational
 
 ### GreptimeDB migrations are idempotent DDL, with no ledger
 
-The web and standalone container entrypoints apply the GreptimeDB schema automatically on startup (alongside the Postgres migrations), gated by `LANGFUSE_AUTO_GREPTIME_MIGRATION_DISABLED` and serialised across replicas by a Postgres advisory lock. Because there is no applied-migrations ledger, the runner re-applies every `.sql` on each start, so the statements must stay idempotent: plain `CREATE ... IF NOT EXISTS` and declarative `ALTER ... SET INDEX` DDL, applied by file order, with no down-migrations. The runner tolerates only the one common non-idempotent re-run error (`ADD COLUMN` on an existing column, errno 1060); any other migration error fails the container at startup. A migration that needs to alter an existing table's data must be written carefully, and a proper migration ledger is on the roadmap. See [deployment](deployment.md).
+The web and standalone entrypoints apply the GreptimeDB schema on startup (gated by `LANGFUSE_AUTO_GREPTIME_MIGRATION_DISABLED`, serialised across replicas by a Postgres advisory lock). There is no applied-migrations ledger, so the runner re-applies every `.sql` on each start and every statement must stay idempotent: `CREATE ... IF NOT EXISTS`, declarative `ALTER ... SET INDEX`, applied in file order, with no down-migrations. It tolerates only the one common non-idempotent re-run error (`ADD COLUMN` on an existing column, errno 1060); any other migration error fails the container at startup. A migration that rewrites existing data must be written with this in mind, and a real migration ledger is on the roadmap. See [deployment](deployment.md).
 
-## Behavior differences vs upstream Langfuse
+### Object storage is optional, not gone
 
-### Dashboard percentiles are approximate
-
-GreptimeDB computes quantiles with `uddsketch` (approximate); ClickHouse uses a different approximation. `p50/p75/p90/p95/p99` values differ slightly on continuous measures. Both are approximations; neither is exact.
-
-### Substring search is scan-prone; indexed search is term-based
-
-Full-text indexes exist for `input`, `output`, and metadata values, and the explicit FTS operator uses whole-term `matches_term`. But `contains` / `starts with` / `ends with` still compile to case-insensitive `LIKE`, which is correct (matches ClickHouse substring semantics) but scan-prone on large payload columns over wide time windows.
-
-### Timeseries gap-fill differs
-
-For time-bucketed dashboard queries the fork emits a zero-valued row for every empty bucket in range; upstream omits empty buckets. Buckets with data match exactly. (Arguably more useful for charting.)
-
-### Stricter query validation
-
-The fork rejects some nonsensical dashboard queries with `400 InvalidRequestError` that upstream silently accepts (e.g. `histogram` on a relation-backed measure, `sum` on a string measure). A client relying on upstream's leniency will get a 400. The fork is the stricter / more correct side here.
-
-### Called-tool value breakdowns attribute per distinct tool
-
-Breaking a value measure (cost/tokens) down by _called tool_ attributes an observation's value once per **distinct** called tool. Upstream `arrayJoin(tool_call_names)` multiplies the value by call multiplicity (a tool called twice doubles that observation's cost in its bucket, which over-counts). The fork is the conserving / more correct side; this is the only place the by-tool numbers differ. Tool **filters** and available-tool (`toolNames`) breakdowns are exact parity.
-
-### Default model-price catalog size differs
-
-The fork ships a larger default `default-model-prices.json` than the tracked upstream release. Cost computation itself is identical for a given model price; only the count of bundled defaults differs. Pin the same catalog if you need byte-identical `GET /api/public/models`.
+Ingestion needs no object store — traces, observations, and scores persist to GreptimeDB `raw_events`. Media uploads, the OTel carrier, and the eval blob store default to local filesystem volumes in the bundled Compose files. But opt-in batch/blob **exports** still require an S3-compatible bucket. See [deployment](deployment.md).
 
 ## Source-of-truth exception
 
 ### `dataset_run_items` deletion is a projection hard-delete
 
-Traces, observations, and scores delete by appending a tombstone to `raw_events`, so replay rebuilds a soft-deleted row. `dataset_run_items` instead hard-deletes the projection and relies on the replay path skipping deleted items; it does not keep a per-entity tombstone in `raw_events`. This is a deliberate, documented exception ("`raw_events` is the complete source of truth" holds for traces/observations/scores, not DRI). It works operationally; it is called out so the invariant is explicit.
+Traces, observations, and scores delete by appending a tombstone to `raw_events`, so replay rebuilds a soft-deleted row and a restored `raw_events` reconstructs deletion state. `dataset_run_items` instead hard-deletes the projection and relies on the replay path skipping deleted items; it keeps no per-entity tombstone in `raw_events`. So "`raw_events` is the complete source of truth" holds for traces/observations/scores but not for DRI. It works operationally; it is called out so the exception is explicit.
 
-## Not blockers, but worth knowing
+## Support
 
-- Object storage is optional but not gone. Ingestion needs no S3/MinIO; media uploads, the OTel carrier, and the eval blob store default to local filesystem volumes in the bundled Compose files. Opt-in batch/blob exports still need an S3-compatible bucket. See [deployment](deployment.md).
-- Read performance hinges on GreptimeDB SST compaction, not query shape — a normal operational concern (especially after a large backfill), not a functional limitation. Covered in [operations · performance](operations.md#performance-compaction).
-- Alpha posture: no long-term support or backports; only the latest pre-release is maintained. See [SECURITY.md](../SECURITY.md).
+Alpha posture: no long-term support or backports; only the latest pre-release is maintained. See [SECURITY.md](../SECURITY.md).
+
+## Intentional differences from upstream Langfuse (not limitations)
+
+These are documented behaviour differences, not defects: output can differ from upstream, but the fork is equal or more correct. Full detail and parity evidence are in the [parity ledger](greptimedb-migration/parity/ledger.md).
+
+- **Approximate percentiles.** `p50`–`p99` use GreptimeDB `uddsketch`; upstream uses a different approximation. Values differ slightly; both are approximate.
+- **Empty time buckets are filled.** Time-bucketed queries emit a zero-valued row for every empty bucket in range; upstream omits them. Buckets with data match exactly.
+- **Stricter query validation.** The fork returns `400 InvalidRequestError` for some nonsensical dashboard queries that upstream silently accepts (e.g. `histogram` on a relation-backed measure, `sum` on a string measure).
+- **By-called-tool value breakdowns conserve.** Breaking cost/tokens down by _called tool_ attributes an observation's value once per distinct tool; upstream multiplies by call multiplicity. Tool filters and available-tool breakdowns are exact parity.
+- **Larger default model-price catalog.** The fork bundles more default model prices than the tracked upstream release; per-model cost is identical. Pin the same catalog for byte-identical `GET /api/public/models`.
