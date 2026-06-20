@@ -24,6 +24,33 @@ export type DeleteEavRowsFn = (
   entitiesByProject: ReadonlyMap<string, ReadonlySet<string>>,
 ) => Promise<void>;
 
+/**
+ * Merge a `source` cleanup map into `target` additively (union of entity ids per table and project),
+ * without overwriting entries already in `target`. A writer swaps its pending-cleanup map to a fresh
+ * one before awaiting the deletes, so a concurrent enqueue records into the fresh map; on a delete
+ * failure the swapped-out snapshot is merged back here for retry without clobbering those new entries.
+ */
+export function mergeEntityCleanup<K>(
+  target: Map<K, Map<string, Set<string>>>,
+  source: Map<K, Map<string, Set<string>>>,
+): void {
+  for (const [key, byProject] of source) {
+    let targetByProject = target.get(key);
+    if (!targetByProject) {
+      targetByProject = new Map();
+      target.set(key, targetByProject);
+    }
+    for (const [projectId, ids] of byProject) {
+      let targetIds = targetByProject.get(projectId);
+      if (!targetIds) {
+        targetIds = new Set();
+        targetByProject.set(projectId, targetIds);
+      }
+      for (const id of ids) targetIds.add(id);
+    }
+  }
+}
+
 export const deleteEavRowsForEntities: DeleteEavRowsFn = async (
   eavTable,
   entitiesByProject,

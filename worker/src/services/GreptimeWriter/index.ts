@@ -9,6 +9,7 @@ import {
   type DeleteEavRowsFn,
   deleteEavRowsForEntities,
   EAV_TABLES_FOR_PROJECTION,
+  mergeEntityCleanup,
   getGreptimeIngestClient,
   GreptimeRow,
   GreptimeTable,
@@ -84,7 +85,7 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * (see EAV_TABLES_FOR_PROJECTION). Driven by the projection entity, not the EAV rows, so an entity
    * whose EAV set shrank to empty (no fanned EAV rows) is still cleared.
    */
-  private readonly pendingEavCleanup = new Map<
+  private pendingEavCleanup = new Map<
     GreptimeTable,
     Map<string, Set<string>>
   >();
@@ -207,13 +208,22 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    */
   private async runEavCleanup(): Promise<void> {
     if (this.pendingEavCleanup.size === 0) return;
-    const snapshot = [...this.pendingEavCleanup];
-    for (const [projectionTable, byProject] of snapshot) {
-      for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ?? []) {
-        await this.deleteEav(eavTable, byProject);
+    // Swap to a fresh map synchronously: entities enqueued during the awaits below land in the new
+    // map (next flush) instead of being lost. On failure, merge the snapshot back so its entities
+    // are retried without clobbering those concurrent enqueues.
+    const snapshot = this.pendingEavCleanup;
+    this.pendingEavCleanup = new Map();
+    try {
+      for (const [projectionTable, byProject] of snapshot) {
+        for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ??
+          []) {
+          await this.deleteEav(eavTable, byProject);
+        }
       }
+    } catch (err) {
+      mergeEntityCleanup(this.pendingEavCleanup, snapshot);
+      throw err;
     }
-    this.pendingEavCleanup.clear();
   }
 
   /**

@@ -7,6 +7,7 @@ import {
   type DeleteEavRowsFn,
   deleteEavRowsForEntities,
   EAV_TABLES_FOR_PROJECTION,
+  mergeEntityCleanup,
   GreptimeRow,
   GreptimeTable,
   instrumentAsync,
@@ -125,13 +126,21 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
   /** Batch-delete each recorded entity's existing EAV rows; run before bulk-writing the new EAV. */
   private async runEavCleanup(): Promise<void> {
     if (this.pendingEavCleanup.size === 0) return;
-    const snapshot = [...this.pendingEavCleanup];
-    for (const [projectionTable, byProject] of snapshot) {
-      for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ?? []) {
-        await this.deleteEav(eavTable, byProject);
-      }
-    }
+    // Swap to a fresh map synchronously so entries enqueued during the awaits below are not lost;
+    // merge the snapshot back on failure so it is retried without clobbering those new entries.
+    const snapshot = this.pendingEavCleanup;
     this.pendingEavCleanup = new Map();
+    try {
+      for (const [projectionTable, byProject] of snapshot) {
+        for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ??
+          []) {
+          await this.deleteEav(eavTable, byProject);
+        }
+      }
+    } catch (err) {
+      mergeEntityCleanup(this.pendingEavCleanup, snapshot);
+      throw err;
+    }
   }
 
   public addToQueue(

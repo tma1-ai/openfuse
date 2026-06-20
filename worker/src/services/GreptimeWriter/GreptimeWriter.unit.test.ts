@@ -497,4 +497,48 @@ describe("GreptimeWriter EAV shrink consistency", () => {
     expect(write).toHaveBeenCalledTimes(1);
     expect(deleteEav).toHaveBeenCalledTimes(3);
   });
+
+  it("does not lose an entity enqueued while a cleanup delete is in flight", async () => {
+    const { writer, deletes, deleteEav } = setup();
+    // Simulate a concurrent addToQueue interleaving during the cleanup await: the first delete call
+    // enqueues a new entity before resolving. Without the synchronous map swap, the trailing clear()
+    // would wipe this entity and skip its cleanup forever.
+    let injected = false;
+    deleteEav.mockImplementation(async (table, byProject) => {
+      deletes.push({
+        table,
+        entities: Object.fromEntries(
+          [...byProject].map(([p, ids]) => [p, [...ids]]),
+        ),
+      });
+      if (!injected) {
+        injected = true;
+        writer.addToQueue(
+          GreptimeTable.Traces,
+          createTrace({
+            project_id: "p",
+            id: "concurrent",
+            metadata: { a: "1" },
+            tags: [],
+          }),
+        );
+      }
+    });
+
+    writer.addToQueue(
+      GreptimeTable.Traces,
+      createTrace({
+        project_id: "p",
+        id: "first",
+        metadata: { a: "1" },
+        tags: ["x"],
+      }),
+    );
+    await writer.flushAll(true);
+    // The concurrently-enqueued entity survived the swap and is cleaned on the next flush.
+    await writer.flushAll(true);
+
+    const cleanedEntities = deletes.flatMap((d) => d.entities.p ?? []);
+    expect(cleanedEntities).toContain("concurrent");
+  });
 });
