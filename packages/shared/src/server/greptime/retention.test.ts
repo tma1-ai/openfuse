@@ -14,7 +14,7 @@ describe("parseDurationSeconds", () => {
     expect(parseDurationSeconds(" 365days ")).toBe(365 * 86400);
   });
 
-  it("throws on unparseable or unsupported durations", () => {
+  it("throws on unparsable or unsupported durations", () => {
     expect(() => parseDurationSeconds("30x")).toThrow();
     expect(() => parseDurationSeconds("forever")).toThrow();
     expect(() => parseDurationSeconds("")).toThrow();

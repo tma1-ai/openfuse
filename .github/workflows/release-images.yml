@@ -29,6 +29,7 @@ on:
 
 permissions:
   contents: read
+  actions: write # BuildKit type=gha cache exporter/importer needs the Actions cache API
 
 concurrency:
   group: release-images-${{ github.ref }}
@@ -77,12 +78,12 @@ jobs:
           flavor: |
             latest=false
           tags: |
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}},enable=${{ !contains(github.ref, '-rc') }}
-            type=semver,pattern={{major}},enable=${{ !contains(github.ref, '-rc') }}
+            type=semver,pattern={{version}},enable=${{ github.event_name == 'push' }}
+            type=semver,pattern={{major}}.{{minor}},enable=${{ github.event_name == 'push' && !contains(github.ref, '-rc') }}
+            type=semver,pattern={{major}},enable=${{ github.event_name == 'push' && !contains(github.ref, '-rc') }}
             type=sha
             type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event.inputs.tag != '' }}
-            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-rc') }}
+            type=raw,value=latest,enable=${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && !contains(github.ref, '-rc') }}
 
       - name: Build and push
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
