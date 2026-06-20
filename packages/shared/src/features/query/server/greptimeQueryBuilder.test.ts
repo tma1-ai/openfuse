@@ -81,6 +81,41 @@ describe("GreptimeQueryBuilder", () => {
     expect(query).toMatch(/p99_latency/);
   });
 
+  it("array dimension (tags) is grouped raw, not min()-collapsed, in the two-level inner query", () => {
+    // min() over an array column returns GreptimeDB's binary array encoding, not the JSON text
+    // ClickHouse returns. The two-level inner query must group by the array column raw instead.
+    const { query } = build({
+      view: "traces",
+      dimensions: [{ field: "tags" }],
+      metrics: [{ measure: "totalCost", aggregation: "sum" }],
+    });
+    expect(query).toMatch(/FROM \(/); // two-level (relation measure)
+    expect(query).not.toMatch(/min\(t\.tags\)/);
+    expect(query).toMatch(/t\.tags AS `tags`/);
+    expect(query).toMatch(/GROUP BY t\.project_id, t\.id, t\.tags/);
+  });
+
+  it("metric columns carry ClickHouse int-vs-float serialization (integer -> string, float -> number)", () => {
+    const { postProcess } = build({
+      view: "traces",
+      metrics: [
+        { measure: "count", aggregation: "count" }, // UInt64 -> string
+        { measure: "totalCost", aggregation: "sum" }, // decimal -> number
+        { measure: "totalCost", aggregation: "avg" }, // Float64 -> number
+        { measure: "latency", aggregation: "sum" }, // integer -> string
+        { measure: "latency", aggregation: "p95" }, // Float64 -> number
+      ],
+    });
+    const byCol = Object.fromEntries(
+      postProcess.metricColumns.map((m) => [m.col, m.integer]),
+    );
+    expect(byCol["count_count"]).toBe(true);
+    expect(byCol["sum_totalCost"]).toBe(false);
+    expect(byCol["avg_totalCost"]).toBe(false);
+    expect(byCol["sum_latency"]).toBe(true);
+    expect(byCol["p95_latency"]).toBe(false);
+  });
+
   it("by-type query is a per-entity raw fetch with a byType post-process", () => {
     const { query, postProcess } = build({
       view: "observations",

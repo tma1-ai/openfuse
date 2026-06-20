@@ -74,7 +74,8 @@ type Aggregation = z.infer<typeof metricAggregations>;
 export type PostProcess = {
   // Output metric columns (`<agg>_<measure>` or `count`). Their values come back from mysql2 as
   // strings for DECIMAL/BIGINT; the executor coerces them to numbers to match the ClickHouse shape.
-  metricColumns: string[];
+  // Output metric columns + whether ClickHouse serializes each as a string (integer) or number.
+  metricColumns: Array<{ col: string; integer: boolean }>;
   // Whether the query produced a `time_dimension` column (coerced to an ISO string on output).
   hasTimeDimension: boolean;
   // Gap-fill descriptor (present when the query buckets by time).
@@ -118,6 +119,9 @@ type AppliedDimension = {
   relationTable?: string;
   isByType: boolean;
   byTypeJson?: "usage_details" | "cost_details";
+  // Array-typed dimension (e.g. tags `string[]`). `min()` over an array column returns GreptimeDB's
+  // binary array encoding instead of JSON text, so the two-level inner query must group by it raw.
+  isArray: boolean;
 };
 
 type AppliedMeasure = {
@@ -128,7 +132,36 @@ type AppliedMeasure = {
   relationTable?: string;
   isByType: boolean;
   requiresDimension?: string;
+  /** Declared measure type ("integer" | "decimal" | "number" | ...) — drives int-vs-float output. */
+  type?: string;
 };
+
+const FLOAT_RESULT_AGGS = new Set([
+  "avg",
+  "p50",
+  "p75",
+  "p90",
+  "p95",
+  "p99",
+  "histogram",
+]);
+
+/**
+ * Whether the aggregation's result is integer-typed (ClickHouse serializes UInt64/Int64 aggregates as
+ * JSON strings) vs float-typed (serialized as JSON numbers). count/uniq are always UInt64; avg and
+ * percentiles are always Float64; sum/min/max preserve the measure's declared type.
+ */
+const isIntegerResult = (aggregation: string, measureType?: string): boolean => {
+  if (aggregation === "count" || aggregation === "uniq") return true;
+  if (FLOAT_RESULT_AGGS.has(aggregation)) return false;
+  return measureType === "integer";
+};
+
+/** Output metric column descriptor: alias + whether ClickHouse serializes it as a string (integer). */
+const metricColumnDescriptor = (m: AppliedMeasure): { col: string; integer: boolean } => ({
+  col: `${m.aggregation}_${m.alias}`,
+  integer: isIntegerResult(m.aggregation, m.type),
+});
 
 type QueryChartConfig = NonNullable<QueryType["chartConfig"]>;
 
@@ -267,6 +300,7 @@ const resolveDimension = (
     sql: dim.sql,
     relationTable: dim.relationTable,
     isByType,
+    isArray: (dim.type ?? "").endsWith("[]"),
     byTypeJson: isByType
       ? dim.pairExpand?.valuesSql.includes("cost_details")
         ? "cost_details"
@@ -308,6 +342,7 @@ const resolveMeasures = (
       relationTable: measure.relationTable,
       isByType: measure.sql === BYTYPE_SQL,
       requiresDimension: measure.requiresDimension,
+      type: measure.type,
     };
   });
 
@@ -432,7 +467,7 @@ export class GreptimeQueryBuilder {
       query: minMaxSql,
       parameters,
       postProcess: {
-        metricColumns: [],
+        metricColumns: [] as Array<{ col: string; integer: boolean }>,
         hasTimeDimension: false,
         histogram: { bins, bucketSql },
       },
@@ -597,11 +632,16 @@ export class GreptimeQueryBuilder {
     } else {
       // two-level
       const innerParts: string[] = [`${base}.project_id`, `${base}.id`];
+      const innerGroup: string[] = [`${base}.project_id`, `${base}.id`];
       for (const d of dims) {
-        if (d.relationTable) {
-          // parent (1:1) dims are invariant per entity -> min() collapses fan-out
-          innerParts.push(`min(${d.sql}) AS ${quoteIdent(d.alias)}`);
+        if (d.isArray) {
+          // min() over an array column yields GreptimeDB's binary array encoding, not the JSON text
+          // ClickHouse returns. The array is 1:1 per entity, so grouping by it raw (no extra
+          // cardinality) preserves the JSON array (e.g. tags -> ["a","b"]).
+          innerParts.push(`${d.sql} AS ${quoteIdent(d.alias)}`);
+          innerGroup.push(d.sql);
         } else {
+          // parent (1:1) dims are invariant per entity -> min() collapses fan-out
           innerParts.push(`min(${d.sql}) AS ${quoteIdent(d.alias)}`);
         }
       }
@@ -623,7 +663,7 @@ export class GreptimeQueryBuilder {
       }
       const inner =
         `SELECT ${innerParts.join(", ")} ${fromClause} ` +
-        `GROUP BY ${base}.project_id, ${base}.id`;
+        `GROUP BY ${innerGroup.join(", ")}`;
 
       const outerParts: string[] = [];
       for (const d of dims) outerParts.push(quoteIdent(d.alias));
@@ -646,8 +686,8 @@ export class GreptimeQueryBuilder {
     const postProcess: PostProcess = {
       metricColumns:
         measures.length > 0
-          ? measures.map((m) => `${m.aggregation}_${m.alias}`)
-          : ["count"],
+          ? measures.map(metricColumnDescriptor)
+          : [{ col: "count", integer: true }],
       hasTimeDimension: Boolean(bucket),
     };
     if (bucket) {
@@ -714,7 +754,7 @@ export class GreptimeQueryBuilder {
       query: sql,
       parameters,
       postProcess: {
-        metricColumns: [`${byTypeMeasure.aggregation}_${byTypeMeasure.alias}`],
+        metricColumns: [metricColumnDescriptor(byTypeMeasure)],
         hasTimeDimension: Boolean(bucket),
         byType: {
           jsonColumn,
