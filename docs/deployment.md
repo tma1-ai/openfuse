@@ -34,20 +34,21 @@ For a Compose deployment these point at the `greptimedb` service name. The non-G
 
 Ingestion and eval-generated scores persist to GreptimeDB `raw_events`, not to a blob store. The remaining object-storage consumers support a local-file backend, so a stock deployment needs **no** MinIO/S3:
 
-| Variable                         | Default | Local backend                         |
-| -------------------------------- | ------- | ------------------------------------- |
-| `LANGFUSE_MEDIA_STORAGE_BACKEND` | `s3`    | `local` + `LANGFUSE_MEDIA_LOCAL_PATH` |
-| `LANGFUSE_EVENT_STORAGE_BACKEND` | `s3`    | `local` + `LANGFUSE_EVENT_LOCAL_PATH` |
+| Variable                         | App default | Bundled Compose | Local backend                         |
+| -------------------------------- | ----------- | --------------- | ------------------------------------- |
+| `LANGFUSE_MEDIA_STORAGE_BACKEND` | `s3`        | `local`         | `local` + `LANGFUSE_MEDIA_LOCAL_PATH` |
+| `LANGFUSE_EVENT_STORAGE_BACKEND` | `s3`        | `local`         | `local` + `LANGFUSE_EVENT_LOCAL_PATH` |
 
-`LANGFUSE_EVENT_STORAGE_BACKEND` covers both the OTel carrier and the eval blob store; with `local` they share a filesystem volume, so web and worker must mount the same `LANGFUSE_EVENT_LOCAL_PATH` (the Compose files wire a shared `langfuse_event_data` volume). Only opt-in batch/blob **exports** still require an S3-compatible bucket. The Compose files default both backends to `local` and put MinIO behind a `s3` profile (`docker compose --profile s3 up`), so the default stack starts no object store.
+The application default for these variables is `s3`, but this repo's `docker-compose.yml` overrides both to `local` (`${...:-local}`), so the bundled stack starts with no object store. `LANGFUSE_EVENT_STORAGE_BACKEND` covers both the OTel carrier and the eval blob store; with `local` they share a filesystem volume, so web and worker must mount the same `LANGFUSE_EVENT_LOCAL_PATH` (the Compose files wire a shared `langfuse_event_data` volume). Only opt-in batch/blob **exports** still require an S3-compatible bucket. The Compose files default both backends to `local` and put MinIO behind a `s3` profile (`docker compose --profile s3 up`), so the default stack starts no object store.
 
 ## 2. Bootstrap the GreptimeDB schema (required, before first start)
 
 Postgres migrations run automatically from the web container entrypoint. The GreptimeDB schema does not; the entrypoint deliberately leaves it out. Apply it out of band, once per environment, before the web/worker containers serve traffic, and again after pulling new `packages/shared/greptime/migrations/*.sql`:
 
-For the default Compose deployment, run the migration from your host shell and override the container-only service name from `.env`:
+For the default Compose deployment, run the migration from your host shell (this needs Node and pnpm via `corepack`; run `pnpm install` once first) and override the container-only service name from `.env`:
 
 ```bash
+pnpm install
 GREPTIME_GRPC_URL=localhost:4001 \
   GREPTIME_SQL_HOST=localhost \
   pnpm --filter=@langfuse/shared run greptime:migrate
@@ -67,7 +68,8 @@ First-run sequence:
 cp .env.prod.example .env                          # edit every # CHANGEME value
 
 docker compose up -d greptimedb postgres redis     # infra first (add `minio` only if using S3)
-# wait for greptimedb /health, then:
+# wait for greptimedb /health, then bootstrap the schema (needs Node + pnpm on the host):
+pnpm install
 GREPTIME_GRPC_URL=localhost:4001 \
   GREPTIME_SQL_HOST=localhost \
   pnpm --filter=@langfuse/shared run greptime:migrate # schema bootstrap (section 2)

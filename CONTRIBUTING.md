@@ -42,7 +42,7 @@ GreptimeDB listens on gRPC `:4001` (ingest writes) and MySQL wire `:4002` (reads
 
 ## Running tests
 
-- Targeted GreptimeDB unit tests live next to the code, e.g.:
+- Targeted GreptimeDB unit tests live next to the code. `exec vitest run <path>` filters to the given paths (these are pure unit tests, no `.env` needed); `pnpm run test` runs the full shared suite.
   ```bash
   pnpm --filter @langfuse/shared exec vitest run src/server/greptime src/features/query/server
   ```

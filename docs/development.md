@@ -5,7 +5,7 @@ Local development setup for Openfuse (Langfuse on GreptimeDB). For deploying a s
 ## Prerequisites
 
 - Node (see `.nvmrc`).
-- `corepack` enabled (pnpm version is pinned in `package.json`; use `corepack pnpm@<pinned>` to avoid resolution issues).
+- pnpm via `corepack`, pinned in `package.json`. Activate the pinned version with `corepack enable && corepack prepare pnpm@11.4.0 --activate` (the same step `scripts/codex/setup.sh` runs).
 - Docker + Docker Compose.
 
 ## Setup
@@ -47,7 +47,8 @@ mysql -h127.0.0.1 -P4002 -uroot openfuse -e "SHOW TABLES;"
 Targeted unit tests live next to the code:
 
 ```bash
-# GreptimeDB write path, read repositories, query engine
+# GreptimeDB write path, read repositories, query engine (pure unit tests, no .env needed).
+# `exec vitest run <path>` filters to the given paths; `pnpm run test` runs the full shared suite.
 pnpm --filter @langfuse/shared exec vitest run src/server/greptime src/features/query/server
 
 # typecheck + lint (max-warnings 0)

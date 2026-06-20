@@ -22,7 +22,7 @@ Read [Known limitations](docs/known-limitations.md) before you deploy.
 
 ## 5-minute quickstart (Docker Compose)
 
-Requirements: Docker and Docker Compose. The stack is `langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, and `redis`, with object storage off by default.
+Requirements: Docker and Docker Compose for the stack, plus Node and pnpm (via `corepack`) on the host to run the one-time schema bootstrap in step 2. The stack is `langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, and `redis`, with object storage off by default.
 
 ```bash
 git clone https://github.com/tma1-ai/openfuse.git
