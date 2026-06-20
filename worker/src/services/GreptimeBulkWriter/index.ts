@@ -117,6 +117,8 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
     }
   }
 
+  // The `GreptimeProjectionSink.flushAll(fullQueue?)` arg is intentionally omitted: a backfill page
+  // always drains everything buffered, so there is no partial-flush mode to honour.
   public async flushAll(): Promise<void> {
     return instrumentAsync({ name: "write-to-greptime-bulk" }, async () => {
       // 1. Write gated projections unary to a terminal outcome; learn which entities durably landed.

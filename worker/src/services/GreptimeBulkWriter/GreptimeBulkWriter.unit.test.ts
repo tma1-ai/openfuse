@@ -28,17 +28,32 @@ const incrementMock = recordIncrement as unknown as Mock;
 const incrementsFor = (stat: string) =>
   incrementMock.mock.calls.filter((c) => c[0] === stat);
 
-/** A fake bulk client: records `writeRows` batch sizes per table and can fail a chosen table mid-stream. */
-const fakeBulkClient = (opts?: { failTable?: string }) => {
+/**
+ * A fake bulk client: records `writeRows` batch sizes per table and can fail a chosen table. With
+ * `failAfterChunks` the first N chunks ack and later ones throw, modelling a mid-stream failure after
+ * earlier chunks were already accepted; without it the table fails from its first chunk.
+ */
+const fakeBulkClient = (opts?: {
+  failTable?: string;
+  failAfterChunks?: number;
+}) => {
   const created: string[] = [];
   const batches: { table: string; rowCount: number }[] = [];
+  const chunkCounts = new Map<string, number>();
   const client = {
     createBulkStreamWriter: vi.fn(async (schema: { tableName: string }) => {
       const table = schema.tableName;
       created.push(table);
       return {
         writeRows: vi.fn(async (b: { rows: unknown[][] }) => {
-          if (opts?.failTable === table) throw new Error(`bulk fail ${table}`);
+          const n = (chunkCounts.get(table) ?? 0) + 1;
+          chunkCounts.set(table, n);
+          if (
+            opts?.failTable === table &&
+            (opts.failAfterChunks === undefined || n > opts.failAfterChunks)
+          ) {
+            throw new Error(`bulk fail ${table}`);
+          }
           batches.push({ table, rowCount: b.rows.length });
           return {};
         }),
@@ -225,6 +240,37 @@ describe("GreptimeBulkWriter routing", () => {
     expect(
       incrementsFor("langfuse.greptime_bulk.unary_pending_rows"),
     ).toHaveLength(1);
+  });
+
+  it("falls the whole table back to unary when a later chunk fails after earlier ones acked", async () => {
+    // batchSize 2 over 3 rows -> chunk[a,b] acks, chunk[c] throws.
+    const { client, batches } = fakeBulkClient({
+      failTable: "traces",
+      failAfterChunks: 1,
+    });
+    const { writer: unary, landedIds } = fakeUnary();
+    const bulk = makeBulkWriter(client, unary, 2);
+
+    for (const id of ["a", "b", "c"]) {
+      bulk.addToQueue(
+        GreptimeTable.Traces,
+        createTrace({ project_id: "p", id, metadata: {}, tags: [] }),
+      );
+    }
+    await bulk.flushAll();
+
+    // Only the first chunk acked on the bulk path before the failure.
+    expect(
+      batches.filter((b) => b.table === "traces").map((b) => b.rowCount),
+    ).toEqual([2]);
+    // The whole table (incl. the already-acked chunk) is rewritten via unary — safe because writes are
+    // idempotent on the primary key — so all three rows land.
+    expect(landedIds.filter((x) => ["a", "b", "c"].includes(x)).sort()).toEqual(
+      ["a", "b", "c"],
+    );
+    expect(incrementsFor("langfuse.greptime_bulk.fallback_rows")).toHaveLength(
+      1,
+    );
   });
 
   it("chunks bulk writeRows at batchSize", async () => {
