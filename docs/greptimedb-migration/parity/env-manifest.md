@@ -3,21 +3,21 @@
 Recorded so any parity diff is attributable to the GreptimeDB backend, not config drift
 (Codex review #3). Captured 2026-06-20.
 
-| dimension | fork (`:3000`) | upstream (`:3001`) | equal? |
-|---|---|---|---|
-| app version (`/api/public/health`) | 3.184.1 | 3.184.1 | ✅ (fork base == upstream) |
-| web image | `openfuse-web:local` (sha `a2efcc4f…`) | `langfuse/langfuse:3.184.1` (digest `94c7638f…`) | fork = openfuse build off v3.184.1 |
-| worker image | `openfuse-worker:local` (sha `1a2987f4…`) | `langfuse/langfuse-worker:3.184.1` (digest `e4fd8241…`) | same base |
-| analytics backend | GreptimeDB v1.1.0 | ClickHouse 24.8 | **the variable under test** |
-| `LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES` | false | false | ✅ |
-| `LANGFUSE_INGESTION_QUEUE_DELAY_MS` | (empty) | (empty) | ✅ |
-| `LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS` | (empty) | (empty) | ✅ |
-| `NODE_ENV` | production | production | ✅ |
-| model price config | custom `parity-model-<runId>` created identically on both via `POST /models` (explicit input/output price) | same | ✅ (computed cost matches; default catalog differs — ledger L9) |
-| project / API key | `parity-proj` + identical pk/sk via `LANGFUSE_INIT_*` | same | ✅ |
-| timezone | UTC (payload timestamps explicit `Z`; queries explicit UTC from/to) | UTC (`TZ=UTC`,`PGTZ=UTC`) | ✅ |
-| retention / TTL | db TTL 730d (age-based; run window is recent) | project retention null = forever | no expiry within window |
-| `TELEMETRY_ENABLED` | true | false | irrelevant to read parity (outbound usage stats only) |
+| dimension                                         | fork (`:3000`)                                                                                             | upstream (`:3001`)                                      | equal?                                                                                                                                      |
+| ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| app version (`/api/public/health`)                | 3.184.1                                                                                                    | 3.184.1                                                 | ✅ at capture; later Openfuse releases report their own version (starting at `1.0.0-alpha.1`) while still tracking upstream base `v3.184.1` |
+| web image                                         | `openfuse-web:local` (sha `a2efcc4f…`)                                                                     | `langfuse/langfuse:3.184.1` (digest `94c7638f…`)        | fork = openfuse build off v3.184.1                                                                                                          |
+| worker image                                      | `openfuse-worker:local` (sha `1a2987f4…`)                                                                  | `langfuse/langfuse-worker:3.184.1` (digest `e4fd8241…`) | same base                                                                                                                                   |
+| analytics backend                                 | GreptimeDB v1.1.0                                                                                          | ClickHouse 24.8                                         | **the variable under test**                                                                                                                 |
+| `LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES`           | false                                                                                                      | false                                                   | ✅                                                                                                                                          |
+| `LANGFUSE_INGESTION_QUEUE_DELAY_MS`               | (empty)                                                                                                    | (empty)                                                 | ✅                                                                                                                                          |
+| `LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS` | (empty)                                                                                                    | (empty)                                                 | ✅                                                                                                                                          |
+| `NODE_ENV`                                        | production                                                                                                 | production                                              | ✅                                                                                                                                          |
+| model price config                                | custom `parity-model-<runId>` created identically on both via `POST /models` (explicit input/output price) | same                                                    | ✅ (computed cost matches; default catalog differs — ledger L9)                                                                             |
+| project / API key                                 | `parity-proj` + identical pk/sk via `LANGFUSE_INIT_*`                                                      | same                                                    | ✅                                                                                                                                          |
+| timezone                                          | UTC (payload timestamps explicit `Z`; queries explicit UTC from/to)                                        | UTC (`TZ=UTC`,`PGTZ=UTC`)                               | ✅                                                                                                                                          |
+| retention / TTL                                   | db TTL 730d (age-based; run window is recent)                                                              | project retention null = forever                        | no expiry within window                                                                                                                     |
+| `TELEMETRY_ENABLED`                               | true                                                                                                       | false                                                   | irrelevant to read parity (outbound usage stats only)                                                                                       |
 
 **Locked-dimension drift:** none material. The only intended difference is the analytics backend.
 The model-catalog size difference (L9) is build-time config and is neutralized by using a custom

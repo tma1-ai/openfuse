@@ -74,6 +74,6 @@ This fork tracks a specific upstream Langfuse version (currently `v3.184.1`). Wh
 ## Where help is most useful
 
 - Closing remaining Langfuse parity gaps (see [known limitations](docs/known-limitations.md)).
-- Production hardening for backfill and compaction (see [operations](docs/operations/compaction.md)).
+- Production hardening for backfill and compaction (see [operations](docs/operations.md)).
 - A GreptimeDB migration ledger (replace the idempotent-DDL convention).
 - Compose/image smoke automation.

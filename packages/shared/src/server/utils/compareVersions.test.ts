@@ -43,6 +43,8 @@ describe("compareVersions", () => {
   it("keeps semantic version update classification behavior", () => {
     expect(compareVersions("v1.2.3", "v1.3.0")).toBe("minor");
     expect(compareVersions("v1.2.3-rc.1", "v1.2.3")).toBe("patch");
+    expect(compareVersions("v1.0.0-alpha.1", "v1.0.0")).toBe("patch");
+    expect(compareVersions("v1.0.0-alpha.1", "v1.1.0")).toBe("minor");
     expect(compareVersions("v1.2.3", "v1.2.3")).toBeNull();
   });
 });

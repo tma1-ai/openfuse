@@ -2,17 +2,25 @@
 
 How to self-host Openfuse (Langfuse on GreptimeDB) with Docker Compose. The store is GreptimeDB: gRPC `:4001` for ingest writes, MySQL wire `:4002` for reads and migrations. There is no ClickHouse in this build.
 
-For local development (no app containers), see [development](development.md). For the one performance lever, compaction, see [operations: compaction](operations/compaction.md).
+For local development (no app containers), see [development](development.md). For monitoring, performance/compaction, backup, and upgrades, see [operations](operations.md).
 
 ## 1. Configuration
 
-Copy the reference env and edit the secrets:
+There are two starting points:
 
-```bash
-cp .env.prod.example .env     # then edit every `# CHANGEME` value
-```
+- **Evaluation / quickstart** — `cp .env.quickstart.example .env`. This ships working dev defaults (insecure, public) plus an auto-provisioned demo project, so `docker compose up` boots with zero edits. Do not use it on a network you do not control.
+- **Real deployment** — `cp .env.prod.example .env`, then set your own values for the secrets below.
 
-The source of truth for every `GREPTIME_*` variable is `packages/shared/src/env.ts`; `.env.prod.example` is the deploy-time reference.
+| Variable                              | Purpose                                                          | How to set                                                                        |
+| ------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `NEXTAUTH_SECRET`                     | Signs NextAuth session tokens.                                   | `openssl rand -base64 32`                                                         |
+| `SALT`                                | Salts the hash of project API keys.                              | `openssl rand -base64 32`                                                         |
+| `ENCRYPTION_KEY`                      | Encrypts sensitive data at rest; must be 256-bit (64 hex chars). | `openssl rand -hex 32`                                                            |
+| `POSTGRES_PASSWORD` + `DATABASE_URL`  | Postgres password (the server's and the app's must match).       | Pick a strong password; use it for `POSTGRES_PASSWORD` and inside `DATABASE_URL`. |
+| `REDIS_AUTH`                          | Redis password (the server's and the app's must match).          | Pick a strong password.                                                           |
+| `GREPTIME_USER` / `GREPTIME_PASSWORD` | GreptimeDB credentials — only if your GreptimeDB enforces auth.  | Leave empty for an unauthenticated single node; otherwise match your GreptimeDB.  |
+
+The source of truth for every `GREPTIME_*` variable is `packages/shared/src/env.ts`; `.env.prod.example` is the full deploy-time reference.
 
 GreptimeDB variables:
 
@@ -28,7 +36,7 @@ GreptimeDB variables:
 | `GREPTIME_RAW_EVENTS_TABLE`           | `raw_events`     | Write-path source-of-truth table.                                                      |
 | `LANGFUSE_GREPTIME_TTL`               | `730d`           | Database-level retention, applied automatically at startup (see §2).                   |
 
-For a Compose deployment these point at the `greptimedb` service name. The non-GreptimeDB requirements (Postgres, Redis, `NEXTAUTH_SECRET`, `SALT`, `ENCRYPTION_KEY`, …) are unchanged from upstream Langfuse and also live in `.env.prod.example`.
+For a Compose deployment these point at the `greptimedb` service name. The non-GreptimeDB requirements (Postgres, Redis, `NEXTAUTH_SECRET`, `SALT`, `ENCRYPTION_KEY`, …) are unchanged from upstream Langfuse and also live in `.env.prod.example`; for the full set and their meaning, see [Langfuse · Configuration](https://langfuse.com/self-hosting/configuration).
 
 ### Object storage is optional
 
@@ -63,47 +71,58 @@ GREPTIME_GRPC_URL=localhost:4001 \
   pnpm --filter=@langfuse/shared run greptime:migrate
 ```
 
-## 3. The Docker Compose stack
+## 3. Run the stack
 
-`docker-compose.yml` is the production stack: `langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, `redis`. `minio` is defined but gated behind the `s3` profile, so it does not start by default. By default Compose **builds** the web/worker images from this repo so the containers include the fork's GreptimeDB code. GreptimeDB runs in `standalone` mode and persists to the `langfuse_greptimedb_data` volume; web/worker `depends_on` GreptimeDB being healthy (`/health` on port `4000`).
+There are two topologies. Both read the same `.env`, both auto-migrate on startup (§2), and both persist GreptimeDB to a named volume. **Start with standalone**; move to the split topology when you need to scale web and worker independently — that is a deployment change, not a data migration (the stores outlive the app containers).
 
-First-run sequence — no manual schema step; the web container migrates both stores on startup (§2):
+### Single container (standalone) — start here
 
-```bash
-cp .env.prod.example .env     # edit every # CHANGEME value
-docker compose up -d          # builds web/worker, starts the full stack
-```
+`tma1ai/openfuse-standalone` runs **both** the web server and the worker in one container under a process supervisor — the GreptimeDB-standalone analogue for Openfuse. `docker-compose.standalone.yml` wires it to Postgres, Redis, and GreptimeDB.
 
-`langfuse-web` and `langfuse-worker` `depends_on` GreptimeDB/Postgres/Redis being healthy, so Compose starts them in the right order; the web entrypoint then applies the Postgres + GreptimeDB schemas before serving.
-
-Validate Compose syntax before deploying:
+Build from this repo:
 
 ```bash
-docker compose -f docker-compose.yml config -q
+docker compose -f docker-compose.standalone.yml up -d   # then open http://localhost:3000
 ```
 
-### Running published images instead of building
-
-Release images are published as `tma1ai/openfuse-web`, `tma1ai/openfuse-worker`, and `tma1ai/openfuse-standalone`. To run the split web/worker images instead of building locally, set the image overrides in `.env` and bring the stack up:
+Or run the published image instead of building locally — set the override in `.env` and pull:
 
 ```bash
-OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:<tag>
-OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:<tag>
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.1
 ```
-
-Tag policy: a pushed `v*` git tag publishes the full semver, the floating `major.minor` and `major` (non-`-rc` only), and a commit-SHA tag; `latest` moves only on non-`-rc` `v*` releases.
-
-## Single-container (standalone)
-
-For a single node — self-hosting or evaluation — `tma1ai/openfuse-standalone` runs **both** the web server and the worker in one container under a process supervisor, the GreptimeDB-standalone analogue for Openfuse. `docker-compose.standalone.yml` wires it to Postgres, Redis, and GreptimeDB:
 
 ```bash
-docker compose -f docker-compose.standalone.yml up   # then open http://localhost:3000
+docker compose -f docker-compose.standalone.yml up -d --pull always
 ```
 
-The standalone entrypoint runs the same automatic Postgres + GreptimeDB migrations as the web image (§2) before starting either process. Set `OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:<tag>` in `.env` to run a published image instead of building locally.
+The supervisor treats the two processes as one unit: if either exits, the container stops so your restart policy restarts the whole thing.
 
-Use this for a single-node deployment; for independent web/worker scaling, use the split images and `docker-compose.yml` above. The supervisor treats the two processes as one unit: if either exits, the container stops so your restart policy restarts the whole thing.
+### Split web + worker (`docker-compose.yml`)
+
+The production stack runs web and worker as separate, independently scalable services: `langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, `redis` (`minio` is defined but gated behind the `s3` profile, so it does not start by default). GreptimeDB runs in `standalone` mode and persists to the `langfuse_greptimedb_data` volume.
+
+Build from this repo (default):
+
+```bash
+docker compose up -d   # builds web/worker from source, starts the full stack
+```
+
+Or run the published images instead of building — pin the tags in `.env`:
+
+```bash
+OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.1
+OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.1
+```
+
+```bash
+docker compose up -d --pull always   # uses the pinned images instead of building
+```
+
+This Compose file defines both `build:` and `image:` for web/worker, so `--pull always` is what makes it pull the published image rather than build locally; a plain `docker compose up` would build. Validate the file first with `docker compose config -q`.
+
+### Published images and tags
+
+Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: `tma1ai/openfuse-web`, `tma1ai/openfuse-worker`, `tma1ai/openfuse-standalone`. The first preview is `1.0.0-alpha.1`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha.1`) and a commit-SHA tag. The floating `major.minor` and `major` tags are published only for stable releases — `docker/metadata-action` skips them for pre-releases (`-alpha` / `-beta` / `-rc`). `latest` still moves on any non-`-rc` release (so an `-alpha` does move it), so during the alpha pin an explicit tag rather than tracking `latest`. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
 
 ## 4. Verify and persist
 

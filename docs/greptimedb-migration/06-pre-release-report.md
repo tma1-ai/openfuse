@@ -131,7 +131,7 @@ Recommended user-facing doc layout:
 - `docs/development.md`
 - `docs/architecture.md`
 - `docs/known-limitations.md`
-- `docs/operations/compaction.md`
+- `docs/operations.md`
 - `docs/migration-from-langfuse.md`
 
 Keep `docs/greptimedb-migration/*` as engineering history and design record.
@@ -304,7 +304,7 @@ Add a short public roadmap:
 - [ ] Add `docs/development.md`.
 - [ ] Add `docs/architecture.md`.
 - [ ] Add `docs/known-limitations.md`.
-- [ ] Add `docs/operations/compaction.md`.
+- [ ] Add `docs/operations.md`.
 - [ ] Link migration review docs as design history, not primary user docs.
 
 ### Release Packaging

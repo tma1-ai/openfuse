@@ -8,14 +8,11 @@ import {
 import { logger, compareVersions } from "@langfuse/shared/src/server";
 import { z } from "zod";
 
-const ReleaseApiRes = z.array(
-  z.object({
-    repo: z.string(),
-    latestRelease: z.string(),
-    publishedAt: z.iso.datetime(),
-    url: z.url(),
-  }),
-);
+// GitHub Releases API shape for the fork's latest non-pre-release release.
+const GithubLatestReleaseRes = z.object({
+  tag_name: z.string(),
+  html_url: z.url(),
+});
 
 export const publicRouter = createTRPCRouter({
   tracingSearchConfig: protectedProjectProcedure
@@ -31,46 +28,47 @@ export const publicRouter = createTRPCRouter({
     let body;
     try {
       const response = await fetch(
-        `https://langfuse.com/api/latest-releases?repo=langfuse/langfuse&version=${VERSION}`,
+        "https://api.github.com/repos/tma1-ai/openfuse/releases/latest",
+        {
+          headers: {
+            Accept: "application/vnd.github+json",
+            "User-Agent": "openfuse-update-check",
+          },
+        },
       );
+      // 404 until a stable (non-pre-release) Openfuse release exists; while only
+      // pre-releases are published there is nothing to surface.
+      if (!response.ok) return null;
       body = await response.json();
     } catch (error) {
+      logger.error("[trpc.public.checkUpdate] failed to fetch latest release", {
+        error,
+      });
+      return null;
+    }
+
+    const release = GithubLatestReleaseRes.safeParse(body);
+    if (!release.success) {
       logger.error(
-        "[trpc.public.checkUpdate] failed to fetch latest-release api",
-        {
-          error,
-        },
+        "[trpc.public.checkUpdate] release API response does not match schema",
+        { error: release.error },
       );
       return null;
     }
 
-    const releases = ReleaseApiRes.safeParse(body);
-    if (!releases.success) {
-      logger.error(
-        "[trpc.public.checkUpdate] Release API response is invalid, does not match schema",
-        {
-          error: releases.error,
-        },
-      );
+    let updateType: "major" | "minor" | "patch" | null;
+    try {
+      updateType = compareVersions(VERSION, release.data.tag_name);
+    } catch {
+      // Non-semver tag (e.g. a named or date-based tag); nothing to compare.
       return null;
     }
-    const langfuseRelease = releases.data.find(
-      (release) => release.repo === "langfuse/langfuse",
-    );
-    if (!langfuseRelease) {
-      logger.error(
-        "[trpc.public.checkUpdate] Release API response is invalid, does not contain langfuse/langfuse",
-      );
-      return null;
-    }
-
-    const updateType = compareVersions(VERSION, langfuseRelease.latestRelease);
 
     return {
       updateType,
       currentVersion: VERSION,
-      latestRelease: langfuseRelease.latestRelease,
-      url: langfuseRelease.url,
+      latestRelease: release.data.tag_name,
+      url: release.data.html_url,
     };
   }),
 });
