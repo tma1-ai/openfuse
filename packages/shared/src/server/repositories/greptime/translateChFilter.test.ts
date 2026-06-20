@@ -23,6 +23,7 @@ import {
   StringFilter,
   StringObjectFilter,
   StringOptionsFilter,
+  ToolNameOptionsFilter,
 } from "../../greptime/sql/greptime-filter";
 import {
   chFilterToGreptime,
@@ -68,6 +69,35 @@ describe("chFilterToGreptime", () => {
         }),
       ),
     ).toBeInstanceOf(ArrayOptionsFilter);
+
+    // toolNames / calledToolNames array filters route to the tool-name EAV EXISTS, not a column.
+    const toolDefs = chFilterToGreptime(
+      new ChArrayOptionsFilter({
+        clickhouseTable: "observations",
+        field: "mapKeys(tool_definitions)",
+        operator: "any of",
+        values: ["search"],
+        tablePrefix: "o",
+      }),
+    );
+    expect(toolDefs).toBeInstanceOf(ToolNameOptionsFilter);
+    expect(toolDefs.apply().query).toContain(
+      "FROM `observations_tool_definitions` m",
+    );
+
+    const toolCalls = chFilterToGreptime(
+      new ChArrayOptionsFilter({
+        clickhouseTable: "observations",
+        field: "tool_call_names",
+        operator: "none of",
+        values: ["search"],
+        tablePrefix: "o",
+      }),
+    );
+    expect(toolCalls).toBeInstanceOf(ToolNameOptionsFilter);
+    expect(toolCalls.apply().query).toContain(
+      "FROM `observations_tool_calls` m",
+    );
 
     expect(
       chFilterToGreptime(

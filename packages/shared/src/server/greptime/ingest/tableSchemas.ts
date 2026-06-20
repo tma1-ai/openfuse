@@ -162,6 +162,17 @@ export const usageCostTable = (name: string): Table =>
     .addFieldColumn("value", DataType.Float64)
     .addFieldColumn("is_deleted", DataType.Bool);
 
+// EAV tool-name subtable (observations only): one row per (project, observation, tool_name).
+// Tags = PRIMARY KEY (project_id, entity_id, tool_name). See rowBuilders.toolDefinitionRows /
+// toolCallRows and 0009_observations_tool_names.sql.
+export const toolNameTable = (name: string): Table =>
+  Table.new(name)
+    .addTagColumn("project_id", DataType.String)
+    .addTagColumn("entity_id", DataType.String)
+    .addTagColumn("tool_name", DataType.String)
+    .addTimestampColumn("timestamp", Precision.Millisecond)
+    .addFieldColumn("is_deleted", DataType.Bool);
+
 /** Physical table name -> fresh `Table` schema builder. The writer keeps one queue per key. */
 export const PHYSICAL_TABLES: Record<string, () => Table> = {
   traces: tracesTable,
@@ -173,4 +184,7 @@ export const PHYSICAL_TABLES: Record<string, () => Table> = {
   scores_metadata: () => metadataTable("scores_metadata"),
   traces_tags: () => tagsTable("traces_tags"),
   observations_usage_cost: () => usageCostTable("observations_usage_cost"),
+  observations_tool_definitions: () =>
+    toolNameTable("observations_tool_definitions"),
+  observations_tool_calls: () => toolNameTable("observations_tool_calls"),
 };

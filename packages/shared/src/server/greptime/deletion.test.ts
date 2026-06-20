@@ -62,6 +62,23 @@ describe("Greptime deletion", () => {
     ]);
   });
 
+  it("deletes an observation's projection + all EAV tables incl. tool tables", async () => {
+    await deleteEntitiesFromGreptime({
+      projectId: "project-1",
+      entityType: "observation",
+      entityIds: ["obs-1"],
+    });
+
+    expect(mocks.greptimeQuery.mock.calls.map(([arg]) => arg.query)).toEqual([
+      "DELETE FROM `observations` WHERE `project_id` = ? AND `id` = ?",
+      "DELETE FROM `observations_metadata` WHERE `project_id` = ? AND `entity_id` = ?",
+      "DELETE FROM `observations_tags` WHERE `project_id` = ? AND `entity_id` = ?",
+      "DELETE FROM `observations_usage_cost` WHERE `project_id` = ? AND `entity_id` = ?",
+      "DELETE FROM `observations_tool_definitions` WHERE `project_id` = ? AND `entity_id` = ?",
+      "DELETE FROM `observations_tool_calls` WHERE `project_id` = ? AND `entity_id` = ?",
+    ]);
+  });
+
   it("deletes traces and child observations/scores resolved from projections", async () => {
     mocks.greptimeQuery
       .mockResolvedValueOnce([{ id: "obs-1" }, { id: "obs-2" }])
@@ -103,8 +120,9 @@ describe("Greptime deletion", () => {
     await deleteProjectFromGreptime("project-1");
 
     expect(mocks.greptimeWrite).toHaveBeenCalledOnce();
-    // 3 trace + 4 observation (incl. observations_usage_cost) + 3 score + 1 dataset_run_items.
-    expect(mocks.greptimeQuery).toHaveBeenCalledTimes(11);
+    // 3 trace + 6 observation (incl. usage_cost + tool_definitions + tool_calls) + 3 score +
+    // 1 dataset_run_items.
+    expect(mocks.greptimeQuery).toHaveBeenCalledTimes(13);
     expect(mocks.greptimeQuery.mock.calls).toEqual(
       expect.arrayContaining([
         [
@@ -117,6 +135,20 @@ describe("Greptime deletion", () => {
           {
             query:
               "DELETE FROM `observations_usage_cost` WHERE `project_id` = ?",
+            params: ["project-1"],
+          },
+        ],
+        [
+          {
+            query:
+              "DELETE FROM `observations_tool_definitions` WHERE `project_id` = ?",
+            params: ["project-1"],
+          },
+        ],
+        [
+          {
+            query:
+              "DELETE FROM `observations_tool_calls` WHERE `project_id` = ?",
             params: ["project-1"],
           },
         ],

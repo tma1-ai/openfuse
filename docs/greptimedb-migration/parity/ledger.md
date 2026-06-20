@@ -38,7 +38,7 @@ only the documented KNOWN classes below remain. Re-run after any read-path chang
 
 ---
 
-## KNOWN_LIMITATION — documented engine/config divergence (94 cases, non-blocking)
+## KNOWN_LIMITATION — documented engine/config divergence (96 cases, non-blocking)
 
 ### L4. Quantile aggregations differ (45) — `p50/p75/p90/p95/p99`
 e.g. `latency/p95` fork `48548.07` vs upstream `47800`; `value/p50` fork `0.8436` vs `0.85`.
@@ -66,6 +66,17 @@ Owner: product note.
 ### L8. Histogram binning differs (1) — `value/histogram`
 Different bin boundaries/counts (GreptimeDB floor-bucketing vs ClickHouse adaptive). **Verdict:**
 non-blocking, expected; histogram is approximate. Owner: product note.
+
+### L10. Called-tool breakdown of a value measure (2) — `totalCost|totalTokens/sum/by:calledToolNames`
+Upstream `arrayJoin(tool_call_names)` explodes the call **multiset**, so a tool called N times in one
+observation multiplies that observation's aggregate N× (e.g. search called twice → `sum_totalCost`
+`0.0056` vs the observation's actual `0.0028`), inflating the cross-bucket total above the real value
+— cost/tokens are **not conserved**. The fork's `observations_tool_calls` EAV is keyed by distinct
+`tool_name`, attributing the value once per distinct called tool — consistent with the `count`
+breakdown (which **both** stacks already report per distinct tool) and conserving. **Verdict:**
+non-blocking; the fork is **more correct** (ClickHouse's multiplicity double-count is the divergence).
+Available-tool breakdown (`by:toolNames`, a map key set) has no multiplicity and is **exact parity**.
+Owner: product note.
 
 ### L9. Image-shipped model price catalog differs (1) — `GET /api/public/models`
 Fork ships **166** default model prices, upstream v3.184.1 ships **87** (build-time config, not a

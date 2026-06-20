@@ -43,6 +43,23 @@ export const usageCostTableForEntity: Partial<
 };
 
 /**
+ * EAV tool-name subtables for an entity type. Only observations carry tool_definitions /
+ * tool_call_names, so these are observation-only partial maps (same rationale as
+ * `usageCostTableForEntity`): deletion must skip absent tables rather than DELETE a missing one.
+ */
+export const toolDefinitionsTableForEntity: Partial<
+  Record<GreptimeEntityType, string>
+> = {
+  observation: "observations_tool_definitions",
+};
+
+export const toolCallsTableForEntity: Partial<
+  Record<GreptimeEntityType, string>
+> = {
+  observation: "observations_tool_calls",
+};
+
+/**
  * Backtick-quote a single identifier for GreptimeDB SQL (MySQL dialect). Escapes embedded
  * backticks. Use for every column/table name emitted into a SQL string.
  */

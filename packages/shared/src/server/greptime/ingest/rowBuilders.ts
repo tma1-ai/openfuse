@@ -225,6 +225,51 @@ export const usageCostRows = (params: {
 };
 
 /**
+ * Explode an observation's `tool_definitions` map keys into observations_tool_definitions EAV rows
+ * (one row per declared/available tool name). This is what lets the dashboard filter and break down
+ * by available tool with a project-scoped EAV EXISTS / GROUP BY instead of the `mapKeys(...)` shape
+ * GreptimeDB SQL cannot express (05 Finding #1). The full `tool_definitions` map stays on the
+ * observations projection (exact restore). `timestamp` carries the observation start_time, matching
+ * the EAV convention used by `metadataRows`.
+ */
+export const toolDefinitionRows = (params: {
+  toolDefinitions: Record<string, unknown> | undefined;
+  projectId: string;
+  entityId: string;
+  timestamp: number;
+  isDeleted: boolean;
+}): GreptimeRow[] =>
+  Object.keys(params.toolDefinitions ?? {}).map((toolName) => ({
+    project_id: params.projectId,
+    entity_id: params.entityId,
+    tool_name: toolName,
+    timestamp: params.timestamp,
+    is_deleted: params.isDeleted,
+  }));
+
+/**
+ * Explode an observation's `tool_call_names` array into observations_tool_calls EAV rows (one row
+ * per distinct invoked tool name). Counterpart of `toolDefinitionRows` for the `calledToolNames`
+ * surface. Names are de-duplicated: the PK already collapses repeats under `last_non_null`, and a
+ * called-tool membership filter / breakdown is set-semantic, so emitting one row per distinct name
+ * avoids redundant writes.
+ */
+export const toolCallRows = (params: {
+  toolCallNames: string[] | undefined;
+  projectId: string;
+  entityId: string;
+  timestamp: number;
+  isDeleted: boolean;
+}): GreptimeRow[] =>
+  [...new Set(params.toolCallNames ?? [])].map((toolName) => ({
+    project_id: params.projectId,
+    entity_id: params.entityId,
+    tool_name: toolName,
+    timestamp: params.timestamp,
+    is_deleted: params.isDeleted,
+  }));
+
+/**
  * Map a logical record to all physical rows it produces: the projection row plus its EAV
  * subtable rows (traces -> traces + traces_metadata + traces_tags; observations -> observations
  * + observations_metadata; scores -> scores + scores_metadata; dataset_run_items -> projection
@@ -288,6 +333,26 @@ export const buildGreptimeRowsForRecord = (
         usageCostRows({
           usageDetails: r.usage_details,
           costDetails: r.cost_details,
+          projectId: r.project_id,
+          entityId: r.id,
+          timestamp: r.start_time,
+          isDeleted: Boolean(r.is_deleted),
+        }),
+      );
+      pushRows(
+        "observations_tool_definitions",
+        toolDefinitionRows({
+          toolDefinitions: r.tool_definitions,
+          projectId: r.project_id,
+          entityId: r.id,
+          timestamp: r.start_time,
+          isDeleted: Boolean(r.is_deleted),
+        }),
+      );
+      pushRows(
+        "observations_tool_calls",
+        toolCallRows({
+          toolCallNames: r.tool_call_names,
           projectId: r.project_id,
           entityId: r.id,
           timestamp: r.start_time,

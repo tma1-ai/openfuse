@@ -344,4 +344,62 @@ describe("GreptimeQueryBuilder", () => {
       }),
     ).toThrow(/histogram is only supported for a base .* numeric measure/i);
   });
+
+  describe("tool-name EAV (05 Finding #1)", () => {
+    it("breakdown by toolNames joins the tool EAV and groups by tool_name", () => {
+      const { query } = build({
+        view: "observations",
+        dimensions: [{ field: "toolNames" }],
+        metrics: [{ measure: "count", aggregation: "count" }],
+      });
+      expect(query).toMatch(/INNER JOIN `observations_tool_definitions` AS td/);
+      expect(query).toMatch(/td\.entity_id = o\.id/);
+      expect(query).toMatch(/td\.tool_name AS `toolNames`/);
+      expect(query).toMatch(/GROUP BY td\.tool_name/);
+      expect(query).toMatch(/count\(\*\)/);
+    });
+
+    it("breakdown by calledToolNames joins observations_tool_calls (alias tc)", () => {
+      const { query } = build({
+        view: "observations",
+        dimensions: [{ field: "calledToolNames" }],
+        metrics: [{ measure: "totalCost", aggregation: "sum" }],
+      });
+      expect(query).toMatch(/INNER JOIN `observations_tool_calls` AS tc/);
+      expect(query).toMatch(/GROUP BY tc\.tool_name/);
+    });
+
+    it("a FILTER on toolNames emits an EAV EXISTS and does NOT add the breakdown join", () => {
+      const { query } = build({
+        view: "observations",
+        filters: [
+          {
+            column: "toolNames",
+            type: "arrayOptions",
+            operator: "any of",
+            value: ["search", "calculator"],
+          },
+        ],
+        metrics: [{ measure: "count", aggregation: "count" }],
+      });
+      expect(query).toMatch(
+        /EXISTS \(SELECT 1 FROM `observations_tool_definitions` m/,
+      );
+      expect(query).toMatch(/m\.`tool_name` IN/);
+      // Critical: a filter must not fan out — no breakdown join is added.
+      expect(query).not.toMatch(/INNER JOIN `observations_tool_definitions`/);
+    });
+
+    it("rejects a tool breakdown combined with a relation-backed measure (bounded support)", () => {
+      expect(() =>
+        build({
+          view: "observations",
+          dimensions: [{ field: "toolNames" }],
+          metrics: [{ measure: "countScores", aggregation: "count" }],
+        }),
+      ).toThrow(
+        /tool-name breakdown cannot be combined with a relation-backed measure/i,
+      );
+    });
+  });
 });

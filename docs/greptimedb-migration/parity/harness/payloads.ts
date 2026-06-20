@@ -52,6 +52,8 @@ export interface PayloadSet {
     updatedGenName: string;
     numericScoreName: string;
     categoricalScoreName: string;
+    toolSearch: string;
+    toolCalc: string;
   };
 }
 
@@ -101,6 +103,27 @@ export function buildPayloads(cfg: ParityConfig): PayloadSet {
 
   const usage = { input: 120, output: 80, total: 200 };
   const cost = { input: 0.0012, output: 0.0016, total: 0.0028 };
+
+  // Tool introspection (05 Finding #1): both stacks run the same ingestion extraction —
+  // input.tools -> tool_definitions keys; output.tool_calls -> tool_call_names (search twice ->
+  // deduped in the EAV). Placed on g2 (no update event) so the merged input/output is not overridden.
+  const toolSearch = "search";
+  const toolCalc = "calculator";
+  const toolInput = {
+    messages: [{ role: "user", content: "use tools" }],
+    tools: [
+      { type: "function", function: { name: toolSearch, description: "search the kb" } },
+      { type: "function", function: { name: toolCalc, description: "do math" } },
+    ],
+  };
+  const toolOutput = {
+    role: "assistant",
+    tool_calls: [
+      { id: "call-1", type: "function", function: { name: toolSearch, arguments: "{}" } },
+      { id: "call-2", type: "function", function: { name: toolSearch, arguments: "{}" } },
+      { id: "call-3", type: "function", function: { name: toolCalc, arguments: "{}" } },
+    ],
+  };
 
   const evt = (label: string, type: string, body: unknown, min: number, sec: number) => ({
     id: `evt-${r}-${label}`,
@@ -233,6 +256,8 @@ export function buildPayloads(cfg: ParityConfig): PayloadSet {
       endTime: t(6, 28),
       completionStartTime: t(6, 9),
       model,
+      input: toolInput,
+      output: toolOutput,
       usageDetails: usage,
       level: "WARNING",
       statusMessage: "slow",
@@ -319,6 +344,8 @@ export function buildPayloads(cfg: ParityConfig): PayloadSet {
       updatedGenName,
       numericScoreName,
       categoricalScoreName,
+      toolSearch,
+      toolCalc,
     },
   };
 }

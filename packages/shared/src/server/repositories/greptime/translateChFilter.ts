@@ -28,12 +28,17 @@ import {
   StringFilter,
   StringObjectFilter,
   StringOptionsFilter,
+  ToolNameOptionsFilter,
 } from "../../greptime/sql/greptime-filter";
 import { filterOperators } from "../../../interfaces/filters";
 import { sqlSafeRandomCharacters } from "../dbUtils";
 import { InvalidRequestError } from "../../../errors";
 import { tracesTableUiColumnDefinitions } from "../../tableMappings/mapTracesTable";
-import { tracesTableGreptimeColumnDefinitions } from "../../greptime/sql/columnMappings";
+import {
+  OBSERVATIONS_TOOL_CALLS_TABLE,
+  OBSERVATIONS_TOOL_DEFINITIONS_TABLE,
+  tracesTableGreptimeColumnDefinitions,
+} from "../../greptime/sql/columnMappings";
 
 /**
  * Translate a *compiled* ClickHouse `FilterList` (the kind the public-API web wrappers build via
@@ -71,6 +76,19 @@ const isFullTextColumn = (table: string, field: string): boolean =>
 
 // Rollup-score column refs that only exist as a materialised array in the CH UI CTE.
 const ROLLUP_SCORE_FIELDS = new Set(["scores_avg", "score_categories"]);
+
+/**
+ * Tool-name array columns: the compiled CH `ArrayOptionsFilter` carries the `clickhouseSelect`
+ * expression as `field` (`mapKeys(tool_definitions)` / `tool_call_names`, optionally `o.`-prefixed),
+ * meaningless to GreptimeDB. Detect them by the underlying column and route to the EAV EXISTS table.
+ */
+const toolNameEavTableForField = (field: string): string | null => {
+  if (field.includes("tool_definitions")) {
+    return OBSERVATIONS_TOOL_DEFINITIONS_TABLE;
+  }
+  if (field.includes("tool_call_names")) return OBSERVATIONS_TOOL_CALLS_TABLE;
+  return null;
+};
 
 const requireGrain = (
   opts: TranslateChFilterOptions,
@@ -115,6 +133,19 @@ export const chFilterToGreptime = (
     });
   }
   if (f instanceof ChArrayOptionsFilter) {
+    // toolNames / calledToolNames -> project-scoped EAV EXISTS over the observation tool tables;
+    // CH's `mapKeys(tool_definitions)` / `tool_call_names` array predicate is not a GreptimeDB column.
+    const toolEavTable = toolNameEavTableForField(f.field);
+    if (toolEavTable) {
+      return new ToolNameOptionsFilter({
+        table,
+        field: f.field,
+        eavTable: toolEavTable,
+        operator: f.operator,
+        values: f.values,
+        tablePrefix,
+      });
+    }
     return new ArrayOptionsFilter({
       table,
       field: f.field,

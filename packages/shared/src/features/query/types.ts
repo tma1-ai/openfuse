@@ -38,6 +38,11 @@ export const viewDeclaration = z.object({
           valueAlias: z.string(),
         })
         .optional(),
+      // GreptimeDB only (05 Finding #1): the observation tool-name dimensions are relation-backed
+      // for a by-tool breakdown (JOIN + GROUP BY tool_name), but a FILTER on them must route to a
+      // project-scoped EAV EXISTS over `eavTable` instead of adding the fan-out join. Marks the
+      // dimension as "filter via EXISTS, not via the breakdown relation".
+      filterViaEav: z.object({ eavTable: z.string() }).optional(),
     }),
   ),
   measures: z.record(
@@ -62,6 +67,9 @@ export const viewDeclaration = z.object({
       name: z.string(),
       joinConditionSql: z.string(),
       timeDimension: z.string(),
+      // GreptimeDB only: explicit join alias for the relation, so a new EAV breakdown relation can
+      // declare e.g. `alias: "td"` instead of growing the builder's `baseAliasForTable` switch.
+      alias: z.string().optional(),
       useFinal: z.boolean().optional(),
       // GreptimeDB only (04-read-path.md, P4): when set, the relation joins this inline subquery
       // instead of the physical `name` table — used by the experiment relation, which joins a

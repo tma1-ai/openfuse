@@ -9,6 +9,8 @@ import {
   projectionTableForEntity,
   quoteIdent,
   tagsTableForEntity,
+  toolCallsTableForEntity,
+  toolDefinitionsTableForEntity,
   usageCostTableForEntity,
 } from "./schemaUtils";
 
@@ -27,10 +29,16 @@ const projectionDeletableTables = (
   projectionTableForEntity[entityType],
   metadataTableForEntity[entityType],
   tagsTableForEntity[entityType],
-  // observations are the only entity with a usage/cost EAV table; skip the others (the table does
-  // not exist for traces/scores, so DELETE would error).
+  // observations are the only entity with usage/cost + tool-name EAV tables; skip the others (the
+  // tables do not exist for traces/scores, so DELETE would error).
   ...(usageCostTableForEntity[entityType]
     ? [usageCostTableForEntity[entityType]!]
+    : []),
+  ...(toolDefinitionsTableForEntity[entityType]
+    ? [toolDefinitionsTableForEntity[entityType]!]
+    : []),
+  ...(toolCallsTableForEntity[entityType]
+    ? [toolCallsTableForEntity[entityType]!]
     : []),
 ];
 

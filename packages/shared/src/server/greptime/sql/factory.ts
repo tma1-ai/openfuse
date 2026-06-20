@@ -20,6 +20,7 @@ import {
   CategoryOptionsFilter,
   ScoreNumberObjectFilter,
   DatasetRunItemsOptionsFilter,
+  ToolNameOptionsFilter,
   type GreptimeFilter,
 } from "./greptime-filter";
 import { type GreptimeColumnMappings } from "./columnMappings";
@@ -125,6 +126,18 @@ export const createGreptimeFilterFromFilterState = (
           tablePrefix,
         });
       case "arrayOptions":
+        // Observation tool-name columns (toolNames / calledToolNames) route to a project-scoped
+        // EAV EXISTS over the named tool table instead of an array column predicate.
+        if (column.toolNameEav) {
+          return new ToolNameOptionsFilter({
+            table,
+            field,
+            eavTable: column.toolNameEav.eavTable,
+            operator: frontEndFilter.operator,
+            values: frontEndFilter.value,
+            tablePrefix,
+          });
+        }
         return new ArrayOptionsFilter({
           table,
           field,

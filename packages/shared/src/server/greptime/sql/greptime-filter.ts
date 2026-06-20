@@ -569,6 +569,94 @@ export class ArrayOptionsFilter implements GreptimeFilter {
   }
 }
 
+/**
+ * Tool-name membership filter -> EXISTS over an observation tool-name EAV table
+ * (`observations_tool_definitions` for available tools / `observations_tool_calls` for called
+ * tools). Same project-scoped, soft-delete-aware semi-join as the tags `ArrayOptionsFilter`, but the
+ * EAV table is passed explicitly (it is not the `<table>_tags` convention) and the membership column
+ * is `tool_name`. This is the GreptimeDB replacement for ClickHouse's `hasAny(mapKeys(tool_definitions))`
+ * / `hasAny(tool_call_names)` (05 Finding #1). The outer alias holds the observation `project_id`/`id`.
+ */
+export class ToolNameOptionsFilter implements GreptimeFilter {
+  public table: string;
+  public field: string;
+  public values: string[];
+  public operator: (typeof filterOperators.arrayOptions)[number];
+  public tablePrefix?: string;
+  private readonly eavTable: string;
+
+  constructor(opts: {
+    table: string;
+    field: string;
+    eavTable: string;
+    operator: (typeof filterOperators.arrayOptions)[number];
+    values: string[];
+    tablePrefix?: string;
+  }) {
+    this.table = opts.table;
+    this.field = opts.field;
+    this.eavTable = opts.eavTable;
+    this.values = opts.values;
+    this.operator = opts.operator;
+    this.tablePrefix = opts.tablePrefix;
+  }
+
+  apply(): CompiledFilter {
+    const params: Record<string, unknown> = {};
+    const toolCol = `m.${quoteIdent("tool_name")}`;
+    const outer = outerAlias(this);
+
+    const bindList = (): string =>
+      this.values
+        .map((val) => {
+          const name = `v${uid()}`;
+          params[name] = val;
+          return `:${name}`;
+        })
+        .join(", ") || "NULL";
+
+    switch (this.operator) {
+      case "any of":
+        return {
+          query: eavExists({
+            eavTable: this.eavTable,
+            outer,
+            innerPredicate: `${toolCol} IN (${bindList()})`,
+          }),
+          params,
+        };
+      case "none of":
+        return {
+          query: eavExists({
+            eavTable: this.eavTable,
+            outer,
+            innerPredicate: `${toolCol} IN (${bindList()})`,
+            negate: true,
+          }),
+          params,
+        };
+      case "all of": {
+        // every requested tool must be present: AND of one EXISTS per value.
+        const conjuncts = this.values.map((val) => {
+          const name = `v${uid()}`;
+          params[name] = val;
+          return eavExists({
+            eavTable: this.eavTable,
+            outer,
+            innerPredicate: `${toolCol} = :${name}`,
+          });
+        });
+        return {
+          query: conjuncts.length ? `(${conjuncts.join(" AND ")})` : "true",
+          params,
+        };
+      }
+      default:
+        throw new Error(`Unsupported tool-name operator: ${this.operator}`);
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // score-grain filters (rollup score columns: scores_avg / score_categories)
 // ---------------------------------------------------------------------------

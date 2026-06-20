@@ -73,6 +73,8 @@ export function buildMetricsMatrix(
   toTimestamp: string,
   /** Run-unique environments → every query scoped to this run (no cross-run contamination). */
   envScope: string[],
+  /** Tool names present in the payload (05 Finding #1): drive the by-tool filter cases. */
+  toolNames: string[] = [],
 ): MetricsCase[] {
   const cases: MetricsCase[] = [];
   const runFilter = envScope.length
@@ -130,6 +132,44 @@ export function buildMetricsMatrix(
       }
     }
   }
+
+  // Tool-name cases (05 Finding #1). Kept OUT of PREFERRED_DIMS so they never cross-product with
+  // relation-backed measures (countScores), which the GreptimeDB builder rejects for a fan-out
+  // breakdown dimension. Base measures only: by-tool breakdown fans the observation out per tool
+  // (CH arrayJoin parity); the tool filter is a semi-join EAV EXISTS (no fan-out).
+  try {
+    const obs = getViewDeclaration("observations" as never);
+    const obsDims = new Set(Object.keys(obs.dimensions));
+    const obsMeasures = obs.measures as Record<string, MeasureDecl>;
+    const toolMetrics = [
+      { measure: "count", aggregation: "count" },
+      { measure: "totalCost", aggregation: "sum" },
+      { measure: "totalTokens", aggregation: "sum" },
+    ].filter((m) => m.measure in obsMeasures);
+    for (const dim of ["toolNames", "calledToolNames"]) {
+      if (!obsDims.has(dim)) continue;
+      for (const m of toolMetrics) {
+        cases.push({
+          label: `observations/${m.measure}/${m.aggregation}/by:${dim}`,
+          query: mkQuery("observations", [m], [{ field: dim }], null, fromTimestamp, toTimestamp, runFilter),
+        });
+      }
+      if (toolNames.length > 0) {
+        for (const op of ["any of", "none of"]) {
+          cases.push({
+            label: `observations/count/count/filter:${dim}:${op.replace(/ /g, "-")}`,
+            query: mkQuery("observations", [{ measure: "count", aggregation: "count" }], [], null, fromTimestamp, toTimestamp, [
+              ...runFilter,
+              { column: dim, operator: op, value: [toolNames[0]], type: "arrayOptions" },
+            ]),
+          });
+        }
+      }
+    }
+  } catch {
+    // observations view unavailable in this build — skip the tool cases.
+  }
+
   return cases;
 }
 

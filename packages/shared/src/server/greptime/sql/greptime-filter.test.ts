@@ -13,6 +13,7 @@ import {
   StringFilter,
   StringObjectFilter,
   StringOptionsFilter,
+  ToolNameOptionsFilter,
 } from "./greptime-filter";
 
 // Param names are random; normalise placeholders for stable structural assertions.
@@ -251,6 +252,52 @@ describe("GreptimeFilter EAV semi-joins (tenant isolation)", () => {
       operator: "all of",
       values: ["a", "b"],
       tablePrefix: "t",
+    }).apply();
+    expect((query.match(/EXISTS/g) ?? []).length).toBe(2);
+    expect(query).toContain(" AND ");
+  });
+
+  it("toolNames 'any of' -> EXISTS over the named tool EAV, correlated + soft-delete-aware", () => {
+    const { query } = new ToolNameOptionsFilter({
+      table: "observations",
+      field: "id",
+      eavTable: "observations_tool_definitions",
+      operator: "any of",
+      values: ["search", "calculator"],
+      tablePrefix: "o",
+    }).apply();
+    const n = norm(query);
+    expect(n).toContain(
+      "EXISTS (SELECT 1 FROM `observations_tool_definitions` m",
+    );
+    expect(n).toContain("m.`project_id` = o.`project_id`");
+    expect(n).toContain("m.`entity_id` = o.`id`");
+    expect(n).toContain("m.`tool_name` IN (:P, :P)");
+    expect(n).toContain("m.`is_deleted` = false");
+  });
+
+  it("calledToolNames 'none of' -> NOT EXISTS over the tool-calls EAV", () => {
+    const { query } = new ToolNameOptionsFilter({
+      table: "observations",
+      field: "id",
+      eavTable: "observations_tool_calls",
+      operator: "none of",
+      values: ["search"],
+      tablePrefix: "o",
+    }).apply();
+    expect(norm(query)).toContain(
+      "NOT EXISTS (SELECT 1 FROM `observations_tool_calls` m",
+    );
+  });
+
+  it("toolNames 'all of' -> AND of per-tool EXISTS", () => {
+    const { query } = new ToolNameOptionsFilter({
+      table: "observations",
+      field: "id",
+      eavTable: "observations_tool_definitions",
+      operator: "all of",
+      values: ["search", "calculator"],
+      tablePrefix: "o",
     }).apply();
     expect((query.match(/EXISTS/g) ?? []).length).toBe(2);
     expect(query).toContain(" AND ");
