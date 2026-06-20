@@ -57,8 +57,14 @@ let killTimer = null;
 const log = (msg) => console.log(`[supervisor] ${msg}`);
 
 const children = procs.map((p) => {
-  log(`starting ${p.name}: ${p.cmd} ${p.args.join(" ")} (cwd=${p.cwd}, PORT=${p.port})`);
-  const child = spawn(p.cmd, p.args, { cwd: p.cwd, env: p.env, stdio: "inherit" });
+  log(
+    `starting ${p.name}: ${p.cmd} ${p.args.join(" ")} (cwd=${p.cwd}, PORT=${p.port})`,
+  );
+  const child = spawn(p.cmd, p.args, {
+    cwd: p.cwd,
+    env: p.env,
+    stdio: "inherit",
+  });
   const entry = { ...p, child, exited: false };
 
   child.on("exit", (code, signal) => {
@@ -105,7 +111,9 @@ function beginShutdown(signal) {
   killTimer = setTimeout(() => {
     for (const entry of children) {
       if (!entry.exited) {
-        log(`${entry.name} did not exit within ${GRACE_MS}ms; sending SIGKILL.`);
+        log(
+          `${entry.name} did not exit within ${GRACE_MS}ms; sending SIGKILL.`,
+        );
         try {
           entry.child.kill("SIGKILL");
         } catch {

@@ -126,12 +126,18 @@ const applyMigrations = async () => {
     // Database-level retention TTL (idempotent). Skip rather than fail the whole bootstrap on a
     // malformed value — retention is a policy knob, not schema correctness.
     if (GREPTIME_TTL.test(config.ttl)) {
+      // ALTER DATABASE must use the UNQUOTED, regex-validated identifier: GreptimeDB forwards a
+      // backtick-quoted ObjectName here as the literal schema name (the quotes become part of the
+      // name), so `openfuse` fails with errno 1210 "Failed to find schema". Verified against v1.1.1;
+      // same contract as retention.ts. (CREATE/USE DATABASE above do accept the quoted form.)
       await connection.query(
         `ALTER DATABASE ${config.database} SET 'ttl'='${config.ttl}'`,
       );
       log(`retention: database '${config.database}' ttl=${config.ttl}`);
     } else {
-      warn(`skipping retention: LANGFUSE_GREPTIME_TTL='${config.ttl}' is not a plain duration`);
+      warn(
+        `skipping retention: LANGFUSE_GREPTIME_TTL='${config.ttl}' is not a plain duration`,
+      );
     }
   } finally {
     await connection.end();
@@ -147,7 +153,9 @@ const main = async () => {
     // No Postgres URL: run unserialised. The app always provides DATABASE_URL, so this only happens
     // in odd standalone setups; a single runner still migrates correctly, just without the
     // cross-replica mutex.
-    warn("no DATABASE_URL/DIRECT_URL set; running migrations without a cross-replica advisory lock");
+    warn(
+      "no DATABASE_URL/DIRECT_URL set; running migrations without a cross-replica advisory lock",
+    );
     await applyMigrations();
     return;
   }

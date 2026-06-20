@@ -9,7 +9,7 @@
 # so we never have to merge two Next/pnpm dependency closures):
 #   /app/web-standalone/   Next.js standalone output (run: node web/server.js)
 #   /app/worker/           pnpm-deploy worker payload (run: node dist/index.js)
-#   /app/node_modules/     mysql2 + pg, only for the migration runner
+#   /app/migrate-runtime/  mysql2 + pg + migration SQL files, only for the migration runner
 #   /app/greptime-migrate.mjs, /app/standalone-supervisor.mjs, /app/standalone-entrypoint.sh
 #
 # Startup: standalone-entrypoint.sh runs Postgres + GreptimeDB migrations (both gated, fail-closed),
