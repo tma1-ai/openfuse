@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { SidebarNotifications, notifications } from "./sidebar-notifications";
 
-const GITHUB_STAR_ID = "github-star";
+const GITHUB_STAR_ID = "openfuse-github-star";
 
 const mockState = vi.hoisted(() => ({ dismissed: [] as string[] }));
 
