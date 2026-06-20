@@ -31,40 +31,100 @@ export function buildReadCases(p: PayloadSet): ReadCase[] {
     cases.push({ label, path, extraDrop });
 
   // ---- traces ----
-  add("traces/window", `/api/public/traces?${tWin}&${envScope}&limit=100&orderBy=timestamp.asc`);
-  add("traces/userId", `/api/public/traces?${tWin}&userId=${enc(f.userA)}&limit=100`);
-  add("traces/name", `/api/public/traces?${tWin}&${envScope}&name=${enc("checkout-flow")}&limit=100`);
-  add("traces/tag", `/api/public/traces?${tWin}&${envScope}&tags=${enc(f.tagAlpha)}&limit=100`);
-  add("traces/environment", `/api/public/traces?${tWin}&environment=${enc(f.envProd)}&limit=100`);
-  add("traces/session", `/api/public/traces?${tWin}&sessionId=${enc(f.sessionA)}&limit=100`);
-  add("traces/version", `/api/public/traces?${tWin}&${envScope}&version=${enc(f.version)}&limit=100`);
-  add("traces/release", `/api/public/traces?${tWin}&${envScope}&release=${enc(f.release)}&limit=100`);
-  add("traces/orderdesc", `/api/public/traces?${tWin}&${envScope}&limit=100&orderBy=timestamp.desc`);
+  add(
+    "traces/window",
+    `/api/public/traces?${tWin}&${envScope}&limit=100&orderBy=timestamp.asc`,
+  );
+  add(
+    "traces/userId",
+    `/api/public/traces?${tWin}&userId=${enc(f.userA)}&limit=100`,
+  );
+  add(
+    "traces/name",
+    `/api/public/traces?${tWin}&${envScope}&name=${enc("checkout-flow")}&limit=100`,
+  );
+  add(
+    "traces/tag",
+    `/api/public/traces?${tWin}&${envScope}&tags=${enc(f.tagAlpha)}&limit=100`,
+  );
+  add(
+    "traces/environment",
+    `/api/public/traces?${tWin}&environment=${enc(f.envProd)}&limit=100`,
+  );
+  add(
+    "traces/session",
+    `/api/public/traces?${tWin}&sessionId=${enc(f.sessionA)}&limit=100`,
+  );
+  add(
+    "traces/version",
+    `/api/public/traces?${tWin}&${envScope}&version=${enc(f.version)}&limit=100`,
+  );
+  add(
+    "traces/release",
+    `/api/public/traces?${tWin}&${envScope}&release=${enc(f.release)}&limit=100`,
+  );
+  add(
+    "traces/orderdesc",
+    `/api/public/traces?${tWin}&${envScope}&limit=100&orderBy=timestamp.desc`,
+  );
   add("traces/detail-T1", `/api/public/traces/${enc(f.traceT1)}`);
   add("traces/detail-T2", `/api/public/traces/${enc(f.traceT2)}`);
 
   // ---- observations ----
-  add("observations/byTrace", `/api/public/observations?${oWin}&traceId=${enc(f.traceT1)}&limit=100`);
-  add("observations/type-gen", `/api/public/observations?${oWin}&${envScope}&type=GENERATION&limit=100`);
-  add("observations/level-warn", `/api/public/observations?${oWin}&${envScope}&level=WARNING&limit=100`);
-  add("observations/model", `/api/public/observations?${oWin}&model=${enc(f.model)}&limit=100`);
-  add("observations/env", `/api/public/observations?${oWin}&environment=${enc(f.envProd)}&limit=100`);
+  add(
+    "observations/byTrace",
+    `/api/public/observations?${oWin}&traceId=${enc(f.traceT1)}&limit=100`,
+  );
+  add(
+    "observations/type-gen",
+    `/api/public/observations?${oWin}&${envScope}&type=GENERATION&limit=100`,
+  );
+  add(
+    "observations/level-warn",
+    `/api/public/observations?${oWin}&${envScope}&level=WARNING&limit=100`,
+  );
+  add(
+    "observations/model",
+    `/api/public/observations?${oWin}&model=${enc(f.model)}&limit=100`,
+  );
+  add(
+    "observations/env",
+    `/api/public/observations?${oWin}&environment=${enc(f.envProd)}&limit=100`,
+  );
   add("observations/detail-gen", `/api/public/observations/${enc(f.genObs)}`);
 
   // ---- scores (v1) ----
   add("scores/window", `/api/public/scores?${tWin}&${envScope}&limit=100`);
-  add("scores/name", `/api/public/scores?${tWin}&${envScope}&name=${enc(f.numericScoreName)}&limit=100`);
-  add("scores/dataType-num", `/api/public/scores?${tWin}&${envScope}&dataType=NUMERIC&limit=100`);
-  add("scores/source-api", `/api/public/scores?${tWin}&${envScope}&source=API&limit=100`);
-  add("scores/env", `/api/public/scores?${tWin}&environment=${enc(f.envProd)}&limit=100`);
+  add(
+    "scores/name",
+    `/api/public/scores?${tWin}&${envScope}&name=${enc(f.numericScoreName)}&limit=100`,
+  );
+  add(
+    "scores/dataType-num",
+    `/api/public/scores?${tWin}&${envScope}&dataType=NUMERIC&limit=100`,
+  );
+  add(
+    "scores/source-api",
+    `/api/public/scores?${tWin}&${envScope}&source=API&limit=100`,
+  );
+  add(
+    "scores/env",
+    `/api/public/scores?${tWin}&environment=${enc(f.envProd)}&limit=100`,
+  );
 
   // ---- sessions ----
   add("sessions/window", `/api/public/sessions?${tWin}&${envScope}&limit=100`);
-  add("sessions/env", `/api/public/sessions?${tWin}&environment=${enc(f.envProd)}&limit=100`);
+  add(
+    "sessions/env",
+    `/api/public/sessions?${tWin}&environment=${enc(f.envProd)}&limit=100`,
+  );
   add("sessions/detail-A", `/api/public/sessions/${enc(f.sessionA)}`);
 
   // ---- legacy observation-shaped reads ----
-  add("generations/byTrace", `/api/public/generations?${oWin}&traceId=${enc(f.traceT1)}&limit=100`);
+  add(
+    "generations/byTrace",
+    `/api/public/generations?${oWin}&traceId=${enc(f.traceT1)}&limit=100`,
+  );
 
   // ---- datasets (name-keyed; server ids dropped) ----
   add("datasets/list", `/api/public/datasets?limit=100`, ["id"]);
@@ -85,7 +145,10 @@ export function buildReadCases(p: PayloadSet): ReadCase[] {
 
   // ---- metrics/daily ----
   add("metrics-daily/window", `/api/public/metrics/daily?${tWin}&${envScope}`);
-  add("metrics-daily/user", `/api/public/metrics/daily?${tWin}&userId=${enc(f.userA)}`);
+  add(
+    "metrics-daily/user",
+    `/api/public/metrics/daily?${tWin}&userId=${enc(f.userA)}`,
+  );
 
   return cases;
 }

@@ -31,10 +31,18 @@ export function loadConfig(): ParityConfig {
     ? Number(process.env.PARITY_NOW_MS)
     : Date.now();
   return {
-    fork: { name: "fork", baseUrl: process.env.PARITY_FORK_URL ?? "http://localhost:3000" },
-    upstream: { name: "upstream", baseUrl: process.env.PARITY_UPSTREAM_URL ?? "http://localhost:3001" },
-    publicKey: process.env.PARITY_PUBLIC_KEY ?? "pk-lf-parity00000000000000000001",
-    secretKey: process.env.PARITY_SECRET_KEY ?? "sk-lf-parity00000000000000000001",
+    fork: {
+      name: "fork",
+      baseUrl: process.env.PARITY_FORK_URL ?? "http://localhost:3000",
+    },
+    upstream: {
+      name: "upstream",
+      baseUrl: process.env.PARITY_UPSTREAM_URL ?? "http://localhost:3001",
+    },
+    publicKey:
+      process.env.PARITY_PUBLIC_KEY ?? "pk-lf-parity00000000000000000001",
+    secretKey:
+      process.env.PARITY_SECRET_KEY ?? "sk-lf-parity00000000000000000001",
     projectId: process.env.PARITY_PROJECT_ID ?? "parity-proj",
     runNowMs,
     runId: runNowMs.toString(36),
@@ -52,7 +60,10 @@ export interface HttpResult {
 }
 
 function authHeader(cfg: ParityConfig): string {
-  return "Basic " + Buffer.from(`${cfg.publicKey}:${cfg.secretKey}`).toString("base64");
+  return (
+    "Basic " +
+    Buffer.from(`${cfg.publicKey}:${cfg.secretKey}`).toString("base64")
+  );
 }
 
 export async function apiGet(
@@ -139,10 +150,7 @@ export const COST_FLOAT_KEYS = new Set([
   "totalPrice",
 ]);
 
-export const LATENCY_FLOAT_KEYS = new Set([
-  "latency",
-  "timeToFirstToken",
-]);
+export const LATENCY_FLOAT_KEYS = new Set(["latency", "timeToFirstToken"]);
 
 /**
  * Canonical deep copy: sort object keys, drop policy fields, sort arrays by a stable key.
@@ -152,7 +160,9 @@ export const LATENCY_FLOAT_KEYS = new Set([
 export function canonical(value: unknown, policy: NormalizePolicy): unknown {
   if (Array.isArray(value)) {
     const items = value.map((v) => canonical(v, policy));
-    return [...items].sort((a, b) => fingerprint(a).localeCompare(fingerprint(b)));
+    return [...items].sort((a, b) =>
+      fingerprint(a).localeCompare(fingerprint(b)),
+    );
   }
   if (value && typeof value === "object") {
     const out: Record<string, unknown> = {};
@@ -205,7 +215,11 @@ export interface DiffEntry {
   path: string;
   fork: unknown;
   upstream: unknown;
-  kind: "value_mismatch" | "missing_in_fork" | "missing_in_upstream" | "type_mismatch";
+  kind:
+    | "value_mismatch"
+    | "missing_in_fork"
+    | "missing_in_upstream"
+    | "type_mismatch";
 }
 
 export interface DiffOptions {
@@ -225,7 +239,10 @@ export interface DiffResult {
 /** Coerce a number or a pure-numeric string to a finite number, else null. */
 function asNum(v: unknown): number | null {
   if (typeof v === "number") return Number.isFinite(v) ? v : null;
-  if (typeof v === "string" && /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/.test(v.trim())) {
+  if (
+    typeof v === "string" &&
+    /^-?\d+(\.\d+)?([eE][-+]?\d+)?$/.test(v.trim())
+  ) {
     const n = Number(v);
     return Number.isFinite(n) ? n : null;
   }
@@ -277,7 +294,8 @@ export function diff(
   const ud = asDate(upstream);
   if (fd !== null && ud !== null) {
     if (fd === ud) {
-      if (fork !== upstream) acc.typeRepr.push({ path, fork, upstream, kind: "type_mismatch" });
+      if (fork !== upstream)
+        acc.typeRepr.push({ path, fork, upstream, kind: "type_mismatch" });
     } else {
       push({ path, fork, upstream, kind: "value_mismatch" });
     }
@@ -324,7 +342,12 @@ function lastSegmentKey(path: string): string {
   return m ? m[1] : "";
 }
 
-function numbersEqual(a: number, b: number, path: string, opts: DiffOptions): boolean {
+function numbersEqual(
+  a: number,
+  b: number,
+  path: string,
+  opts: DiffOptions,
+): boolean {
   if (a === b) return true;
   const key = lastSegmentKey(path);
   if (COST_FLOAT_KEYS.has(key)) {
@@ -384,7 +407,9 @@ export async function waitForProjection(
 
     // 2. observation counts per trace
     if (allOk) {
-      for (const [traceId, expected] of Object.entries(exp.observationCountByTrace)) {
+      for (const [traceId, expected] of Object.entries(
+        exp.observationCountByTrace,
+      )) {
         const r = await apiGet(
           cfg,
           stack,
@@ -416,7 +441,11 @@ export async function waitForProjection(
     // 4. score count
     if (allOk && exp.scoreIds.length) {
       const csv = exp.scoreIds.join(",");
-      const r = await apiGet(cfg, stack, `/api/public/scores?scoreIds=${csv}&limit=100`);
+      const r = await apiGet(
+        cfg,
+        stack,
+        `/api/public/scores?scoreIds=${csv}&limit=100`,
+      );
       const got = countData(r.body);
       if (got < exp.scoreIds.length) {
         allOk = false;
@@ -424,10 +453,21 @@ export async function waitForProjection(
       }
     }
 
-    if (allOk) return { ok: true, stack: stack.name, detail: "ready", elapsedMs: Date.now() - start };
+    if (allOk)
+      return {
+        ok: true,
+        stack: stack.name,
+        detail: "ready",
+        elapsedMs: Date.now() - start,
+      };
     await sleep(intervalMs);
   }
-  return { ok: false, stack: stack.name, detail: `timeout: ${lastDetail}`, elapsedMs: Date.now() - start };
+  return {
+    ok: false,
+    stack: stack.name,
+    detail: `timeout: ${lastDetail}`,
+    elapsedMs: Date.now() - start,
+  };
 }
 
 function countData(body: unknown): number {

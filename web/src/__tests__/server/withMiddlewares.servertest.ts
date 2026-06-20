@@ -186,10 +186,7 @@ describe("withMiddlewares error handling", () => {
   describe("DbResourceError handling", () => {
     it("should handle DbResourceError with 422 status", async () => {
       const originalError = new Error("Memory limit exceeded: maximum: 10GB");
-      const resourceError = new DbResourceError(
-        "MEMORY_LIMIT",
-        originalError,
-      );
+      const resourceError = new DbResourceError("MEMORY_LIMIT", originalError);
 
       const handler = withMiddlewares({
         POST: async () => {
@@ -217,11 +214,10 @@ describe("withMiddlewares error handling", () => {
 
     it("should include tags from the error in the warn log", async () => {
       const originalError = new Error("Memory limit exceeded");
-      const resourceError = new DbResourceError(
-        "MEMORY_LIMIT",
-        originalError,
-        { type: "events", kind: "publicApiRows" },
-      );
+      const resourceError = new DbResourceError("MEMORY_LIMIT", originalError, {
+        type: "events",
+        kind: "publicApiRows",
+      });
 
       const handler = withMiddlewares({
         GET: async () => {
@@ -250,10 +246,7 @@ describe("withMiddlewares error handling", () => {
 
     it("should handle DbResourceError with custom advice", async () => {
       const originalError = new Error("Timeout exceeded");
-      const resourceError = new DbResourceError(
-        "TIMEOUT",
-        originalError,
-      );
+      const resourceError = new DbResourceError("TIMEOUT", originalError);
 
       const handler = withMiddlewares(
         {

@@ -177,7 +177,6 @@ export default withMiddlewares(
     }),
   },
   {
-    resourceErrorMessage:
-      LEGACY_PUBLIC_API_OBSERVATIONS_RESOURCE_ERROR_MESSAGE,
+    resourceErrorMessage: LEGACY_PUBLIC_API_OBSERVATIONS_RESOURCE_ERROR_MESSAGE,
   },
 );

@@ -108,9 +108,7 @@ function ensureObservationCoreFields(
     id: record.id!,
     traceId: record.trace_id ?? null,
     startTime: parseDbUtcDateTimeFormat(record.start_time!),
-    endTime: record.end_time
-      ? parseDbUtcDateTimeFormat(record.end_time)
-      : null,
+    endTime: record.end_time ? parseDbUtcDateTimeFormat(record.end_time) : null,
     projectId: record.project_id!,
     parentObservationId: record.parent_observation_id ?? null,
     type: record.type! as ObservationType,
@@ -320,9 +318,7 @@ export function convertObservationPartial(
       record.start_time !== undefined) && {
       timeToFirstToken:
         record.completion_start_time && record.start_time
-          ? (parseDbUtcDateTimeFormat(
-              record.completion_start_time,
-            ).getTime() -
+          ? (parseDbUtcDateTimeFormat(record.completion_start_time).getTime() -
               parseDbUtcDateTimeFormat(record.start_time).getTime()) /
             1000
           : null,

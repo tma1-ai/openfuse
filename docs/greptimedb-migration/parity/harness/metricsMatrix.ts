@@ -8,12 +8,8 @@
  *
  * Imports reach the pure query modules directly (no @langfuse/shared barrel → no DB boot).
  */
-import {
-  getViewDeclaration,
-} from "../../../../packages/shared/src/features/query/dataModel";
-import {
-  getValidAggregationsForMeasureType,
-} from "../../../../packages/shared/src/features/query/types";
+import { getViewDeclaration } from "../../../../packages/shared/src/features/query/dataModel";
+import { getValidAggregationsForMeasureType } from "../../../../packages/shared/src/features/query/types";
 
 export type MetricsView =
   | "traces"
@@ -31,9 +27,22 @@ const VIEWS: MetricsView[] = [
 // Preferred breakdown dimensions per view (intersected with the declared dimensions).
 const PREFERRED_DIMS: Record<MetricsView, string[]> = {
   traces: ["name", "userId", "environment", "release", "version", "tags"],
-  observations: ["name", "providedModelName", "model", "type", "level", "environment"],
+  observations: [
+    "name",
+    "providedModelName",
+    "model",
+    "type",
+    "level",
+    "environment",
+  ],
   "scores-numeric": ["name", "source", "environment", "dataType"],
-  "scores-categorical": ["name", "source", "environment", "stringValue", "dataType"],
+  "scores-categorical": [
+    "name",
+    "source",
+    "environment",
+    "stringValue",
+    "dataType",
+  ],
 };
 
 // Measures that get the extra breakdown + time-series treatment (intersected with declared).
@@ -78,7 +87,14 @@ export function buildMetricsMatrix(
 ): MetricsCase[] {
   const cases: MetricsCase[] = [];
   const runFilter = envScope.length
-    ? [{ column: "environment", operator: "any of", value: envScope, type: "stringOptions" }]
+    ? [
+        {
+          column: "environment",
+          operator: "any of",
+          value: envScope,
+          type: "stringOptions",
+        },
+      ]
     : [];
 
   for (const view of VIEWS) {
@@ -102,14 +118,31 @@ export function buildMetricsMatrix(
           if (reqDim) continue;
           cases.push({
             label: `${view}/${measureName}/histogram`,
-            query: mkQuery(view, [{ measure: measureName, aggregation: agg }], [], null, fromTimestamp, toTimestamp, runFilter, { bins: 10 }),
+            query: mkQuery(
+              view,
+              [{ measure: measureName, aggregation: agg }],
+              [],
+              null,
+              fromTimestamp,
+              toTimestamp,
+              runFilter,
+              { bins: 10 },
+            ),
           });
           continue;
         }
         // base: no dimension, no time
         cases.push({
           label: `${view}/${measureName}/${agg}`,
-          query: mkQuery(view, [{ measure: measureName, aggregation: agg }], baseDims, null, fromTimestamp, toTimestamp, runFilter),
+          query: mkQuery(
+            view,
+            [{ measure: measureName, aggregation: agg }],
+            baseDims,
+            null,
+            fromTimestamp,
+            toTimestamp,
+            runFilter,
+          ),
         });
       }
 
@@ -117,16 +150,35 @@ export function buildMetricsMatrix(
       if (HEADLINE.includes(measureName)) {
         const agg = legalAggregations(m)[0] ?? "count";
         for (const d of dims) {
-          const dimList = reqDim && d !== reqDim ? [{ field: reqDim }, { field: d }] : [{ field: d }];
+          const dimList =
+            reqDim && d !== reqDim
+              ? [{ field: reqDim }, { field: d }]
+              : [{ field: d }];
           cases.push({
             label: `${view}/${measureName}/${agg}/by:${d}`,
-            query: mkQuery(view, [{ measure: measureName, aggregation: agg }], dimList, null, fromTimestamp, toTimestamp, runFilter),
+            query: mkQuery(
+              view,
+              [{ measure: measureName, aggregation: agg }],
+              dimList,
+              null,
+              fromTimestamp,
+              toTimestamp,
+              runFilter,
+            ),
           });
         }
         for (const g of TIME_GRANULARITIES) {
           cases.push({
             label: `${view}/${measureName}/${agg}/ts:${g}`,
-            query: mkQuery(view, [{ measure: measureName, aggregation: agg }], baseDims, g, fromTimestamp, toTimestamp, runFilter),
+            query: mkQuery(
+              view,
+              [{ measure: measureName, aggregation: agg }],
+              baseDims,
+              g,
+              fromTimestamp,
+              toTimestamp,
+              runFilter,
+            ),
           });
         }
       }
@@ -151,17 +203,38 @@ export function buildMetricsMatrix(
       for (const m of toolMetrics) {
         cases.push({
           label: `observations/${m.measure}/${m.aggregation}/by:${dim}`,
-          query: mkQuery("observations", [m], [{ field: dim }], null, fromTimestamp, toTimestamp, runFilter),
+          query: mkQuery(
+            "observations",
+            [m],
+            [{ field: dim }],
+            null,
+            fromTimestamp,
+            toTimestamp,
+            runFilter,
+          ),
         });
       }
       if (toolNames.length > 0) {
         for (const op of ["any of", "none of"]) {
           cases.push({
             label: `observations/count/count/filter:${dim}:${op.replace(/ /g, "-")}`,
-            query: mkQuery("observations", [{ measure: "count", aggregation: "count" }], [], null, fromTimestamp, toTimestamp, [
-              ...runFilter,
-              { column: dim, operator: op, value: [toolNames[0]], type: "arrayOptions" },
-            ]),
+            query: mkQuery(
+              "observations",
+              [{ measure: "count", aggregation: "count" }],
+              [],
+              null,
+              fromTimestamp,
+              toTimestamp,
+              [
+                ...runFilter,
+                {
+                  column: dim,
+                  operator: op,
+                  value: [toolNames[0]],
+                  type: "arrayOptions",
+                },
+              ],
+            ),
           });
         }
       }

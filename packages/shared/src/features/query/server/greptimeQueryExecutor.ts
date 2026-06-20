@@ -50,7 +50,8 @@ const DATE_GRANULARITIES = new Set(["day", "week", "month", "1d", "2d", "1w"]);
  */
 const formatBucket = (ms: number, granularity?: string): string => {
   const iso = new Date(ms).toISOString();
-  if (granularity && DATE_GRANULARITIES.has(granularity)) return iso.slice(0, 10);
+  if (granularity && DATE_GRANULARITIES.has(granularity))
+    return iso.slice(0, 10);
   return iso.replace(/\.\d{3}Z$/, "Z");
 };
 
@@ -132,7 +133,9 @@ const expandByType = (
   >();
   for (const row of rows) {
     const map = greptimeJson<Record<string, number>>(row[desc.jsonColumn], {});
-    const time = desc.hasTime ? formatBucket(msOf(row.time_dimension), granularity) : null;
+    const time = desc.hasTime
+      ? formatBucket(msOf(row.time_dimension), granularity)
+      : null;
     const dims = desc.groupDimensionAliases.map((a) => row[a]);
     const key = JSON.stringify([time, ...dims]);
     const g = groups.get(key) ?? { time, dims, sums: {} };
@@ -208,7 +211,13 @@ async function runHistogram(
   const lo = probe.lo == null ? null : Number(probe.lo);
   const hi = probe.hi == null ? null : Number(probe.hi);
   const total = Number(probe.c ?? 0);
-  if (lo == null || hi == null || Number.isNaN(lo) || Number.isNaN(hi) || total === 0) {
+  if (
+    lo == null ||
+    hi == null ||
+    Number.isNaN(lo) ||
+    Number.isNaN(hi) ||
+    total === 0
+  ) {
     return [{ histogram_value: [] }];
   }
   const range = hi - lo;
@@ -220,7 +229,12 @@ async function runHistogram(
   const binWidth = range / bins;
   const bucketRows = await greptimeQuery<{ bucket: unknown; c: unknown }>({
     query: histogram.bucketSql,
-    params: { ...parameters, hmin: lo, hbinwidth: binWidth, hmaxbucket: bins - 1 },
+    params: {
+      ...parameters,
+      hmin: lo,
+      hbinwidth: binWidth,
+      hmaxbucket: bins - 1,
+    },
     readOnly: true,
   });
   const counts = new Map<number, number>();
@@ -269,6 +283,11 @@ export async function executeGreptimeQuery(
     result = gapFill(result, postProcess.timeFill);
   }
   return result.map((r) =>
-    shapeRow(r, postProcess.metricColumns, postProcess.hasTimeDimension, granularity),
+    shapeRow(
+      r,
+      postProcess.metricColumns,
+      postProcess.hasTimeDimension,
+      granularity,
+    ),
   );
 }

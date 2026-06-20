@@ -594,12 +594,8 @@ export const traceRouter = createTRPCRouter({
     .query(async ({ input }): Promise<Required<AgentGraphDataResponse>[]> => {
       const { traceId, projectId, minStartTime, maxStartTime } = input;
 
-      const chMinStartTime = convertDateToDbDateTime(
-        new Date(minStartTime),
-      );
-      const chMaxStartTime = convertDateToDbDateTime(
-        new Date(maxStartTime),
-      );
+      const chMinStartTime = convertDateToDbDateTime(new Date(minStartTime));
+      const chMaxStartTime = convertDateToDbDateTime(new Date(maxStartTime));
 
       const records = await getAgentGraphData({
         projectId,
