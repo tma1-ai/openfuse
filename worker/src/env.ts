@@ -145,6 +145,16 @@ const EnvSchema = z.object({
     .number()
     .positive()
     .default(1),
+  // Per-table region-statistics sampler. SST fragmentation is the main lever on by-type dashboard
+  // latency, so make it observable. region_statistics is cluster-global; a per-interval Redis bucket
+  // lock keeps a single replica emitting each interval rather than every replica publishing identical
+  // series.
+  LANGFUSE_GREPTIME_STATS_ENABLED: z.enum(["true", "false"]).default("true"),
+  LANGFUSE_GREPTIME_STATS_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1000)
+    .default(60000),
   LANGFUSE_EVAL_CREATOR_LIMITER_DURATION: z.coerce
     .number()
     .positive()

@@ -194,6 +194,17 @@ const getObservationDetailByTypeByTime = async (opts: {
   ) as DateTimeFilter | undefined;
   const useLookback = Boolean(hasTraceFilter && obsStartLowerBound);
 
+  // Q2 joins observations only to drop rows whose observation was deleted; uc.is_deleted already
+  // mirrors that (the writer re-fans is_deleted into the EAV table on delete and on reconciliation
+  // rebuild). So the join is needed only when a predicate actually references observations or traces:
+  // restClause and envClause compile against alias `o`, and traceJoin keys off `o.trace_id`. With no
+  // such filter (the common whole-project dashboard) scan the EAV table alone and lean on
+  // uc.is_deleted -- benchmarked ~2-3x faster by skipping the observations MergeScan.
+  const needsObservationJoin =
+    hasTraceFilter ||
+    Boolean(env.query) ||
+    restList.some((f) => f.table === "observations");
+
   const params: Record<string, unknown> = {
     projectId,
     winFrom: greptimeTsParam(new Date(fromTime)),
@@ -215,6 +226,11 @@ const getObservationDetailByTypeByTime = async (opts: {
 
   const traceJoin = hasTraceFilter
     ? `LEFT JOIN traces t ON o.trace_id = t.id AND o.project_id = t.project_id AND ${notDeleted("t")}`
+    : "";
+  // Conditional in Q2 (see needsObservationJoin); Q1 always reads observations directly so it keeps
+  // its own FROM.
+  const obsJoin = needsObservationJoin
+    ? `JOIN observations o ON uc.entity_id = o.id AND uc.project_id = o.project_id AND ${notDeleted("o")}`
     : "";
   const restClause = restRes.query ? `AND ${restRes.query}` : "";
   const envClause = env.query ? `AND ${env.query}` : "";
@@ -273,7 +289,7 @@ const getObservationDetailByTypeByTime = async (opts: {
         uc.${quoteIdent("key")} AS detail_key,
         sum(uc.${quoteIdent("value")}) AS sum
       FROM observations_usage_cost uc
-      JOIN observations o ON uc.entity_id = o.id AND uc.project_id = o.project_id AND ${notDeleted("o")}
+      ${obsJoin}
       ${traceJoin}
       WHERE uc.${quoteIdent("kind")} = :kind
         AND uc.project_id = :projectId AND ${notDeleted("uc")}

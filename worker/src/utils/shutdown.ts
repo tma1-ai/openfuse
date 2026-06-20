@@ -15,6 +15,7 @@ import {
   batchProjectMediaCleaner,
   batchTraceDeletionCleaner,
   queueMetricsRunner,
+  greptimeStatsRunner,
   monitorRunners,
 } from "../app";
 
@@ -42,6 +43,9 @@ export const onShutdown: NodeJS.SignalsListener = async (signal) => {
 
   // Stop queue metrics runner
   queueMetricsRunner?.stop();
+
+  // Stop GreptimeDB region-statistics sampler
+  greptimeStatsRunner?.stop();
 
   // Stop monitor runners
   for (const runner of monitorRunners) {
