@@ -118,7 +118,7 @@ services:
   greptimedb:
     # GreptimeDB analytics store (replaces ClickHouse). Standalone mode exposes HTTP (4000),
     # gRPC (4001, ingest SDK), MySQL wire (4002, read path + migrations), Postgres wire (4003).
-    image: docker.io/greptime/greptimedb:v1.1.0
+    image: docker.io/greptime/greptimedb:v1.1.1
     restart: always
     command:
       - standalone
