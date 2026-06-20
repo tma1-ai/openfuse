@@ -388,7 +388,11 @@ export class GreptimeWriter implements GreptimeProjectionSink {
         },
         onTransient: (gs) => this.requeueGroups(gs),
         onPoisonLeaf: async (group, leafClass) => {
-          await this.salvageOrDrop(group, leafClass);
+          // A truncation-salvaged oversize group is durably written; count it too so the insert
+          // gauge doesn't under-report this path.
+          if (await this.salvageOrDrop(group, leafClass)) {
+            landedRows += group.items.length;
+          }
         },
       });
       if (landedRows > 0) {

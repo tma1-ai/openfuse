@@ -80,15 +80,19 @@ export async function handleGreptimeReconciliation(
   // observation projection unary and gating its EAV on projection success (GreptimeBulkWriter). The
   // bulk writer owns a dedicated manual unary lane so backfill writes never interleave with the live
   // singleton's queue. Off by default -> the unary singleton, identical to before.
-  const sink: GreptimeProjectionSink = env.LANGFUSE_GREPTIME_BULK_BACKFILL_ENABLED
-    ? new GreptimeBulkWriter({
-        client: getGreptimeIngestClient(),
-        unary: GreptimeWriter.createManual({
-          write: (tables) => getGreptimeIngestClient().write(tables),
-        }),
-        batchSize: env.LANGFUSE_GREPTIME_BULK_BATCH_SIZE,
-      })
-    : GreptimeWriter.getInstance();
+  let sink: GreptimeProjectionSink;
+  if (env.LANGFUSE_GREPTIME_BULK_BACKFILL_ENABLED) {
+    const ingestClient = getGreptimeIngestClient();
+    sink = new GreptimeBulkWriter({
+      client: ingestClient,
+      unary: GreptimeWriter.createManual({
+        write: (tables) => ingestClient.write(tables),
+      }),
+      batchSize: env.LANGFUSE_GREPTIME_BULK_BATCH_SIZE,
+    });
+  } else {
+    sink = GreptimeWriter.getInstance();
+  }
   const ingestionService = new IngestionService(redis, prisma, sink);
 
   let reconciled = 0;

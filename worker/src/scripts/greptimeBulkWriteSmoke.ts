@@ -11,8 +11,9 @@
  *      the unary writer.
  *   3. Whether the JSON-bearing projection tables (traces / scores / dataset_run_items) ride bulk at
  *      all. `DataType.Json` columns are serialized to JSON *strings* by `jsonOrNull` before the write,
- *      so this checks the bulk Arrow encoder accepts a string for a Json column. The PASS/FAIL set
- *      below is what feeds the `BULK_SUPPORTED` allowlist in GreptimeBulkWriter.
+ *      so this checks the bulk Arrow encoder accepts a string for a Json column. They all pass, which
+ *      is why GreptimeBulkWriter needs no static allowlist: every decimal-free table is bulk-eligible,
+ *      and any unexpected per-table bulk failure simply falls back to the unary writer.
  */
 import {
   getGreptimeIngestClient,
