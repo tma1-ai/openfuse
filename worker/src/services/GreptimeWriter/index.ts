@@ -205,6 +205,15 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * BEFORE the flush writes the new EAV rows, so a key/tag/tool dropped from an updated entity does
    * not survive. Cleanup failure blocks the write and leaves the pending cleanup snapshot intact; a
    * later flush retries the delete before the same rows can land.
+   *
+   * Cleanup is keyed by the projection entity recorded at enqueue, not by the rows in this flush's
+   * splice. That is deliberate: an entity whose EAV set shrank to empty emits no EAV rows, and an
+   * entity's EAV rows can splice ahead of its projection row, so a splice-driven cleanup would either
+   * miss the empty case or delete EAV just written for a not-yet-cleaned entity. The trade-off is that
+   * under a sustained backlog (queue depth > batchSize across flushes) an entity can have its old EAV
+   * deleted a flush or two before its new rows drain, a transient gap in filters/breakdowns that the
+   * idempotent full-history rebuild heals — the same window the pre-existing cross-flush fan-out split
+   * already has. Under normal load each flush drains its entities fully and there is no gap.
    */
   private async runEavCleanup(): Promise<void> {
     if (this.pendingEavCleanup.size === 0) return;
