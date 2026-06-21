@@ -433,15 +433,17 @@ const observationsView: ViewDeclarationType = {
     tool_definitions: {
       name: "observations_tool_definitions",
       alias: "td",
+      // Correlate on generation so a tool dropped from an updated observation is excluded (the no-delete
+      // EAV path keeps stale rows at the old generation; reads must filter to the current one).
       joinConditionSql:
-        "ON td.project_id = o.project_id AND td.entity_id = o.id",
+        "ON td.project_id = o.project_id AND td.entity_id = o.id AND td.generation = o.eav_generation",
       timeDimension: "timestamp",
     },
     tool_calls: {
       name: "observations_tool_calls",
       alias: "tc",
       joinConditionSql:
-        "ON tc.project_id = o.project_id AND tc.entity_id = o.id",
+        "ON tc.project_id = o.project_id AND tc.entity_id = o.id AND tc.generation = o.eav_generation",
       timeDimension: "timestamp",
     },
   },

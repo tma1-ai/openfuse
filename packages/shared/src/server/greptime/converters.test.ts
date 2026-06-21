@@ -89,12 +89,30 @@ describe("parseRawEventHistory", () => {
       }),
       mkRow("e2", 300, { id: "evt-b", body: { id: "t1", name: "update" } }),
     ];
-    const { events, minIngestedAtMs } = parseRawEventHistory(rows);
+    const { events, minIngestedAtMs, maxIngestedAtMs, eavGeneration } =
+      parseRawEventHistory(rows);
     expect(events).toHaveLength(2);
     // first-ingested copy of e1 wins
     expect((events[0] as { body: { name: string } }).body.name).toBe("first");
     expect((events[1] as { body: { name: string } }).body.name).toBe("update");
     expect(minIngestedAtMs).toBe(100);
+    expect(maxIngestedAtMs).toBe(300);
+    expect(eavGeneration).toBe(300 * 4096 + 1);
+  });
+
+  it("changes EAV generation for same-millisecond appends while keeping the raw watermark", () => {
+    const first = parseRawEventHistory([
+      mkRow("e1", 100, { id: "evt-a", body: { id: "t1", name: "create" } }),
+    ]);
+    const second = parseRawEventHistory([
+      mkRow("e1", 100, { id: "evt-a", body: { id: "t1", name: "create" } }),
+      mkRow("e2", 100, { id: "evt-b", body: { id: "t1", metadata: {} } }),
+    ]);
+
+    expect(first.maxIngestedAtMs).toBe(100);
+    expect(second.maxIngestedAtMs).toBe(100);
+    expect(first.eavGeneration).toBe(100 * 4096 + 1);
+    expect(second.eavGeneration).toBe(100 * 4096 + 2);
   });
 
   it("returns now-ish min when there are no rows", () => {

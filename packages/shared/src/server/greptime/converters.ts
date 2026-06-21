@@ -60,6 +60,18 @@ export interface ParsedRawHistory {
   /** min(ingested_at) across the full history — the entity's created_at (invariant 7). */
   minIngestedAtMs: number;
   /**
+   * max(ingested_at) across the full live history. Used as the coalescing watermark because it remains
+   * in the same time domain as queue job timestamps.
+   */
+  maxIngestedAtMs: number;
+  /**
+   * Rebuild generation stamped on projection (`eav_generation`) + EAV (`generation`) rows. It derives
+   * from max live ingested_at plus the number of deduped live events at that max millisecond, so two
+   * same-ms appends still produce different generations. That matters because reads use equality on
+   * generation to hide stale EAV keys without deleting old rows.
+   */
+  eavGeneration: number;
+  /**
    * True when the entity was deleted and not re-created afterwards — i.e. a tombstone exists and no
    * live event was ingested after the latest tombstone. The rebuild must mark the projection
    * is_deleted=true so deletion survives reprocessing.
@@ -78,6 +90,7 @@ export const parseRawEventHistory = (rows: RawEventRow[]): ParsedRawHistory => {
   let minIngestedAtMs = Infinity;
   let maxTombstoneAt = -Infinity;
   let maxLiveAt = -Infinity;
+  let liveEventsAtMax = 0;
 
   for (const row of rows) {
     const ingestedAtMs = toMs(row.ingested_at);
@@ -96,15 +109,28 @@ export const parseRawEventHistory = (rows: RawEventRow[]): ParsedRawHistory => {
     seen.add(row.event_id);
     events.push(JSON.parse(row.body) as IngestionEventType);
     if (Number.isFinite(ingestedAtMs)) {
-      maxLiveAt = Math.max(maxLiveAt, ingestedAtMs);
+      if (ingestedAtMs > maxLiveAt) {
+        maxLiveAt = ingestedAtMs;
+        liveEventsAtMax = 1;
+      } else if (ingestedAtMs === maxLiveAt) {
+        liveEventsAtMax++;
+      }
     }
   }
 
+  const resolvedMin = Number.isFinite(minIngestedAtMs)
+    ? minIngestedAtMs
+    : Date.now();
   return {
     events,
-    minIngestedAtMs: Number.isFinite(minIngestedAtMs)
-      ? minIngestedAtMs
-      : Date.now(),
+    minIngestedAtMs: resolvedMin,
+    maxIngestedAtMs: maxLiveAt > -Infinity ? maxLiveAt : resolvedMin,
+    // 4096 keeps epoch-ms * 4096 inside Number.MAX_SAFE_INTEGER (2^53) until ~2040; the +count term
+    // (capped at 4095) disambiguates same-ms appends so their generations stay strictly increasing.
+    eavGeneration:
+      maxLiveAt > -Infinity
+        ? maxLiveAt * 4096 + Math.min(liveEventsAtMax, 4095)
+        : resolvedMin * 4096,
     // Deleted if a tombstone exists and nothing live was ingested after it (supports re-create).
     deleted: maxTombstoneAt > -Infinity && maxTombstoneAt >= maxLiveAt,
   };

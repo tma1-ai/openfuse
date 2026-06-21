@@ -102,7 +102,6 @@ const makeBulkWriter = (
     client,
     unary,
     batchSize,
-    deleteEav: async () => {},
   });
 
 afterEach(() => vi.clearAllMocks());
@@ -222,41 +221,6 @@ describe("GreptimeBulkWriter routing", () => {
     expect(incrementsFor("langfuse.greptime_bulk.fallback_rows")).toHaveLength(
       1,
     );
-  });
-
-  it("does not bulk-write rows when EAV cleanup fails, then retries them on the next flush", async () => {
-    const { client, created } = fakeBulkClient();
-    const { writer: unary } = fakeUnary();
-    const deleteEav = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("delete failed"))
-      .mockResolvedValue(undefined);
-    const bulk = new GreptimeBulkWriter({
-      client,
-      unary,
-      batchSize: 10_000,
-      deleteEav,
-    });
-
-    bulk.addToQueue(
-      GreptimeTable.Traces,
-      createTrace({
-        project_id: "p",
-        id: "t-cleanup-retry",
-        metadata: { region: "us" },
-        tags: ["x"],
-      }),
-    );
-
-    await expect(bulk.flushAll()).rejects.toThrow("delete failed");
-    expect(created).toHaveLength(0);
-
-    await bulk.flushAll();
-
-    expect(new Set(created)).toEqual(
-      new Set(["traces", "traces_metadata", "traces_tags"]),
-    );
-    expect(deleteEav).toHaveBeenCalledTimes(3);
   });
 
   it("fails the flush when unary fallback remains pending", async () => {

@@ -4,12 +4,10 @@ import type { AffectedRows, Table } from "@greptime/ingester";
 import {
   bisectGroups,
   buildGreptimeRowsForRecord,
+  buildGreptimeTables,
   classifyGreptimeWriteError,
   DatasetRunItemRecordInsertType,
-  type DeleteEavRowsFn,
-  deleteEavRowsForEntities,
   EAV_TABLES_FOR_PROJECTION,
-  getGreptimeIngestClient,
   GreptimeRow,
   GreptimeTable,
   type GreptimeTableRows,
@@ -29,6 +27,7 @@ import {
 } from "@langfuse/shared/src/server";
 
 import { env } from "../../env";
+import { getFlushWorkerPool } from "./flushWorkerPool";
 import type { GreptimeProjectionSink } from "./sink";
 
 /**
@@ -49,13 +48,31 @@ import type { GreptimeProjectionSink } from "./sink";
  * group to isolate the bad entity while good entities land. The bisection unit is the logical group —
  * an entity's projection row plus its EAV rows — so bisection never splits a projection from its EAV.
  * The size-triggered flush splices whole groups (`spliceGroupAwareBatch`), so a fan-out is never
- * spread across flushes either; this lets EAV cleanup target exactly the entities written each flush.
+ * spread across flushes either; an entity's projection + EAV thus share one atomic write + generation.
  */
 
 // Re-exported so existing `import { GreptimeWriter, GreptimeTable } from ".../GreptimeWriter"`
 // call sites keep working after the enum moved to shared.
 export { GreptimeTable } from "@langfuse/shared/src/server";
 export type { GreptimeProjectionSink } from "./sink";
+
+/** EAV derived-index table names (the fan-out targets), used to tell projection rows from EAV rows. */
+const EAV_TABLE_NAMES: ReadonlySet<string> = new Set(
+  Object.values(EAV_TABLES_FOR_PROJECTION).flat(),
+);
+
+/**
+ * Projection (entity) tables: every other physical table. Each `addToQueue` group has exactly one
+ * projection row here that defines its entity identity `(table, project_id, id)` — the unit the
+ * per-entity in-flight guard serializes so concurrent flushes never reorder one entity's EAV writes.
+ */
+const PROJECTION_TABLE_NAMES: ReadonlySet<string> = new Set(
+  Object.keys(PHYSICAL_TABLES).filter((t) => !EAV_TABLE_NAMES.has(t)),
+);
+
+/** Stable per-entity key for the in-flight guard: `table:project_id:id`. */
+const entityKeyOf = (table: string, row: GreptimeRow): string =>
+  `${table}:${row.project_id as string}:${row.id as string}`;
 
 interface QueueItem {
   createdAt: number;
@@ -65,8 +82,20 @@ interface QueueItem {
   row: GreptimeRow;
 }
 
-/** Injected so tests can drive `flushAll` with a fake writer (no live DB) and disable the interval. */
+/**
+ * Table-based write seam used by tests/manual writers: they build `Table`s on the calling thread and
+ * inject a fake (no live DB). The running singleton instead offloads via a rows-based `WriteEntriesFn`
+ * so the protobuf encode runs in a worker thread; the constructor derives one from the other.
+ */
 type WriteFn = (tables: Table[]) => Promise<AffectedRows>;
+
+/**
+ * Rows-based write seam (the offload boundary). Carries plain clone-safe `(table, rows)` pairs so the
+ * singleton can hand them to the flush worker pool, which builds the `Table`s and runs `client.write`
+ * off the main event loop. The return value is unused by the writer's accounting (landed rows are
+ * counted from the logical groups), so it is intentionally opaque.
+ */
+type WriteEntriesFn = (entries: GreptimeTableRows[]) => Promise<unknown>;
 
 export class GreptimeWriter implements GreptimeProjectionSink {
   private static instance: GreptimeWriter | null = null;
@@ -75,28 +104,61 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   private readonly maxAttempts: number;
   private readonly maxFieldBytes: number;
   private readonly queues: Record<string, QueueItem[]>;
-  private readonly write: WriteFn;
-  private readonly deleteEav: DeleteEavRowsFn;
+  /** The rows-based write seam every flush funnels through (live: worker pool; test/manual: a wrapped fake). */
+  private readonly writeEntries: WriteEntriesFn;
   /** Size-triggered background flush is only armed on the running singleton; a test writer is fully manual. */
-  private readonly autoFlush: boolean;
+  private autoFlush: boolean;
+  /** Max simultaneously in-flight auto (size/interval) flushes; one entity stays serialized regardless. */
+  private readonly maxConcurrentFlushes: number;
   private intervalId: NodeJS.Timeout | null = null;
-  private isFlushInProgress = false;
+  /** Count of currently running auto-launched flushes, used to honor `maxConcurrentFlushes`. */
+  private inFlightFlushes = 0;
+  /** Promises of currently running auto-launched flushes; a full-queue drain awaits these first. */
+  private readonly inFlightPromises = new Set<Promise<void>>();
+  /**
+   * Projection entities (`table:project_id:id`) currently being written by some in-flight flush. The
+   * group-aware splice skips any group whose entity is here, so two concurrent flushes never reorder
+   * one entity's writes: the latest rebuild must land last so its `generation` wins the `last_non_null`
+   * merge (and the projection's `eav_generation` points at it). Replaces the mutual exclusion the old
+   * single-flight gate gave for free.
+   */
+  private readonly inFlightEntities = new Set<string>();
   private nextGroupId = 0;
 
   private constructor(deps: {
-    write: WriteFn;
+    /** Table-based fake (tests/manual): `Table`s are built on this thread and inspected by the fake. */
+    write?: WriteFn;
+    /** Rows-based seam (live singleton): offloads build + `client.write` to the flush worker pool. */
+    writeEntries?: WriteEntriesFn;
     autoStart: boolean;
-    deleteEav?: DeleteEavRowsFn;
     batchSize?: number;
+    /** Enable size-triggered auto-flush without arming the interval (tests drive the pump directly). */
+    autoFlush?: boolean;
+    maxConcurrentFlushes?: number;
   }) {
-    this.write = deps.write;
-    // Default to the real batched SQL delete; tests inject a spy/noop so flushAll needs no live DB.
-    this.deleteEav = deps.deleteEav ?? deleteEavRowsForEntities;
+    // Exactly one seam is injected. A `write` fake is wrapped into the rows-based seam by building the
+    // `Table`s here (cheap; the costly protobuf encode that warranted offloading lives in client.write,
+    // which the fake stubs out), so the entire writer funnels through one `writeEntries` path. Fail fast
+    // if neither seam is given rather than deferring to a confusing "write is not a function" later.
+    const { write, writeEntries } = deps;
+    if (writeEntries) {
+      this.writeEntries = writeEntries;
+    } else if (write) {
+      this.writeEntries = (entries) => write(buildGreptimeTables(entries));
+    } else {
+      throw new Error(
+        "GreptimeWriter requires either a `write` (Table-based) or `writeEntries` (rows-based) seam",
+      );
+    }
     this.batchSize = deps.batchSize ?? env.LANGFUSE_INGESTION_WRITE_BATCH_SIZE;
     this.writeInterval = env.LANGFUSE_INGESTION_WRITE_INTERVAL_MS;
     this.maxAttempts = env.LANGFUSE_INGESTION_WRITE_MAX_ATTEMPTS;
     this.maxFieldBytes = env.LANGFUSE_GREPTIME_WRITE_MAX_FIELD_BYTES;
-    this.autoFlush = deps.autoStart;
+    this.maxConcurrentFlushes =
+      deps.maxConcurrentFlushes ?? env.LANGFUSE_GREPTIME_MAX_CONCURRENT_FLUSHES;
+    // The running singleton auto-flushes and runs the interval; a test writer can opt into the
+    // auto-flush pump (to exercise the concurrency cap) without the interval.
+    this.autoFlush = deps.autoStart || (deps.autoFlush ?? false);
     this.queues = Object.fromEntries(
       Object.keys(PHYSICAL_TABLES).map((t) => [t, [] as QueueItem[]]),
     );
@@ -106,7 +168,9 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   public static getInstance(): GreptimeWriter {
     if (!GreptimeWriter.instance) {
       GreptimeWriter.instance = new GreptimeWriter({
-        write: (tables) => getGreptimeIngestClient().write(tables),
+        // Offload build + protobuf-encode + gRPC write to the worker pool; the pool reconstructs a
+        // classified error on this thread so isolation/retry on the main thread is unchanged.
+        writeEntries: (entries) => getFlushWorkerPool().write(entries),
         autoStart: true,
       });
     }
@@ -118,16 +182,22 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * driven explicitly against a fake that throws per row-predicate. Never touches the singleton.
    */
   public static createForTest(deps: {
-    write: WriteFn;
-    deleteEav?: DeleteEavRowsFn;
+    /** Table-based fake (the common case): inspect the built `Table`s, throw per row-predicate. */
+    write?: WriteFn;
+    /** Rows-based seam, to drive the real offload pool from a benchmark without the singleton interval. */
+    writeEntries?: WriteEntriesFn;
     batchSize?: number;
+    /** Arm the size-triggered auto-flush pump (no interval) to assert concurrency-cap behavior. */
+    autoFlush?: boolean;
+    maxConcurrentFlushes?: number;
   }): GreptimeWriter {
     return new GreptimeWriter({
       write: deps.write,
+      writeEntries: deps.writeEntries,
       autoStart: false,
-      // Default to a noop so existing flush tests need no live DB; pass a spy to assert cleanup.
-      deleteEav: deps.deleteEav ?? (async () => {}),
       batchSize: deps.batchSize,
+      autoFlush: deps.autoFlush,
+      maxConcurrentFlushes: deps.maxConcurrentFlushes,
     });
   }
 
@@ -138,29 +208,20 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * live singleton's queue.
    */
   public static createManual(deps: { write: WriteFn }): GreptimeWriter {
-    // The bulk writer owns EAV cleanup and runs it before bulk-writing; its unary lane only writes
-    // (gated projections, bulk-failure fallback rows that were already cleaned), so it must not
-    // re-run cleanup. A noop deleteEav keeps the lane a pure writer.
     return new GreptimeWriter({
       write: deps.write,
       autoStart: false,
-      deleteEav: async () => {},
     });
   }
 
   private start(): void {
     logger.info(
-      `Starting GreptimeWriter. Interval: ${this.writeInterval} ms, batch size: ${this.batchSize}`,
+      `Starting GreptimeWriter. Interval: ${this.writeInterval} ms, batch size: ${this.batchSize}, ` +
+        `max concurrent flushes: ${this.maxConcurrentFlushes}`,
     );
-    this.intervalId = setInterval(() => {
-      if (this.isFlushInProgress) return;
-      this.isFlushInProgress = true;
-      this.flushAll()
-        .catch((err) => logger.error("GreptimeWriter interval flushAll", err))
-        .finally(() => {
-          this.isFlushInProgress = false;
-        });
-    }, this.writeInterval);
+    // Time-based drain of partial batches: top up to the concurrency cap whenever there is flushable
+    // work, regardless of batchSize.
+    this.intervalId = setInterval(() => this.pumpFlushes(), this.writeInterval);
   }
 
   public async shutdown(): Promise<void> {
@@ -168,7 +229,54 @@ export class GreptimeWriter implements GreptimeProjectionSink {
       clearInterval(this.intervalId);
       this.intervalId = null;
     }
+    // Stop launching new auto-flushes, let the in-flight ones settle (so the entity guard is clear),
+    // then drain everything remaining in one full-queue flush.
+    this.autoFlush = false;
     await this.flushAll(true);
+  }
+
+  /**
+   * Launch auto-flushes up to the concurrency cap while there is work whose entity is not already
+   * in-flight. Each launch's splice is synchronous, so the cap and the entity guard are evaluated
+   * against an up-to-date queue with no interleaving. Re-armed when a flush completes (frees a slot
+   * and an entity). A no-op for a manually-driven (non-auto) writer.
+   */
+  private pumpFlushes(): void {
+    if (!this.autoFlush) return;
+    while (
+      this.inFlightFlushes < this.maxConcurrentFlushes &&
+      this.hasFreeFlushableWork()
+    ) {
+      this.launchFlush();
+    }
+  }
+
+  /** True if some queued group's projection entity is not currently being written by another flush. */
+  private hasFreeFlushableWork(): boolean {
+    for (const table of PROJECTION_TABLE_NAMES) {
+      for (const item of this.queues[table]) {
+        if (!this.inFlightEntities.has(entityKeyOf(table, item.row))) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  /** Run one partial flush in the background, tracking it for the cap, the drain, and re-pumping. */
+  private launchFlush(): void {
+    this.inFlightFlushes++;
+    const promise = this.flushAll()
+      .catch((err) => {
+        logger.error("GreptimeWriter.launchFlush", err);
+      })
+      .finally(() => {
+        this.inFlightFlushes--;
+        this.inFlightPromises.delete(promise);
+        // A completed flush freed a slot and released its entities; pick up any work it had to skip.
+        this.pumpFlushes();
+      });
+    this.inFlightPromises.add(promise);
   }
 
   public addToQueue(
@@ -178,60 +286,11 @@ export class GreptimeWriter implements GreptimeProjectionSink {
       | ObservationRecordInsertType
       | ScoreRecordInsertType
       | DatasetRunItemRecordInsertType,
+    generation?: number,
   ): void {
-    // EAV cleanup is derived from the spliced projection rows at flush time (see flushAll), so the
-    // enqueue path stays a plain fan-out; the bulk writer records cleanup itself.
-    this.enqueueRows(buildGreptimeRowsForRecord(table, record));
-  }
-
-  /**
-   * The projection entities written in this flush's splice, per projection table -> projectId -> ids.
-   * Derived synchronously from the spliced PROJECTION rows: because `spliceGroupAwareBatch` never
-   * splits a logical group, an entity present here has its full current fan-out (projection + every
-   * EAV row) in this same flush, so deleting its old EAV before the write is exact — no transient gap.
-   * An entity whose EAV set shrank to empty still has its projection row, so it is still cleaned.
-   * Holding this in a fresh local (not instance state) means a concurrent `addToQueue` during the
-   * delete awaits only touches the queues for the next flush; there is no cleanup state to race on.
-   */
-  private eavCleanupTargets(
-    spliced: { table: string; items: QueueItem[] }[],
-  ): Map<GreptimeTable, Map<string, Set<string>>> {
-    const targets = new Map<GreptimeTable, Map<string, Set<string>>>();
-    for (const { table, items } of spliced) {
-      const projectionTable = table as GreptimeTable;
-      if (!EAV_TABLES_FOR_PROJECTION[projectionTable]) continue; // projection tables only
-      let byProject = targets.get(projectionTable);
-      if (!byProject) {
-        byProject = new Map();
-        targets.set(projectionTable, byProject);
-      }
-      for (const { row } of items) {
-        const projectId = row.project_id as string;
-        let ids = byProject.get(projectId);
-        if (!ids) {
-          ids = new Set();
-          byProject.set(projectId, ids);
-        }
-        ids.add(row.id as string);
-      }
-    }
-    return targets;
-  }
-
-  /**
-   * Batch-delete the stale EAV rows of each entity written in this flush, BEFORE the new set lands, so
-   * a key/tag/tool dropped from an updated entity does not survive. Run inside the flush's cleanup
-   * try/catch: a delete failure restores the splice and aborts the write, so a later flush retries the
-   * delete before the same rows can land (no row is written over un-cleared EAV).
-   */
-  private async runEavCleanup(
-    targets: Map<GreptimeTable, Map<string, Set<string>>>,
-  ): Promise<void> {
-    for (const [projectionTable, byProject] of targets) {
-      for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ?? []) {
-        await this.deleteEav(eavTable, byProject);
-      }
-    }
+    // Stale EAV rows are superseded by the new `generation` (read-time correlation), so the enqueue
+    // path is a plain fan-out with no up-front delete.
+    this.enqueueRows(buildGreptimeRowsForRecord(table, record, generation));
   }
 
   /**
@@ -259,33 +318,16 @@ export class GreptimeWriter implements GreptimeProjectionSink {
       groupId,
       row,
     });
-    if (
-      this.autoFlush &&
-      this.queues[table].length >= this.batchSize &&
-      !this.isFlushInProgress
-    ) {
-      this.isFlushInProgress = true;
-      this.flushAll()
-        .catch((err) => logger.error("GreptimeWriter.push flushAll", err))
-        .finally(() => {
-          this.isFlushInProgress = false;
-        });
+    // Size trigger: once a table reaches batchSize there is a full batch to write. The pump launches
+    // up to the concurrency cap (no-op when not auto-flushing), so several flushes can pipeline
+    // instead of being serialized behind one in-flight flush.
+    if (this.queues[table].length >= this.batchSize) {
+      this.pumpFlushes();
     }
   }
 
   private pushAll(table: string, rows: GreptimeRow[], groupId: number): void {
     for (const row of rows) this.push(table, row, groupId);
-  }
-
-  /** Build one fresh `Table` per physical table from `(table,row)` pairs (`addRowObject` mutates). */
-  private buildTables(
-    entries: { table: string; rows: GreptimeRow[] }[],
-  ): Table[] {
-    return entries.map(({ table, rows }) => {
-      const t = PHYSICAL_TABLES[table]();
-      for (const row of rows) t.addRowObject(row);
-      return t;
-    });
   }
 
   /** Write the rows of the given logical groups in a SINGLE combined call, regrouped per table. */
@@ -298,10 +340,12 @@ export class GreptimeWriter implements GreptimeProjectionSink {
         else byTable.set(table, [item.row]);
       }
     }
-    const tables = this.buildTables(
+    // Hand the per-table rows to the write seam as one combined unit. Table construction + protobuf
+    // encode happen wherever the seam runs (a worker thread for the live singleton), never splitting an
+    // entity's projection from its EAV across calls.
+    await this.writeEntries(
       [...byTable].map(([table, rows]) => ({ table, rows })),
     );
-    await this.write(tables);
   }
 
   /** Regroup spliced per-table batches into logical groups keyed by `groupId` for bisection. */
@@ -349,15 +393,6 @@ export class GreptimeWriter implements GreptimeProjectionSink {
       for (const item of group.items) items.push(item);
     }
     this.requeueItems(items);
-  }
-
-  /** Put a spliced batch back without bumping attempts; used when pre-write cleanup fails. */
-  private restoreSpliced(
-    spliced: { table: string; items: QueueItem[] }[],
-  ): void {
-    for (const { table, items } of spliced) {
-      this.queues[table].unshift(...items);
-    }
   }
 
   /**
@@ -445,58 +480,78 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   }
 
   /**
-   * Splice a batch without ever splitting a logical group (an entity's projection row and all its EAV
-   * rows, sharing one groupId). Whole groups are taken in groupId order until about `batchSize` rows
-   * (always at least one group, so an oversized fan-out still makes progress), or everything when
-   * `fullQueue`. Selection is by a groupId SET and filter, not a prefix, because a requeue re-appends
-   * an older groupId at the tail — the queues are not strictly ordered. Keeping each group intact is
-   * what lets EAV cleanup target the exact entities written this flush, with no transient gap.
+   * Synchronously claim a batch of whole logical groups, marking their entities in-flight. Called as
+   * the first statement of `flushAll` BEFORE any await, so concurrent flushes each grab a DISJOINT set
+   * of groups with no interleaving — the queues need no lock.
+   *
+   * A group (an entity's projection row + all its EAV rows, sharing one groupId) is never split.
+   * Selection rules:
+   *  - skip a group whose entity is already in-flight in another flush (`inFlightEntities`), so one
+   *    entity's writes are never reordered across concurrent flushes (its latest generation must land
+   *    last so it wins the `last_non_null` merge and the projection's `eav_generation` points at it);
+   *  - for a partial flush, take at most ONE group per entity (lowest groupId first, preserving the
+   *    entity's write order) and stop near `batchSize` (always >= 1 group so an oversized fan-out still
+   *    makes progress); `fullQueue` takes every group of every free entity.
+   * Selection is by a groupId SET + filter (not a prefix): a requeue re-appends an older groupId at the
+   * tail, so the queues are not strictly ordered. Returns the spliced rows plus the entity keys claimed
+   * (the caller releases them once the write settles).
    */
-  private spliceGroupAwareBatch(
-    fullQueue: boolean,
-  ): { table: string; items: QueueItem[] }[] {
+  private spliceGroupAwareBatch(fullQueue: boolean): {
+    spliced: { table: string; items: QueueItem[] }[];
+    claimedEntities: string[];
+  } {
     const tables = Object.keys(this.queues);
-    let isSelected: ((groupId: number) => boolean) | null = null;
-    if (!fullQueue) {
-      const rowsByGroup = new Map<number, number>();
-      for (const table of tables) {
-        for (const item of this.queues[table]) {
-          rowsByGroup.set(
-            item.groupId,
-            (rowsByGroup.get(item.groupId) ?? 0) + 1,
-          );
+
+    // Map each queued group to its projection entity and count its rows. Every group has exactly one
+    // projection row, which defines the entity the guard serializes on.
+    const groupEntity = new Map<number, string>();
+    const rowsByGroup = new Map<number, number>();
+    for (const table of tables) {
+      const isProjection = PROJECTION_TABLE_NAMES.has(table);
+      for (const item of this.queues[table]) {
+        rowsByGroup.set(item.groupId, (rowsByGroup.get(item.groupId) ?? 0) + 1);
+        if (isProjection) {
+          groupEntity.set(item.groupId, entityKeyOf(table, item.row));
         }
       }
-      const chosen = new Set<number>();
-      let total = 0;
-      for (const groupId of [...rowsByGroup.keys()].sort((a, b) => a - b)) {
+    }
+
+    const chosen = new Set<number>();
+    const claimed = new Set<string>();
+    let total = 0;
+    for (const groupId of [...rowsByGroup.keys()].sort((a, b) => a - b)) {
+      const entity = groupEntity.get(groupId);
+      // Another flush owns this entity — leave the group for a later flush to keep its write order.
+      if (entity !== undefined && this.inFlightEntities.has(entity)) continue;
+      if (!fullQueue) {
+        // One group per entity per flush: avoids mixing two snapshots' (generations') EAV rows in one
+        // combined write, where intra-request row order across tables is otherwise undefined.
+        if (entity !== undefined && claimed.has(entity)) continue;
         const rows = rowsByGroup.get(groupId)!;
         if (chosen.size > 0 && total + rows > this.batchSize) break; // always take >= 1 group
-        chosen.add(groupId);
         total += rows;
-        if (total >= this.batchSize) break;
       }
-      isSelected = (groupId) => chosen.has(groupId);
+      chosen.add(groupId);
+      if (entity !== undefined) claimed.add(entity);
+      if (!fullQueue && total >= this.batchSize) break;
     }
 
     const spliced: { table: string; items: QueueItem[] }[] = [];
     for (const table of tables) {
       const q = this.queues[table];
       if (q.length === 0) continue;
-      if (!isSelected) {
-        spliced.push({ table, items: q.splice(0, q.length) });
-        continue;
-      }
       const taken: QueueItem[] = [];
       const remaining: QueueItem[] = [];
       for (const item of q)
-        (isSelected(item.groupId) ? taken : remaining).push(item);
+        (chosen.has(item.groupId) ? taken : remaining).push(item);
       if (taken.length > 0) {
         this.queues[table] = remaining;
         spliced.push({ table, items: taken });
       }
     }
-    return spliced;
+
+    for (const entity of claimed) this.inFlightEntities.add(entity);
+    return { spliced, claimedEntities: [...claimed] };
   }
 
   /**
@@ -510,42 +565,55 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * surfaced via metrics/logs and healed by the idempotent full-history rebuild on reprocess.
    */
   public async flushAll(fullQueue = false): Promise<void> {
-    return instrumentAsync({ name: "write-to-greptime" }, async () => {
-      const spliced = this.spliceGroupAwareBatch(fullQueue);
-      if (spliced.length === 0) return;
-      const total = spliced.reduce((n, s) => n + s.items.length, 0);
-      recordHistogram("langfuse.queue.greptime_writer.batch_size", total);
+    // A full-queue drain (shutdown / reconciliation) must see a quiescent queue: wait for the
+    // concurrent partial flushes to release their entities, then splice everything that remains. Only
+    // partial flushes are auto-launched, so this never awaits itself.
+    if (fullQueue && this.inFlightPromises.size > 0) {
+      await Promise.allSettled([...this.inFlightPromises]);
+    }
 
-      // Delete the stale EAV rows of the entities written in THIS batch before their new set lands.
-      // The group-aware splice keeps each entity's projection + EAV together, so the target set is
-      // exact. If cleanup fails, no projection/EAV row from this batch may land; restore the splice
-      // and retry cleanup on a later flush.
-      try {
-        await this.runEavCleanup(this.eavCleanupTargets(spliced));
-      } catch (err) {
-        this.restoreSpliced(spliced);
-        logger.error("GreptimeWriter EAV cleanup failed; batch restored", err);
-        throw err;
-      }
+    // Splice synchronously, BEFORE any await, so concurrent flushes atomically claim disjoint groups
+    // and mark their entities in-flight (see spliceGroupAwareBatch). Hoisted out of instrumentAsync
+    // because the claim must not depend on when the tracer's callback first runs.
+    const { spliced, claimedEntities } = this.spliceGroupAwareBatch(fullQueue);
+    if (spliced.length === 0) return;
 
-      let landedRows = 0;
-      await this.writeWithIsolation(this.regroup(spliced), {
-        onLanded: (gs) => {
-          landedRows += gs.reduce((n, g) => n + g.items.length, 0);
-        },
-        onTransient: (gs) => this.requeueGroups(gs),
-        onPoisonLeaf: async (group, leafClass) => {
-          // A truncation-salvaged oversize group is durably written; count it too so the insert
-          // gauge doesn't under-report this path.
-          if (await this.salvageOrDrop(group, leafClass)) {
-            landedRows += group.items.length;
-          }
-        },
+    try {
+      return await instrumentAsync({ name: "write-to-greptime" }, async () => {
+        const total = spliced.reduce((n, s) => n + s.items.length, 0);
+        recordHistogram("langfuse.queue.greptime_writer.batch_size", total);
+
+        // No up-front EAV delete: each row carries the rebuild's `generation`, and reads keep only an
+        // entity's current generation, so a dropped key is excluded without a delete (which is costly
+        // on GreptimeDB — tombstones + compaction pressure that saturated the cluster under live load).
+        // The group-aware splice still writes an entity's projection + EAV in one call so they share
+        // the same generation atomically.
+        let landedRows = 0;
+        await this.writeWithIsolation(this.regroup(spliced), {
+          onLanded: (gs) => {
+            landedRows += gs.reduce((n, g) => n + g.items.length, 0);
+          },
+          onTransient: (gs) => this.requeueGroups(gs),
+          onPoisonLeaf: async (group, leafClass) => {
+            // A truncation-salvaged oversize group is durably written; count it too so the insert
+            // gauge doesn't under-report this path.
+            if (await this.salvageOrDrop(group, leafClass)) {
+              landedRows += group.items.length;
+            }
+          },
+        });
+        if (landedRows > 0) {
+          recordGauge("greptime_writer_insert", landedRows, {
+            unit: "records",
+          });
+        }
       });
-      if (landedRows > 0) {
-        recordGauge("greptime_writer_insert", landedRows, { unit: "records" });
-      }
-    });
+    } finally {
+      // Release this flush's entities (whether it wrote or requeued) so a later flush can pick them up.
+      // Done after the write settles to keep same-entity writes ordered (latest generation lands last).
+      for (const entity of claimedEntities)
+        this.inFlightEntities.delete(entity);
+    }
   }
 
   /**

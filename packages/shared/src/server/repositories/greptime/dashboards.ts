@@ -345,6 +345,13 @@ const getObservationDetailByTypeByTime = async (opts: {
           AND uc.project_id = :projectId AND ${notDeleted("uc")}
           AND uc.${quoteIdent("timestamp")} >= :winFrom AND uc.${quoteIdent("timestamp")} < :winTo
           AND uc.${quoteIdent("key")} NOT IN (${KNOWN_DETAIL_KEYS_SQL})
+          AND EXISTS (
+            SELECT 1 FROM observations ucg
+            WHERE ucg.${quoteIdent("id")} = uc.${quoteIdent("entity_id")}
+              AND ucg.${quoteIdent("project_id")} = uc.${quoteIdent("project_id")}
+              AND ucg.${quoteIdent("eav_generation")} = uc.${quoteIdent("generation")}
+              AND ${notDeleted("ucg")}
+          )
       ) uc
       ${obsJoinSql}
       ${tracesJoinSql}

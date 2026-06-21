@@ -183,7 +183,8 @@ async function rebuildEntity(params: {
     entityType,
     entityId,
   });
-  const { events, minIngestedAtMs, deleted } = parseRawEventHistory(rawRows);
+  const { events, minIngestedAtMs, eavGeneration, deleted } =
+    parseRawEventHistory(rawRows);
 
   if (events.length === 0) return;
 
@@ -196,5 +197,6 @@ async function rebuildEntity(params: {
     new Date(minIngestedAtMs),
     events,
     isDeleted,
+    eavGeneration,
   );
 }

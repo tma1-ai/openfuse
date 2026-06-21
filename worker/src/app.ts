@@ -82,6 +82,7 @@ import { BatchTraceDeletionCleaner } from "./features/batch-trace-deletion-clean
 import { BatchProjectMediaCleaner } from "./features/batch-project-media-cleaner";
 import { QueueMetricsRunner } from "./features/queue-metrics-runner";
 import { GreptimeStatsRunner } from "./features/greptime-stats-runner";
+import { GreptimeRawEventsFlushRunner } from "./features/greptime-raw-events-flush-runner";
 import { MonitorRunner } from "./features/monitor-runner";
 
 const app = express();
@@ -664,6 +665,14 @@ export let greptimeStatsRunner: GreptimeStatsRunner | null = null;
 if (env.LANGFUSE_GREPTIME_STATS_ENABLED === "true") {
   greptimeStatsRunner = new GreptimeStatsRunner();
   greptimeStatsRunner.start();
+}
+
+export let greptimeRawEventsFlushRunner: GreptimeRawEventsFlushRunner | null =
+  null;
+
+if (env.LANGFUSE_GREPTIME_RAW_EVENTS_FLUSH_ENABLED === "true") {
+  greptimeRawEventsFlushRunner = new GreptimeRawEventsFlushRunner();
+  greptimeRawEventsFlushRunner.start();
 }
 
 // Monitor runners — one per shard

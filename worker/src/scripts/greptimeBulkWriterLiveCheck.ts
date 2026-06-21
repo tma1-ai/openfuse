@@ -141,8 +141,8 @@ async function main() {
   }
 
   // EAV shrink consistency: re-write obs-1 with a SMALLER tool set + no custom usage/cost keys. The
-  // write path must clear the old EAV rows before writing the new set, so the dropped keys do not
-  // linger and keep matching filters (the ClickHouse Map column would shrink naturally).
+  // write path keeps old EAV rows physically present but stamps the new projection/EAV generation, so
+  // dropped keys must not match reads correlated to the current generation.
   const shrinkBulk = new GreptimeBulkWriter({
     client,
     unary: GreptimeWriter.createManual({
@@ -167,7 +167,15 @@ async function main() {
   await shrinkBulk.flushAll();
 
   const toolDefs = await greptimeQuery<{ tool_name: string }>({
-    query: `SELECT tool_name FROM observations_tool_definitions WHERE project_id = :p AND entity_id = 'obs-1' AND is_deleted = false`,
+    query: `
+      SELECT td.tool_name
+      FROM observations_tool_definitions td
+      JOIN observations o
+        ON o.project_id = td.project_id
+       AND o.id = td.entity_id
+       AND o.eav_generation = td.generation
+       AND o.is_deleted = false
+      WHERE td.project_id = :p AND td.entity_id = 'obs-1' AND td.is_deleted = false`,
     params: { p: PROJECT },
   });
   check(
@@ -176,7 +184,15 @@ async function main() {
     toolDefs,
   );
   const toolCalls = await greptimeQuery<{ tool_name: string }>({
-    query: `SELECT tool_name FROM observations_tool_calls WHERE project_id = :p AND entity_id = 'obs-1' AND is_deleted = false`,
+    query: `
+      SELECT tc.tool_name
+      FROM observations_tool_calls tc
+      JOIN observations o
+        ON o.project_id = tc.project_id
+       AND o.id = tc.entity_id
+       AND o.eav_generation = tc.generation
+       AND o.is_deleted = false
+      WHERE tc.project_id = :p AND tc.entity_id = 'obs-1' AND tc.is_deleted = false`,
     params: { p: PROJECT },
   });
   check(
@@ -185,7 +201,15 @@ async function main() {
     toolCalls,
   );
   const usageCostKeys = await greptimeQuery<{ key: string }>({
-    query: `SELECT \`key\` FROM observations_usage_cost WHERE project_id = :p AND entity_id = 'obs-1' AND is_deleted = false`,
+    query: `
+      SELECT uc.\`key\`
+      FROM observations_usage_cost uc
+      JOIN observations o
+        ON o.project_id = uc.project_id
+       AND o.id = uc.entity_id
+       AND o.eav_generation = uc.generation
+       AND o.is_deleted = false
+      WHERE uc.project_id = :p AND uc.entity_id = 'obs-1' AND uc.is_deleted = false`,
     params: { p: PROJECT },
   });
   check(

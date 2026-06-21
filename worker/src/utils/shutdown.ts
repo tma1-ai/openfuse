@@ -2,6 +2,7 @@ import { logger } from "@langfuse/shared/src/server";
 import { redis } from "@langfuse/shared/src/server";
 
 import { GreptimeWriter } from "../services/GreptimeWriter";
+import { terminateFlushWorkerPool } from "../services/GreptimeWriter/flushWorkerPool";
 import { setSigtermReceived } from "../features/health";
 import { server } from "../index";
 import { freeAllTokenizers } from "../features/tokenisation/usage";
@@ -16,6 +17,7 @@ import {
   batchTraceDeletionCleaner,
   queueMetricsRunner,
   greptimeStatsRunner,
+  greptimeRawEventsFlushRunner,
   monitorRunners,
 } from "../app";
 
@@ -46,6 +48,7 @@ export const onShutdown: NodeJS.SignalsListener = async (signal) => {
 
   // Stop GreptimeDB region-statistics sampler
   greptimeStatsRunner?.stop();
+  greptimeRawEventsFlushRunner?.stop();
 
   // Stop monitor runners
   for (const runner of monitorRunners) {
@@ -62,6 +65,15 @@ export const onShutdown: NodeJS.SignalsListener = async (signal) => {
   // GreptimeDB is the sole projection backend, so buffered writes must not be dropped on shutdown.
   await GreptimeWriter.getInstance().shutdown();
   logger.info("GreptimeDB writer has been shut down.");
+
+  // The writer's final drain has settled, so no flush is in flight; tear down the offload pool's
+  // worker threads (each holds its own gRPC client) so the process can exit cleanly.
+  try {
+    await terminateFlushWorkerPool();
+    logger.info("GreptimeDB flush worker pool has been terminated.");
+  } catch (error) {
+    logger.error("Error terminating GreptimeDB flush worker pool", error);
+  }
 
   redis?.disconnect();
   logger.info("Redis connection has been closed.");

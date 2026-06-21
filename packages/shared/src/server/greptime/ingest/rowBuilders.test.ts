@@ -27,12 +27,12 @@ describe("buildGreptimeRowsForRecord", () => {
       is_deleted: 0,
     });
 
-    const out = buildGreptimeRowsForRecord(GreptimeTable.Traces, trace);
+    const out = buildGreptimeRowsForRecord(GreptimeTable.Traces, trace, 42);
     expect(tablesOf(out)).toEqual(["traces", "traces_metadata", "traces_tags"]);
 
     const projection = out.find((o) => o.table === "traces")!;
     expect(projection.rows).toHaveLength(1);
-    // JSON columns are serialized verbatim, booleans coerced.
+    // JSON columns are serialized verbatim, booleans coerced; the projection carries eav_generation.
     expect(projection.rows[0]).toMatchObject({
       project_id: "p1",
       id: "t1",
@@ -40,6 +40,7 @@ describe("buildGreptimeRowsForRecord", () => {
       tags: JSON.stringify(["a", "b"]),
       metadata: JSON.stringify({ env: "prod", region: "us" }),
       is_deleted: false,
+      eav_generation: 42,
     });
 
     const metadata = out.find((o) => o.table === "traces_metadata")!;
@@ -51,6 +52,7 @@ describe("buildGreptimeRowsForRecord", () => {
         timestamp: 1000,
         value: "prod",
         is_deleted: false,
+        generation: 42,
       },
       {
         project_id: "p1",
@@ -59,6 +61,7 @@ describe("buildGreptimeRowsForRecord", () => {
         timestamp: 1000,
         value: "us",
         is_deleted: false,
+        generation: 42,
       },
     ]);
 
@@ -70,6 +73,7 @@ describe("buildGreptimeRowsForRecord", () => {
         tag: "a",
         timestamp: 1000,
         is_deleted: false,
+        generation: 42,
       },
       {
         project_id: "p1",
@@ -77,6 +81,7 @@ describe("buildGreptimeRowsForRecord", () => {
         tag: "b",
         timestamp: 1000,
         is_deleted: false,
+        generation: 42,
       },
     ]);
   });
@@ -102,7 +107,7 @@ describe("buildGreptimeRowsForRecord", () => {
       cost_details: { input: 1, total: 1 },
       is_deleted: 0,
     });
-    const out = buildGreptimeRowsForRecord(GreptimeTable.Observations, obs);
+    const out = buildGreptimeRowsForRecord(GreptimeTable.Observations, obs, 42);
     expect(tablesOf(out)).toEqual([
       "observations",
       "observations_metadata",
@@ -116,7 +121,7 @@ describe("buildGreptimeRowsForRecord", () => {
     // the JSON columns, so they are skipped here (no write amplification). cost_details has no custom
     // keys, so only the usage `cache_read` row survives.
     expect(usageCost.rows).toEqual([
-      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "usage", key: "cache_read", value: 5, is_deleted: false }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 2000, kind: "usage", key: "cache_read", value: 5, is_deleted: false, generation: 42 }, // prettier-ignore
     ]);
   });
 
@@ -132,7 +137,7 @@ describe("buildGreptimeRowsForRecord", () => {
       tool_call_names: ["search", "search", "calculator"],
       is_deleted: 0,
     });
-    const out = buildGreptimeRowsForRecord(GreptimeTable.Observations, obs);
+    const out = buildGreptimeRowsForRecord(GreptimeTable.Observations, obs, 42);
     expect(tablesOf(out)).toEqual([
       "observations",
       "observations_tool_definitions",
@@ -141,8 +146,8 @@ describe("buildGreptimeRowsForRecord", () => {
 
     const defs = out.find((o) => o.table === "observations_tool_definitions")!;
     expect(defs.rows).toEqual([
-      { project_id: "p1", entity_id: "o4", tool_name: "search", timestamp: 2000, is_deleted: false }, // prettier-ignore
-      { project_id: "p1", entity_id: "o4", tool_name: "calculator", timestamp: 2000, is_deleted: false }, // prettier-ignore
+      { project_id: "p1", entity_id: "o4", tool_name: "search", timestamp: 2000, is_deleted: false, generation: 42 }, // prettier-ignore
+      { project_id: "p1", entity_id: "o4", tool_name: "calculator", timestamp: 2000, is_deleted: false, generation: 42 }, // prettier-ignore
     ]);
 
     // tool_call_names is de-duplicated to one row per distinct name (search appears twice).
@@ -247,11 +252,12 @@ describe("usageCostRows", () => {
       projectId: "p1",
       entityId: "o1",
       timestamp: 1234,
+      generation: 9,
       isDeleted: true,
     });
     expect(rows).toEqual([
-      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "usage", key: "cache_read", value: 10, is_deleted: true }, // prettier-ignore
-      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "cost", key: "cache_read", value: 0.5, is_deleted: true }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "usage", key: "cache_read", value: 10, is_deleted: true, generation: 9 }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "cost", key: "cache_read", value: 0.5, is_deleted: true, generation: 9 }, // prettier-ignore
     ]);
   });
 
@@ -262,10 +268,11 @@ describe("usageCostRows", () => {
       projectId: "p1",
       entityId: "o1",
       timestamp: 1234,
+      generation: 9,
       isDeleted: false,
     });
     expect(rows).toEqual([
-      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "usage", key: "reasoning", value: 7, is_deleted: false }, // prettier-ignore
+      { project_id: "p1", entity_id: "o1", timestamp: 1234, kind: "usage", key: "reasoning", value: 7, is_deleted: false, generation: 9 }, // prettier-ignore
     ]);
   });
 
@@ -277,6 +284,7 @@ describe("usageCostRows", () => {
         projectId: "p1",
         entityId: "o1",
         timestamp: 1,
+        generation: 9,
         isDeleted: false,
       }),
     ).toEqual([]);

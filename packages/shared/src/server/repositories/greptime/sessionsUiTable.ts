@@ -121,7 +121,8 @@ const buildSessionFilters = (filter: FilterState): CompiledSession => {
   const tagExists = (predicate: string, negate = false): string =>
     `${negate ? "NOT EXISTS" : "EXISTS"} (SELECT 1 FROM ${q("traces")} tu ` +
     `JOIN ${q("traces_tags")} mt ON mt.${q("entity_id")} = tu.${q("id")} ` +
-    `AND mt.${q("project_id")} = tu.${q("project_id")} AND mt.${q("is_deleted")} = false ` +
+    `AND mt.${q("project_id")} = tu.${q("project_id")} ` +
+    `AND mt.${q("generation")} = tu.${q("eav_generation")} AND mt.${q("is_deleted")} = false ` +
     `WHERE tu.${q("project_id")} = s.${q("project_id")} ` +
     `AND tu.${q("session_id")} = s.${q("session_id")} ` +
     `AND tu.${q("is_deleted")} = false AND ${predicate})`;
@@ -422,7 +423,8 @@ const buildSessionTagsCte = (compiled: CompiledSession): string => `
       WHERE t.project_id = :projectId AND t.session_id IS NOT NULL AND t.is_deleted = false
         ${compiled.preWhere ? `AND ${compiled.preWhere}` : ""}
     ) t
-    JOIN traces_tags mt ON mt.entity_id = t.id AND mt.project_id = t.project_id AND mt.is_deleted = false
+    JOIN traces_tags mt ON mt.entity_id = t.id AND mt.project_id = t.project_id
+      AND mt.generation = t.eav_generation AND mt.is_deleted = false
     GROUP BY t.session_id, t.project_id
   )`;
 

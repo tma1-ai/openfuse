@@ -8,6 +8,12 @@
 # defaults — "Auto" sizes caches and buffers from system memory, which is the right choice for a
 # single node. Tune only if the metrics in the perf guide say so:
 # https://docs.greptime.com/user-guide/deployments-administration/performance-tuning/performance-tuning-tips/
+#
+# Flush timing is deliberately NOT tuned here: GreptimeDB's `auto_flush_interval` is engine-global, but
+# only the raw_events table needs aggressive flushing (it is point-read on every ingestion event, and an
+# unflushed bulk memtable makes that read an O(memtable) scan). The worker instead issues a table-scoped
+# `ADMIN flush_table('raw_events')` on a timer (LANGFUSE_GREPTIME_RAW_EVENTS_FLUSH_INTERVAL_MS), so
+# only that table flushes often and the other tables keep the default — no global compaction overhead.
 
 [logging]
 level = "info"

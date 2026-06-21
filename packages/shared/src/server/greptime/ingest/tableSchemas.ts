@@ -39,7 +39,9 @@ export const tracesTable = (): Table =>
     .addFieldColumn("output", DataType.String)
     .addFieldColumn("created_at", DataType.TimestampMillisecond)
     .addFieldColumn("updated_at", DataType.TimestampMillisecond)
-    .addFieldColumn("is_deleted", DataType.Bool);
+    .addFieldColumn("is_deleted", DataType.Bool)
+    // Generation of this entity's current EAV set; reads correlate `eav.generation = eav_generation`.
+    .addFieldColumn("eav_generation", DataType.Int64);
 
 export const observationsTable = (): Table =>
   Table.new("observations")
@@ -82,7 +84,9 @@ export const observationsTable = (): Table =>
     .addFieldColumn("tool_call_names", DataType.Json)
     .addFieldColumn("created_at", DataType.TimestampMillisecond)
     .addFieldColumn("updated_at", DataType.TimestampMillisecond)
-    .addFieldColumn("is_deleted", DataType.Bool);
+    .addFieldColumn("is_deleted", DataType.Bool)
+    // Generation of this entity's current EAV set; reads correlate `eav.generation = eav_generation`.
+    .addFieldColumn("eav_generation", DataType.Int64);
 
 export const scoresTable = (): Table =>
   Table.new("scores")
@@ -108,7 +112,9 @@ export const scoresTable = (): Table =>
     .addFieldColumn("queue_id", DataType.String)
     .addFieldColumn("created_at", DataType.TimestampMillisecond)
     .addFieldColumn("updated_at", DataType.TimestampMillisecond)
-    .addFieldColumn("is_deleted", DataType.Bool);
+    .addFieldColumn("is_deleted", DataType.Bool)
+    // Generation of this entity's current EAV set; reads correlate `eav.generation = eav_generation`.
+    .addFieldColumn("eav_generation", DataType.Int64);
 
 export const datasetRunItemsTable = (): Table =>
   Table.new("dataset_run_items")
@@ -139,7 +145,9 @@ export const metadataTable = (name: string): Table =>
     .addTagColumn("key", DataType.String)
     .addTimestampColumn("timestamp", Precision.Millisecond)
     .addFieldColumn("value", DataType.String)
-    .addFieldColumn("is_deleted", DataType.Bool);
+    .addFieldColumn("is_deleted", DataType.Bool)
+    // Generation this row was written at; a read keeps only rows at the entity's current generation.
+    .addFieldColumn("generation", DataType.Int64);
 
 export const tagsTable = (name: string): Table =>
   Table.new(name)
@@ -147,7 +155,9 @@ export const tagsTable = (name: string): Table =>
     .addTagColumn("entity_id", DataType.String)
     .addTagColumn("tag", DataType.String)
     .addTimestampColumn("timestamp", Precision.Millisecond)
-    .addFieldColumn("is_deleted", DataType.Bool);
+    .addFieldColumn("is_deleted", DataType.Bool)
+    // Generation this row was written at; a read keeps only rows at the entity's current generation.
+    .addFieldColumn("generation", DataType.Int64);
 
 // EAV usage/cost subtable (observations only): one row per (project, observation, kind, key).
 // Tags = PRIMARY KEY (project_id, entity_id, kind, key); `value` is the numeric metric (Float64,
@@ -160,7 +170,9 @@ export const usageCostTable = (name: string): Table =>
     .addTagColumn("key", DataType.String)
     .addTimestampColumn("timestamp", Precision.Millisecond)
     .addFieldColumn("value", DataType.Float64)
-    .addFieldColumn("is_deleted", DataType.Bool);
+    .addFieldColumn("is_deleted", DataType.Bool)
+    // Generation this row was written at; a read keeps only rows at the entity's current generation.
+    .addFieldColumn("generation", DataType.Int64);
 
 // EAV tool-name subtable (observations only): one row per (project, observation, tool_name).
 // Tags = PRIMARY KEY (project_id, entity_id, tool_name). See rowBuilders.toolDefinitionRows /
@@ -171,7 +183,9 @@ export const toolNameTable = (name: string): Table =>
     .addTagColumn("entity_id", DataType.String)
     .addTagColumn("tool_name", DataType.String)
     .addTimestampColumn("timestamp", Precision.Millisecond)
-    .addFieldColumn("is_deleted", DataType.Bool);
+    .addFieldColumn("is_deleted", DataType.Bool)
+    // Generation this row was written at; a read keeps only rows at the entity's current generation.
+    .addFieldColumn("generation", DataType.Int64);
 
 /**
  * The EAV derived-index tables fanned out from each projection entity (mirrors the per-table groups
@@ -212,3 +226,20 @@ export const PHYSICAL_TABLES: Record<string, () => Table> = {
     toolNameTable("observations_tool_definitions"),
   observations_tool_calls: () => toolNameTable("observations_tool_calls"),
 };
+
+/**
+ * Build one fresh `Table` per physical table from `(table, rows)` pairs (`addRowObject` mutates a
+ * shared schema, so each flush needs its own). Pure (schema + row shaping only, no client), so it can
+ * run wherever the rows are: inline on the writer's thread for tests, or inside a flush worker thread
+ * that offloads the heavy protobuf encode off the worker's event loop. `rows` are plain JSON values
+ * (Decimal is coerced to `number` upstream), so they cross a `worker_threads` postMessage boundary
+ * unchanged.
+ */
+export const buildGreptimeTables = (
+  entries: { table: string; rows: Record<string, unknown>[] }[],
+): Table[] =>
+  entries.map(({ table, rows }) => {
+    const t = PHYSICAL_TABLES[table]();
+    for (const row of rows) t.addRowObject(row);
+    return t;
+  });

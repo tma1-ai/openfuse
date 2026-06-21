@@ -83,6 +83,9 @@ const eavExists = (opts: {
     `SELECT 1 FROM ${quoteIdent(opts.eavTable)} ${m} ` +
     `WHERE ${m}.${quoteIdent("project_id")} = ${opts.outer}.${quoteIdent("project_id")} ` +
     `AND ${m}.${quoteIdent("entity_id")} = ${opts.outer}.${quoteIdent("id")} ` +
+    // Keep only EAV rows at the entity's current generation: a key dropped from an updated entity has
+    // no row at the new generation, so it is excluded without an up-front DELETE on the write path.
+    `AND ${m}.${quoteIdent("generation")} = ${opts.outer}.${quoteIdent("eav_generation")} ` +
     `AND ${opts.innerPredicate} ` +
     `AND ${m}.${quoteIdent("is_deleted")} = false`;
   return `${opts.negate ? "NOT EXISTS" : "EXISTS"} (${sub})`;
