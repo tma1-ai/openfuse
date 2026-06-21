@@ -1,7 +1,9 @@
 import { DataType, Precision, Table } from "@greptime/ingester";
+import { backOff } from "exponential-backoff";
 
 import { env } from "../../env";
 import { getGreptimeIngestClient, greptimeQuery } from "./client";
+import { classifyGreptimeWriteError } from "./ingest/writeErrors";
 import { quoteIdent } from "./schemaUtils";
 
 /**
@@ -63,10 +65,27 @@ const buildRawEventsTable = (rows: RawEventInput[]): Table => {
 /**
  * Append events to raw_events. Fail-closed: the caller must treat a rejection as a hard ingestion
  * failure (the source of truth was not durably written).
+ *
+ * Retries only *transient* failures (network/region blips, server backpressure) with bounded backoff,
+ * using the same classification as the worker write path. Without this a single transient gRPC error
+ * under load surfaced as a hard 500 and the SDK dropped the batch — permanent event loss. Retrying is
+ * safe: a timed-out-then-retried duplicate append is deduplicated by `event_id` when the worker
+ * replays the entity's history (`parseRawEventHistory`), so it never double-writes. The table is
+ * rebuilt per attempt because `addRowObject` mutates the builder. A deterministic failure (or retries
+ * exhausted) still throws, preserving fail-closed semantics.
  */
 export const writeRawEvents = async (rows: RawEventInput[]): Promise<void> => {
   if (rows.length === 0) return;
-  await getGreptimeIngestClient().write(buildRawEventsTable(rows));
+  await backOff(
+    () => getGreptimeIngestClient().write(buildRawEventsTable(rows)),
+    {
+      numOfAttempts: 3,
+      startingDelay: 100,
+      timeMultiple: 2,
+      maxDelay: 1000,
+      retry: (err) => classifyGreptimeWriteError(err).class === "transient",
+    },
+  );
 };
 
 /**

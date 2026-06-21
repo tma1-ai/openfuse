@@ -132,6 +132,18 @@ const EnvSchema = z
       .int()
       .positive()
       .default(1_000_000),
+    // Max simultaneously in-flight size/interval-triggered flushes on the live `GreptimeWriter`
+    // singleton. The old single-flight gate capped live throughput at batchSize / single-flush-time
+    // regardless of ingestion concurrency; allowing several flushes to pipeline lifts that ceiling.
+    // Concurrent flushes claim disjoint group batches atomically and a per-entity in-flight guard keeps
+    // one entity's projection+EAV writes serialized, so different entities parallelize while same-entity
+    // EAV delete/write ordering is preserved. Conservative default — each flush still amplifies into
+    // EAV DELETEs against one GreptimeDB; raise once headroom is measured.
+    LANGFUSE_GREPTIME_MAX_CONCURRENT_FLUSHES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(4),
     // Entities enumerated + rebuilt per reconciliation job before it re-enqueues itself with the next
     // keyset cursor. Conservative default; bound by raw_events read + projection write throughput.
     LANGFUSE_GREPTIME_RECONCILIATION_BATCH_SIZE: z.coerce
