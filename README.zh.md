@@ -68,9 +68,9 @@ docker compose up -d   # builds web/worker, starts the full stack
 
 每打一个 `v*` tag，CI 会把发布镜像推到 Docker Hub：
 
-- `tma1ai/openfuse-web`
-- `tma1ai/openfuse-worker`
-- `tma1ai/openfuse-standalone`——web + worker 一个容器，用于单机自托管
+- [`tma1ai/openfuse-web`](https://hub.docker.com/r/tma1ai/openfuse-web)
+- [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker)
+- [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone)——web + worker 一个容器，用于单机自托管
 
 首个预览版是 `1.0.0-alpha.1`。要直接跑 standalone 发布镜像而不是本地 build，在 `.env` 里固定一个 tag（例如 `OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.1`），再用 `docker compose -f docker-compose.standalone.yml up -d --pull always` 启动。standalone、split web/worker 镜像和 tag 策略的完整说明见[部署文档](docs/deployment.md#published-images-and-tags)。
 

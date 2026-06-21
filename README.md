@@ -68,9 +68,9 @@ docker compose up -d   # builds web/worker, starts the full stack
 
 Release images are published to Docker Hub on each `v*` tag:
 
-- `tma1ai/openfuse-web`
-- `tma1ai/openfuse-worker`
-- `tma1ai/openfuse-standalone` — web + worker in one container, for single-node self-hosting
+- [`tma1ai/openfuse-web`](https://hub.docker.com/r/tma1ai/openfuse-web)
+- [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker)
+- [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone) — web + worker in one container, for single-node self-hosting
 
 The first preview is `1.0.0-alpha.1`. To run the standalone image instead of building locally, pin a tag in `.env` (e.g. `OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.1`) and start with `docker compose -f docker-compose.standalone.yml up -d --pull always`. Full instructions for standalone, split web/worker images, and tag policy: [deployment](docs/deployment.md#published-images-and-tags).
 
