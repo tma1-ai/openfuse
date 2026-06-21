@@ -71,10 +71,16 @@ export type GreptimeObservationsTableProps = {
   searchType?: Parameters<typeof greptimeSearchCondition>[0]["searchType"];
 };
 
-type CompiledObs = {
-  whereSql: string;
+export type CompiledObs = {
+  // observations-scoped predicates (o.* + score-grain EXISTS, which correlate to o.id).
+  obsWhereSql: string;
+  // trace-scoped predicates (t.*), applied inside the traces subquery.
+  traceWhereSql: string;
   params: Record<string, unknown>;
   traceJoin: boolean;
+  // A trace FILTER (or the trace lookback) means an observation must match a passing/recent trace, so
+  // the join must be INNER. A join that exists only to order by a trace column stays LEFT.
+  innerTraceJoin: boolean;
   lookback?: string;
 };
 
@@ -97,8 +103,15 @@ export const buildObservationsTableQuery = (
     ),
   ]);
 
+  // Split by physical table so each side can be pre-filtered inside its own subquery (a flat
+  // `observations o LEFT JOIN traces t ... WHERE` defeats GreptimeDB index pushdown on the driving
+  // observations scan). Score-grain filters carry table "scores" but render as EXISTS correlated to
+  // `o.id`, so they stay on the observations side.
+  const obsFilters = filters.filter((f) => f.table !== "traces");
+  const traceFilters = filters.filter((f) => f.table === "traces");
+
   const traceJoin =
-    filters.some((f) => f.table === "traces") ||
+    traceFilters.length() > 0 ||
     findUiColumnMapping(observationsTableMapping, orderBy?.column)
       ?.greptimeTableName === "traces";
 
@@ -117,13 +130,37 @@ export const buildObservationsTableQuery = (
         )
       : undefined;
 
-  const applied = filters.apply();
+  const obsRes = obsFilters.apply();
+  const traceRes = traceFilters.apply();
   return {
-    whereSql: applied.query,
-    params: applied.params,
+    obsWhereSql: obsRes.query,
+    traceWhereSql: traceRes.query,
+    // `projectId` binds the `t.project_id = :projectId` scope in the traces subquery (the o-side
+    // project filter above carries its own auto-generated placeholder, not :projectId).
+    params: { projectId, ...obsRes.params, ...traceRes.params },
     traceJoin,
+    innerTraceJoin: traceFilters.length() > 0 || lookback !== undefined,
     lookback,
   };
+};
+
+// Build the pre-filtered FROM clause (observations subquery [join traces subquery]) so each base table
+// scan prunes before the join. `SELECT *` is an intentional intermediate relation (projection pushdown
+// drops unreferenced columns; the outer query wraps JSON columns via its explicit select list).
+export const observationsScopedFrom = (
+  compiled: CompiledObs,
+  search: { query: string },
+): string => {
+  const obsSub = `(SELECT * FROM observations o
+      WHERE ${compiled.obsWhereSql} AND ${notDeleted("o")} ${search.query}) o`;
+  if (!compiled.traceJoin) return obsSub;
+  const traceSub = `(SELECT * FROM traces t
+      WHERE t.project_id = :projectId AND ${notDeleted("t")}
+        ${compiled.traceWhereSql ? `AND ${compiled.traceWhereSql}` : ""}
+        ${compiled.lookback ? "AND t.timestamp >= :obsTraceLookback" : ""}) t`;
+  const joinKind = compiled.innerTraceJoin ? "JOIN" : "LEFT JOIN";
+  return `${obsSub}
+    ${joinKind} ${traceSub} ON t.id = o.trace_id AND t.project_id = o.project_id`;
 };
 
 const observationsOrderBy = (orderBy?: OrderByState): string => {
@@ -149,11 +186,7 @@ export const getObservationsTableCountGreptime = async (
   const rows = await greptimeQuery<{ count: string | number }>({
     query: `
       SELECT count(*) AS count
-      FROM observations o
-      ${compiled.traceJoin ? "LEFT JOIN traces t ON t.id = o.trace_id AND t.project_id = o.project_id AND " + notDeleted("t") : ""}
-      WHERE ${compiled.whereSql} AND ${notDeleted("o")}
-        ${compiled.lookback ? "AND t.timestamp >= :obsTraceLookback" : ""}
-        ${search.query}`,
+      FROM ${observationsScopedFrom(compiled, search)}`,
     params: {
       ...compiled.params,
       ...search.params,
@@ -178,11 +211,7 @@ export const getObservationsTableRowsGreptime = async (
   const rows = await greptimeQuery<Record<string, unknown>>({
     query: `
       SELECT ${greptimeObservationSelect({ prefix: "o", excludeIo: exclude, excludeMetadata: exclude })}
-      FROM observations o
-      ${compiled.traceJoin ? "LEFT JOIN traces t ON t.id = o.trace_id AND t.project_id = o.project_id AND " + notDeleted("t") : ""}
-      WHERE ${compiled.whereSql} AND ${notDeleted("o")}
-        ${compiled.lookback ? "AND t.timestamp >= :obsTraceLookback" : ""}
-        ${search.query}
+      FROM ${observationsScopedFrom(compiled, search)}
       ${observationsOrderBy(props.orderBy)}
       ${props.limit !== undefined && props.offset !== undefined ? "LIMIT :limit OFFSET :offset" : ""}`,
     params: {

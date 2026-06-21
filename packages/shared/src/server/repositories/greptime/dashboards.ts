@@ -1,4 +1,5 @@
 import { type FilterState } from "../../../types";
+import { InvalidRequestError } from "../../../errors";
 import { greptimeQuery } from "../../greptime/client";
 import { createGreptimeFilterFromFilterState } from "../../greptime/sql/factory";
 import { USAGE_COST_KNOWN_KEYS } from "../../greptime/sql/fragments";
@@ -111,7 +112,20 @@ export const getScoreAggregateGreptime = async (
       dashboardGreptimeColumnDefinitions,
     ),
   );
-  const restRes = restList.apply();
+  // This aggregation reads `scores s` (optionally JOIN traces); it has no `observations o` alias.
+  // Observation-scoped dashboard columns (level / token / cost / tool-name filters) compile to
+  // predicates correlated to `o`, so they cannot be expressed here -- reject them loudly instead of
+  // emitting SQL that references a non-existent alias.
+  if (restList.some((f) => f.table === "observations")) {
+    throw new InvalidRequestError(
+      "Observation-scoped filters are not supported for score aggregation on GreptimeDB",
+    );
+  }
+  // Split by physical table so each side pre-filters inside its own subquery: a flat `scores JOIN
+  // traces` defeats GreptimeDB pushdown of the scores TIME INDEX / trace_id bloom and the traces TIME
+  // INDEX to the region scans.
+  const scoreRestRes = restList.filter((f) => f.table !== "traces").apply();
+  const traceRestRes = restList.filter((f) => f.table === "traces").apply();
 
   const hasTraceFilter = restList.some((f) => f.table === "traces");
   const timeFilter = restList.find(
@@ -122,7 +136,8 @@ export const getScoreAggregateGreptime = async (
   const useLookback = Boolean(timeFilter && hasTraceFilter);
   const params: Record<string, unknown> = {
     projectId,
-    ...restRes.params,
+    ...scoreRestRes.params,
+    ...traceRestRes.params,
     ...env.params,
   };
   if (useLookback && timeFilter) {
@@ -143,12 +158,22 @@ export const getScoreAggregateGreptime = async (
     query: `
       SELECT s.name AS name, count(*) AS count, avg(s.value) AS avg_value,
         s.source AS source, s.data_type AS data_type
-      FROM scores s
-      ${hasTraceFilter ? "JOIN traces t ON t.id = s.trace_id AND t.project_id = s.project_id AND " + notDeleted("t") : ""}
-      WHERE s.project_id = :projectId AND ${notDeleted("s")}
-        ${restRes.query ? `AND ${restRes.query}` : ""}
-        ${env.query ? `AND ${env.query}` : ""}
-        ${useLookback ? "AND t.timestamp >= :tracesTimestamp" : ""}
+      FROM (
+        SELECT * FROM scores s
+        WHERE s.project_id = :projectId AND ${notDeleted("s")}
+          ${scoreRestRes.query ? `AND ${scoreRestRes.query}` : ""}
+          ${env.query ? `AND ${env.query}` : ""}
+      ) s
+      ${
+        hasTraceFilter
+          ? `JOIN (
+        SELECT * FROM traces t
+        WHERE t.project_id = :projectId AND ${notDeleted("t")}
+          ${traceRestRes.query ? `AND ${traceRestRes.query}` : ""}
+          ${useLookback ? "AND t.timestamp >= :tracesTimestamp" : ""}
+      ) t ON t.id = s.trace_id AND t.project_id = s.project_id`
+          : ""
+      }
       GROUP BY s.name, s.source, s.data_type
       ORDER BY count(*) DESC`,
     params,
@@ -188,7 +213,6 @@ const getObservationDetailByTypeByTime = async (opts: {
       dashboardGreptimeColumnDefinitions,
     ),
   );
-  const restRes = restList.apply();
 
   const hasTraceFilter = restList.some((f) => f.table === "traces");
   // CH derived the trace lookback from an observation start_time lower bound, only when a trace
@@ -212,11 +236,20 @@ const getObservationDetailByTypeByTime = async (opts: {
     Boolean(env.query) ||
     restList.some((f) => f.table === "observations");
 
+  // Split predicates by physical table so each base table pre-filters inside its own subquery: a flat
+  // `uc JOIN observations JOIN traces ... WHERE` defeats GreptimeDB pushdown of the uc/observations TIME
+  // INDEX window to the region scans. Score-grain predicates correlate to `o`, so they stay obs-side.
+  const obsRestRes = restList.filter((f) => f.table !== "traces").apply();
+  const traceRestRes = restList.filter((f) => f.table === "traces").apply();
+  const obsRestClause = obsRestRes.query ? `AND ${obsRestRes.query}` : "";
+  const traceRestClause = traceRestRes.query ? `AND ${traceRestRes.query}` : "";
+
   const params: Record<string, unknown> = {
     projectId,
     winFrom: greptimeTsParam(new Date(fromTime)),
     winTo: greptimeTsParam(new Date(toTime)),
-    ...restRes.params,
+    ...obsRestRes.params,
+    ...traceRestRes.params,
     ...env.params,
   };
   if (useLookback && obsStartLowerBound) {
@@ -231,18 +264,28 @@ const getObservationDetailByTypeByTime = async (opts: {
   const kind = jsonColumn === "cost_details" ? "cost" : "usage";
   params.kind = kind;
 
-  const traceJoin = hasTraceFilter
-    ? `LEFT JOIN traces t ON o.trace_id = t.id AND o.project_id = t.project_id AND ${notDeleted("t")}`
-    : "";
-  // Conditional in Q2 (see needsObservationJoin); Q1 always reads observations directly so it keeps
-  // its own FROM.
-  const obsJoin = needsObservationJoin
-    ? `JOIN observations o ON uc.entity_id = o.id AND uc.project_id = o.project_id AND ${notDeleted("o")}`
-    : "";
-  const restClause = restRes.query ? `AND ${restRes.query}` : "";
   const envClause = env.query ? `AND ${env.query}` : "";
   const lookbackClause = useLookback
     ? "AND t.timestamp >= :traceTimestamp"
+    : "";
+
+  // Pre-filtered traces subquery. INNER join: a trace filter means the row must match a passing trace
+  // -- the same effect the old `LEFT JOIN traces ... WHERE t.<pred>` produced.
+  const tracesJoinSql = hasTraceFilter
+    ? `JOIN (
+        SELECT * FROM traces t
+        WHERE t.project_id = :projectId AND ${notDeleted("t")} ${traceRestClause} ${lookbackClause}
+      ) t ON o.trace_id = t.id AND o.project_id = t.project_id`
+    : "";
+  // Pre-filtered observations subquery for Q2, bounded by the same window (the EAV row's timestamp is
+  // the observation start_time) so the scan prunes via the TIME INDEX before the EAV join.
+  const obsJoinSql = needsObservationJoin
+    ? `JOIN (
+        SELECT * FROM observations o
+        WHERE o.project_id = :projectId AND ${notDeleted("o")}
+          AND o.start_time >= :winFrom AND o.start_time < :winTo
+          ${obsRestClause} ${envClause}
+      ) o ON uc.entity_id = o.id AND uc.project_id = o.project_id`
     : "";
 
   const byBucket = new Map<number, Record<string, number>>();
@@ -269,13 +312,14 @@ const getObservationDetailByTypeByTime = async (opts: {
       query: `
       SELECT date_bin(INTERVAL '${bucketSizeSeconds}' second, o.start_time) AS bucket,
         ${knownSums}
-      FROM observations o
-      ${traceJoin}
-      WHERE o.project_id = :projectId AND ${notDeleted("o")}
-        AND o.start_time >= :winFrom AND o.start_time < :winTo
-        ${restClause}
-        ${envClause}
-        ${lookbackClause}
+      FROM (
+        SELECT * FROM observations o
+        WHERE o.project_id = :projectId AND ${notDeleted("o")}
+          AND o.start_time >= :winFrom AND o.start_time < :winTo
+          ${obsRestClause}
+          ${envClause}
+      ) o
+      ${tracesJoinSql}
       GROUP BY bucket
       ORDER BY bucket ASC`,
       params,
@@ -295,16 +339,15 @@ const getObservationDetailByTypeByTime = async (opts: {
       SELECT date_bin(INTERVAL '${bucketSizeSeconds}' second, uc.${quoteIdent("timestamp")}) AS bucket,
         uc.${quoteIdent("key")} AS detail_key,
         sum(uc.${quoteIdent("value")}) AS sum
-      FROM observations_usage_cost uc
-      ${obsJoin}
-      ${traceJoin}
-      WHERE uc.${quoteIdent("kind")} = :kind
-        AND uc.project_id = :projectId AND ${notDeleted("uc")}
-        AND uc.${quoteIdent("timestamp")} >= :winFrom AND uc.${quoteIdent("timestamp")} < :winTo
-        AND uc.${quoteIdent("key")} NOT IN (${KNOWN_DETAIL_KEYS_SQL})
-        ${restClause}
-        ${envClause}
-        ${lookbackClause}
+      FROM (
+        SELECT * FROM observations_usage_cost uc
+        WHERE uc.${quoteIdent("kind")} = :kind
+          AND uc.project_id = :projectId AND ${notDeleted("uc")}
+          AND uc.${quoteIdent("timestamp")} >= :winFrom AND uc.${quoteIdent("timestamp")} < :winTo
+          AND uc.${quoteIdent("key")} NOT IN (${KNOWN_DETAIL_KEYS_SQL})
+      ) uc
+      ${obsJoinSql}
+      ${tracesJoinSql}
       GROUP BY bucket, uc.${quoteIdent("key")}
       ORDER BY bucket ASC`,
       params,

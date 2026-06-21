@@ -32,6 +32,7 @@ import {
   greptimeTraceSelect,
 } from "./converters";
 import {
+  deriveTraceMinTimestamp,
   greptimeDayBounds,
   greptimeInClause,
   greptimeTsParam,
@@ -744,33 +745,58 @@ export const getUserMetrics = async (
 ) => {
   if (userIds.length === 0) return [];
 
-  const filterRes = new FilterList(
+  // Split the compiled filter by physical table so each side can be pre-filtered inside its own
+  // subquery (a flat `traces JOIN observations ... WHERE` defeats GreptimeDB index pushdown on both
+  // the TIME INDEX and the user_id / trace_id bloom indexes). Score-grain predicates compile to
+  // trace-correlated EXISTS clauses, so keep them on the trace side; only observation-mapped predicates
+  // move into the observations subquery.
+  const filterList = new FilterList(
     createGreptimeFilterFromFilterState(
       filter,
       tracesTableGreptimeColumnDefinitions,
       tracesTableCols,
     ),
-  ).apply();
+  );
+  const traceFilterRes = filterList
+    .filter((f) => f.table !== "observations")
+    .apply();
+  const obsFilterRes = filterList
+    .filter((f) => f.table === "observations")
+    .apply();
   const userList = greptimeInClause("user_id", userIds, "uid");
 
-  // Optional observation lookback (CH used start_time >= traceTimestamp - 2 DAY when a timestamp
-  // filter is present). Derive the absolute lower bound from the trace timestamp filter if any.
+  // Observation start_time lower bound: from the UI trace-timestamp filter when present (CH used
+  // start_time >= traceTimestamp - 2 DAY), else derived from the users' earliest trace so the all-time
+  // users.byId path still prunes the observations scan via the TIME INDEX. The derived bound is a
+  // deliberate lookback-bounded narrowing -- see deriveTraceMinTimestamp.
+  const TWO_DAY_MS = 2 * 24 * 60 * 60 * 1000;
   const tsFilter = filter.find(
     (f) => f.type === "datetime" && (f.operator === ">=" || f.operator === ">"),
   );
+  let obsLookback: string | undefined;
+  if (tsFilter && tsFilter.type === "datetime") {
+    obsLookback = greptimeTsParam(
+      new Date(new Date(tsFilter.value).getTime() - TWO_DAY_MS),
+    );
+  } else {
+    const minTs = await deriveTraceMinTimestamp(projectId, "user_id", userIds);
+    // A null min proves there are no live traces for these users (this scope is a superset of the
+    // main query's trace filter), so the INNER join is empty -- short-circuit rather than run the
+    // main query with an unbounded observations scan.
+    if (!minTs) return [];
+    obsLookback = greptimeTsParam(new Date(minTs.getTime() - TWO_DAY_MS));
+  }
+  const obsLookbackClause = obsLookback
+    ? "AND o.start_time >= :obsLookback"
+    : "";
+
   const params: Record<string, unknown> = {
     projectId,
     ...userList.params,
-    ...filterRes.params,
+    ...traceFilterRes.params,
+    ...obsFilterRes.params,
+    ...(obsLookback ? { obsLookback } : {}),
   };
-  let obsLookbackClause = "";
-  if (tsFilter && tsFilter.type === "datetime") {
-    const TWO_DAY_MS = 2 * 24 * 60 * 60 * 1000;
-    params.obsLookback = greptimeTsParam(
-      new Date(new Date(tsFilter.value).getTime() - TWO_DAY_MS),
-    );
-    obsLookbackClause = "AND o.start_time >= :obsLookback";
-  }
 
   const rows = await greptimeQuery<{
     user_id: string;
@@ -796,13 +822,21 @@ export const getUserMetrics = async (
         sum(coalesce(json_get_float(o.usage_details, 'total'), 0)) AS total_usage,
         max(t.timestamp) AS max_timestamp,
         min(t.timestamp) AS min_timestamp
-      FROM traces t
-      JOIN observations o ON o.trace_id = t.id AND o.project_id = t.project_id
-      WHERE t.project_id = :projectId
-        AND ${userList.sql}
-        AND ${notDeleted("t")} AND ${notDeleted("o")}
-        ${obsLookbackClause}
-        ${filterRes.query ? `AND ${filterRes.query}` : ""}
+      FROM (
+        SELECT t.id, t.project_id, t.user_id, t.environment, t.timestamp
+        FROM traces t
+        WHERE t.project_id = :projectId
+          AND ${userList.sql}
+          AND ${notDeleted("t")}
+          ${traceFilterRes.query ? `AND ${traceFilterRes.query}` : ""}
+      ) t
+      JOIN (
+        SELECT o.id, o.project_id, o.trace_id, o.total_cost, o.usage_details
+        FROM observations o
+        WHERE o.project_id = :projectId AND ${notDeleted("o")}
+          ${obsLookbackClause}
+          ${obsFilterRes.query ? `AND ${obsFilterRes.query}` : ""}
+      ) o ON o.trace_id = t.id AND o.project_id = t.project_id
       GROUP BY t.user_id`,
     params,
     readOnly: true,
