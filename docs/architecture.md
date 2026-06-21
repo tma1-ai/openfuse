@@ -57,11 +57,13 @@ With the event store in GreptimeDB, S3 or MinIO is no longer required to ingest.
 2. The worker reads the entity's full `raw_events` history, dedups by event id, sorts by logical time with stable tie-breaks, and merges to one current snapshot.
 3. It writes the projection row plus the entity's EAV rows. `buildGreptimeRowsForRecord` is the single fan-out used by both the worker writer and the seeder.
 
+Each rebuild stamps a monotonic **generation** on the projection (`eav_generation`) and on every EAV row (`generation`); reads keep only an entity's current generation. A key dropped from an updated entity has no row at the new generation and is excluded by correlation, so there is **no up-front EAV `DELETE`** on the write hot path (per-rebuild deletes are a write-amplification source on a single GreptimeDB). The protobuf encode and gRPC write run in a `worker_threads` pool so they do not block the event loop that also serves each job's `raw_events` read.
+
 The worker does the merge rather than relying on engine write-order to match logical time: `last_non_null` merges by write sequence, so the worker always writes one already-merged snapshot. UI trace and score mutations append synthetic `*-create` / `score-snapshot` events to `raw_events` (durable and replayable) and also direct-write the projection for read-after-write visibility.
 
 ## Read path
 
-The ClickHouse dashboard had two query families: normalized tables read with `FINAL`, and an events-aggregation path. On GreptimeDB both collapse onto the same merged projection. Repositories read projections with an explicit `project_id`, `is_deleted = false`, and JSON-aware row conversion, with no `FINAL`. Metadata, tag, and tool filters route through the EAV tables as project-scoped, soft-delete-aware `EXISTS` semi-joins; breakdowns join the EAV table and `GROUP BY`. The output is checked byte-for-byte against upstream (see the [parity report](greptimedb-migration/parity/PARITY-REPORT.md)).
+The ClickHouse dashboard had two query families: normalized tables read with `FINAL`, and an events-aggregation path. On GreptimeDB both collapse onto the same merged projection. Repositories read projections with an explicit `project_id`, `is_deleted = false`, and JSON-aware row conversion, with no `FINAL`. Metadata, tag, and tool filters route through the EAV tables as project-scoped, soft-delete-aware `EXISTS` semi-joins correlated to the projection's current generation (so superseded EAV keys are invisible without a delete); breakdowns join the EAV table and `GROUP BY`. The output is checked byte-for-byte against upstream (see the [parity report](greptimedb-migration/parity/PARITY-REPORT.md)).
 
 ## Deletion and replay
 

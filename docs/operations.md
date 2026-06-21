@@ -49,6 +49,16 @@ ADMIN compact_table('observations',            'strict_window', 86400);
 
 Background: GreptimeDB [compaction](https://docs.greptime.com/user-guide/deployments-administration/manage-data/compaction/) and [performance-tuning tips](https://docs.greptime.com/user-guide/deployments-administration/performance-tuning/performance-tuning-tips/). The deep fork-specific runbook with the scale evidence is [`greptimedb-migration/08-compaction-runbook.md`](greptimedb-migration/08-compaction-runbook.md).
 
+## Performance: ingestion drain
+
+The worker rebuilds each entity's projection from its full `raw_events` history on every event, so drain throughput is bound by that read plus the projection/EAV write. A few fork-specific knobs tune it; defaults are sized for a single node (source of truth: `worker/src/env.ts`):
+
+- **Encode off-load** — `LANGFUSE_GREPTIME_FLUSH_WORKER_POOL_SIZE` (default 4) sizes the `worker_threads` pool that runs the GreptimeDB ingester's protobuf encode + gRPC write off the worker event loop (the synchronous encode otherwise starves every job's `raw_events` read). Keep it `>= LANGFUSE_GREPTIME_MAX_CONCURRENT_FLUSHES` (default 4); each pool worker holds its own gRPC client.
+- **`raw_events` flush** — `LANGFUSE_GREPTIME_RAW_EVENTS_FLUSH_ENABLED` (default `true`) and `LANGFUSE_GREPTIME_RAW_EVENTS_FLUSH_INTERVAL_MS` (default `90000`) run `ADMIN flush_table('raw_events')` on a timer. The per-event point read is an O(memtable) scan while data sits unflushed; flushing keeps it on prunable SSTs (measured ~20× faster). Lower the interval for read-heavy drains at the cost of more, smaller SSTs (more compaction). It is scoped to `raw_events` so other tables keep GreptimeDB's engine-global `auto_flush_interval`.
+- **Rebuild coalescing** — `LANGFUSE_INGESTION_COALESCE_REBUILDS` (default `true`) and `LANGFUSE_INGESTION_COALESCE_WATERMARK_TTL_SECONDS` (default `300`) skip a queued job's read + rebuild when a prior idempotent rebuild already covered all of its events — the dominant redundancy when draining a backlog. Requires Redis.
+
+For measured drain / query-latency / storage numbers against upstream Langfuse on ClickHouse, see [`greptimedb-migration/10-benchmark-report.md`](greptimedb-migration/10-benchmark-report.md).
+
 ## Capacity planning and retention
 
 Retention is database-level TTL: `LANGFUSE_GREPTIME_TTL` (default `730d`) is applied at startup via `ALTER DATABASE ... SET 'ttl'`, covering every table at once. To change it, set the env and restart.

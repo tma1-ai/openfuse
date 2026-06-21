@@ -11,30 +11,30 @@ There are two starting points:
 - **Evaluation / quickstart** — `cp .env.quickstart.example .env`. This ships working dev defaults (insecure, public) plus an auto-provisioned demo project, so `docker compose up` boots with zero edits. Do not use it on a network you do not control.
 - **Real deployment** — `cp .env.prod.example .env`, then set your own values for the secrets below.
 
-| Variable                              | Purpose                                                          | How to set                                                                        |
-| ------------------------------------- | ---------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-| `NEXTAUTH_SECRET`                     | Signs NextAuth session tokens.                                   | `openssl rand -base64 32`                                                         |
-| `SALT`                                | Salts the hash of project API keys.                              | `openssl rand -base64 32`                                                         |
-| `ENCRYPTION_KEY`                      | Encrypts sensitive data at rest; must be 256-bit (64 hex chars). | `openssl rand -hex 32`                                                            |
-| `POSTGRES_PASSWORD` + `DATABASE_URL`  | Postgres password (the server's and the app's must match).       | Pick a strong password; use it for `POSTGRES_PASSWORD` and inside `DATABASE_URL`. |
-| `REDIS_AUTH`                          | Redis password (the server's and the app's must match).          | Pick a strong password.                                                           |
+| Variable                              | Purpose                                                              | How to set                                                                                                                     |
+| ------------------------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `NEXTAUTH_SECRET`                     | Signs NextAuth session tokens.                                       | `openssl rand -base64 32`                                                                                                      |
+| `SALT`                                | Salts the hash of project API keys.                                  | `openssl rand -base64 32`                                                                                                      |
+| `ENCRYPTION_KEY`                      | Encrypts sensitive data at rest; must be 256-bit (64 hex chars).     | `openssl rand -hex 32`                                                                                                         |
+| `POSTGRES_PASSWORD` + `DATABASE_URL`  | Postgres password (the server's and the app's must match).           | Pick a strong password; use it for `POSTGRES_PASSWORD` and inside `DATABASE_URL`.                                              |
+| `REDIS_AUTH`                          | Redis password (the server's and the app's must match).              | Pick a strong password.                                                                                                        |
 | `GREPTIME_USER` / `GREPTIME_PASSWORD` | GreptimeDB credentials. A non-empty password turns on enforced auth. | User defaults to `openfuse`. Set a strong `GREPTIME_PASSWORD` for any real deployment (see "GreptimeDB authentication" below). |
 
 The source of truth for every `GREPTIME_*` variable is `packages/shared/src/env.ts`; `.env.prod.example` is the full deploy-time reference.
 
 GreptimeDB variables:
 
-| Variable                              | Default          | Notes                                                                                  |
-| ------------------------------------- | ---------------- | -------------------------------------------------------------------------------------- |
-| `GREPTIME_GRPC_URL`                   | `localhost:4001` | Ingest SDK endpoint (writes). One address, or comma-separated frontends for a cluster. |
-| `GREPTIME_SQL_HOST`                   | `localhost`      | MySQL-wire host (reads + migrations).                                                  |
-| `GREPTIME_SQL_PORT`                   | `4002`           | MySQL-wire port.                                                                       |
-| `GREPTIME_SQL_READ_ONLY_HOST`         | _(unset)_        | Optional dedicated read host; falls back to `GREPTIME_SQL_HOST`.                       |
-| `GREPTIME_DB`                         | `openfuse`       | Target database.                                                                       |
+| Variable                              | Default           | Notes                                                                                  |
+| ------------------------------------- | ----------------- | -------------------------------------------------------------------------------------- |
+| `GREPTIME_GRPC_URL`                   | `localhost:4001`  | Ingest SDK endpoint (writes). One address, or comma-separated frontends for a cluster. |
+| `GREPTIME_SQL_HOST`                   | `localhost`       | MySQL-wire host (reads + migrations).                                                  |
+| `GREPTIME_SQL_PORT`                   | `4002`            | MySQL-wire port.                                                                       |
+| `GREPTIME_SQL_READ_ONLY_HOST`         | _(unset)_         | Optional dedicated read host; falls back to `GREPTIME_SQL_HOST`.                       |
+| `GREPTIME_DB`                         | `openfuse`        | Target database.                                                                       |
 | `GREPTIME_USER` / `GREPTIME_PASSWORD` | `openfuse` / `""` | Empty password = unauthenticated single node; set a password to enforce auth.          |
-| `GREPTIME_SQL_MAX_OPEN_CONNECTIONS`   | `25`             | MySQL read-pool size.                                                                  |
-| `GREPTIME_RAW_EVENTS_TABLE`           | `raw_events`     | Write-path source-of-truth table.                                                      |
-| `LANGFUSE_GREPTIME_TTL`               | `730d`           | Database-level retention, applied automatically at startup (see §2).                   |
+| `GREPTIME_SQL_MAX_OPEN_CONNECTIONS`   | `25`              | MySQL read-pool size.                                                                  |
+| `GREPTIME_RAW_EVENTS_TABLE`           | `raw_events`      | Write-path source-of-truth table.                                                      |
+| `LANGFUSE_GREPTIME_TTL`               | `730d`            | Database-level retention, applied automatically at startup (see §2).                   |
 
 For a Compose deployment these point at the `greptimedb` service name. The non-GreptimeDB requirements (Postgres, Redis, `NEXTAUTH_SECRET`, `SALT`, `ENCRYPTION_KEY`, …) are unchanged from upstream Langfuse and also live in `.env.prod.example`; for the full set and their meaning, see [Langfuse · Configuration](https://langfuse.com/self-hosting/configuration).
 
@@ -99,7 +99,7 @@ docker compose -f docker-compose.standalone.yml up -d   # then open http://local
 Or run the published image instead of building locally — set the override in `.env` and pull:
 
 ```bash
-OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.1
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.2
 ```
 
 ```bash
@@ -121,8 +121,8 @@ docker compose up -d   # builds web/worker from source, starts the full stack
 Or run the published images instead of building — pin the tags in `.env`:
 
 ```bash
-OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.1
-OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.1
+OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.2
+OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.2
 ```
 
 ```bash
@@ -133,7 +133,7 @@ This Compose file defines both `build:` and `image:` for web/worker, so `--pull 
 
 ### Published images and tags
 
-Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: [`tma1ai/openfuse-web`](https://hub.docker.com/r/tma1ai/openfuse-web), [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker), [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone). The first preview is `1.0.0-alpha.1`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha.1`) and a commit-SHA tag. The floating `major.minor` and `major` tags and `latest` are published only for stable releases — the workflow skips all of them for any SemVer pre-release (`-alpha` / `-beta` / `-rc`), which get only the exact `{{version}}` and commit-SHA tags. So during the alpha, `latest` does not move; pin an explicit tag. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
+Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: [`tma1ai/openfuse-web`](https://hub.docker.com/r/tma1ai/openfuse-web), [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker), [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone). The first preview is `1.0.0-alpha.2`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha.2`) and a commit-SHA tag. The floating `major.minor` and `major` tags and `latest` are published only for stable releases — the workflow skips all of them for any SemVer pre-release (`-alpha` / `-beta` / `-rc`), which get only the exact `{{version}}` and commit-SHA tags. So during the alpha, `latest` does not move; pin an explicit tag. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
 
 ## 4. Verify and persist
 

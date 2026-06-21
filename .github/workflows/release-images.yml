@@ -5,7 +5,7 @@ name: Release images
 #
 # Triggers:
 #   - push a `v*` tag (e.g. `v1.2.0`)  -> versioned release: semver tags + `latest`
-#     (pre-release tags like `v1.0.0-alpha.1` only get the exact `{{version}}`
+#     (pre-release tags like `v1.0.0-alpha.2` only get the exact `{{version}}`
 #     tag; the floating major/minor and `latest` stay on the last stable tag).
 #   - manual run (workflow_dispatch)   -> builds the chosen ref, tagged by commit sha
 #     plus an optional custom tag input. Never moves `latest`.
