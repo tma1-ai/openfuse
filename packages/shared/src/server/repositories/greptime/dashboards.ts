@@ -1,4 +1,5 @@
 import { type FilterState } from "../../../types";
+import { InvalidRequestError } from "../../../errors";
 import { greptimeQuery } from "../../greptime/client";
 import { createGreptimeFilterFromFilterState } from "../../greptime/sql/factory";
 import { USAGE_COST_KNOWN_KEYS } from "../../greptime/sql/fragments";
@@ -111,6 +112,15 @@ export const getScoreAggregateGreptime = async (
       dashboardGreptimeColumnDefinitions,
     ),
   );
+  // This aggregation reads `scores s` (optionally JOIN traces); it has no `observations o` alias.
+  // Observation-scoped dashboard columns (level / token / cost / tool-name filters) compile to
+  // predicates correlated to `o`, so they cannot be expressed here -- reject them loudly instead of
+  // emitting SQL that references a non-existent alias.
+  if (restList.some((f) => f.table === "observations")) {
+    throw new InvalidRequestError(
+      "Observation-scoped filters are not supported for score aggregation on GreptimeDB",
+    );
+  }
   // Split by physical table so each side pre-filters inside its own subquery: a flat `scores JOIN
   // traces` defeats GreptimeDB pushdown of the scores TIME INDEX / trace_id bloom and the traces TIME
   // INDEX to the region scans.

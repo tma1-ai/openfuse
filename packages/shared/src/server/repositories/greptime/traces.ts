@@ -780,8 +780,11 @@ export const getUserMetrics = async (
     );
   } else {
     const minTs = await deriveTraceMinTimestamp(projectId, "user_id", userIds);
-    if (minTs)
-      obsLookback = greptimeTsParam(new Date(minTs.getTime() - TWO_DAY_MS));
+    // A null min proves there are no live traces for these users (this scope is a superset of the
+    // main query's trace filter), so the INNER join is empty -- short-circuit rather than run the
+    // main query with an unbounded observations scan.
+    if (!minTs) return [];
+    obsLookback = greptimeTsParam(new Date(minTs.getTime() - TWO_DAY_MS));
   }
   const obsLookbackClause = obsLookback
     ? "AND o.start_time >= :obsLookback"
