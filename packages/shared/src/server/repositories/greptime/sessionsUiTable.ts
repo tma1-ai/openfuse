@@ -418,7 +418,7 @@ const buildSessionTagsCte = (compiled: CompiledSession): string => `
     SELECT t.session_id AS session_id, t.project_id AS project_id,
       array_to_string(array_agg(DISTINCT mt.tag), :arraySep) AS trace_tags
     FROM (
-      SELECT t.id, t.project_id, t.session_id
+      SELECT t.id, t.project_id, t.session_id, t.eav_generation
       FROM traces t
       WHERE t.project_id = :projectId AND t.session_id IS NOT NULL AND t.is_deleted = false
         ${compiled.preWhere ? `AND ${compiled.preWhere}` : ""}
