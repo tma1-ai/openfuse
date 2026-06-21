@@ -29,14 +29,6 @@ LLM traces are observability data: timestamped wide events with high-cardinality
 
 It also opens a direction that a single-purpose store cannot. Because the events already live in a real observability database, GreptimeDB could take Openfuse **beyond** Langfuse parity: PromQL-native metrics, logs ↔ traces correlation, OTLP-native ingestion, and Flow continuous aggregation for pre-computed rollups. These are **directional and not delivered** — tracked as ideas in [issue #8](https://github.com/tma1-ai/openfuse/issues/8), not features you can use today.
 
-## What works today
-
-- **Ingestion**: the public ingestion API and the OTel endpoint write to `raw_events`, and the worker replays the full event history into merged projections.
-- **Reads**: traces, observations, scores, sessions, dashboards and metrics, datasets, experiments, daily metrics, exports, and the public GET endpoints all read from GreptimeDB.
-- **Dashboards**: the metrics query engine runs on GreptimeDB, including metadata, tag, and tool filters and breakdowns. Output is checked byte-for-byte against upstream Langfuse (see the [parity report](docs/greptimedb-migration/parity/PARITY-REPORT.md)).
-- **Mutations, deletion, replay**: UI edits and deletions append synthetic events to `raw_events`, so replay rebuilds the merged (or soft-deleted) state instead of resurrecting or losing it.
-- **Automatic migrations**: the web and standalone containers migrate both Postgres and the GreptimeDB schema on startup — no manual bootstrap.
-
 ## Screenshots
 
 The full Langfuse UI, served entirely from GreptimeDB.
@@ -52,11 +44,14 @@ The full Langfuse UI, served entirely from GreptimeDB.
   </tr>
 </table>
 
-## Project status
+## What works today
 
-Openfuse is in **alpha** and actively moving toward beta. The ClickHouse → GreptimeDB migration is in place, the read path is parity-checked byte-for-byte against upstream Langfuse, and the full Langfuse product, API, and SDK surface works. Try it, run real workloads against it, and open issues — that feedback is what gets it to beta.
-
-Before you depend on it, skim [Known limitations](docs/known-limitations.md): a short list of real constraints, plus a few intentional differences from upstream where the fork is equal or more correct.
+- **Your Langfuse SDKs work unchanged.** Point any existing Langfuse SDK — or any OpenTelemetry tracer — at Openfuse, and your traces, observations, and scores land with zero code changes.
+- **The full tracing UI.** Explore traces and nested observations, sessions, and users, with the same search and filtering you have in Langfuse.
+- **Dashboards and metrics.** Cost, token usage, latency percentiles, and score analytics — filtered and broken down by metadata, tags, and tools. The numbers match upstream Langfuse exactly ([parity report](docs/greptimedb-migration/parity/PARITY-REPORT.md)).
+- **Datasets, experiments, and evals.** The evaluation workflow works end to end.
+- **Edit, delete, and export.** UI edits, deletions, and data exports behave as you'd expect, including full project deletion.
+- **Self-host in one container.** The standalone image brings up the whole stack and prepares its storage on first start — no manual database steps.
 
 ## 5-minute quickstart (Docker Compose)
 
@@ -78,6 +73,12 @@ To scale web and worker independently, use the default `docker-compose.yml` (sep
 ```bash
 docker compose up -d   # builds web/worker, starts the full stack
 ```
+
+## Project status
+
+Openfuse is in **alpha** and actively moving toward beta. The ClickHouse → GreptimeDB migration is in place, the read path is parity-checked byte-for-byte against upstream Langfuse, and the full Langfuse product, API, and SDK surface works. Try it, run real workloads against it, and open issues — that feedback is what gets it to beta.
+
+Before you depend on it, skim [Known limitations](docs/known-limitations.md): a short list of real constraints, plus a few intentional differences from upstream where the fork is equal or more correct.
 
 ## Published images
 
