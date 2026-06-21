@@ -115,6 +115,22 @@ export const ingestionQueueProcessorBuilder = (
         job.data.payload.data.type,
       );
 
+      // Coalesce redundant rebuilds. raw_events are written before the job is enqueued, so
+      // `job.data.timestamp` >= the max ingested_at of this job's events. If a prior rebuild already
+      // covered a watermark >= this timestamp, it provably read all of this job's events (and any
+      // tombstone among them) and — being a full-history idempotent rebuild — made this job redundant;
+      // skipping avoids the expensive full-history read. Conservative: never skips an uncovered event.
+      const coalesceKey = `langfuse:ingestion:rebuilt-watermark:${projectId}:${job.data.payload.data.type}:${entityId}`;
+      if (env.LANGFUSE_INGESTION_COALESCE_REBUILDS === "true" && redis) {
+        const watermark = await redis.get(coalesceKey);
+        if (watermark && Number(watermark) >= job.data.timestamp.getTime()) {
+          recordIncrement("langfuse.ingestion.coalesced_rebuild_skipped", 1, {
+            kind: clickhouseEntityType,
+          });
+          return;
+        }
+      }
+
       const rawRows = await readRawEventsForEntity({
         projectId,
         entityType: clickhouseEntityType,
@@ -166,6 +182,22 @@ export const ingestionQueueProcessorBuilder = (
         deleted,
         maxIngestedAtMs,
       );
+
+      // Publish the watermark = max ingested_at this rebuild covered, after it durably wrote, so a
+      // later job for this entity can skip (above). Plain SET: same-entity jobs are sharded in order so
+      // it is monotonic in practice, and a rare lower value only costs a redundant rebuild.
+      if (env.LANGFUSE_INGESTION_COALESCE_REBUILDS === "true" && redis) {
+        await redis
+          .set(
+            coalesceKey,
+            String(maxIngestedAtMs),
+            "EX",
+            env.LANGFUSE_INGESTION_COALESCE_WATERMARK_TTL_SECONDS,
+          )
+          .catch((e) =>
+            logger.warn(`Failed to set rebuild watermark for ${entityId}`, e),
+          );
+      }
 
       // Mark this batch seen only after a successful merge, so a redirected or retried job is
       // never skipped before it actually wrote. The rebuild is idempotent, so a duplicate that

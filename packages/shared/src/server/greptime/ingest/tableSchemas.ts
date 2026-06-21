@@ -226,3 +226,20 @@ export const PHYSICAL_TABLES: Record<string, () => Table> = {
     toolNameTable("observations_tool_definitions"),
   observations_tool_calls: () => toolNameTable("observations_tool_calls"),
 };
+
+/**
+ * Build one fresh `Table` per physical table from `(table, rows)` pairs (`addRowObject` mutates a
+ * shared schema, so each flush needs its own). Pure (schema + row shaping only, no client), so it can
+ * run wherever the rows are: inline on the writer's thread for tests, or inside a flush worker thread
+ * that offloads the heavy protobuf encode off the worker's event loop. `rows` are plain JSON values
+ * (Decimal is coerced to `number` upstream), so they cross a `worker_threads` postMessage boundary
+ * unchanged.
+ */
+export const buildGreptimeTables = (
+  entries: { table: string; rows: Record<string, unknown>[] }[],
+): Table[] =>
+  entries.map(({ table, rows }) => {
+    const t = PHYSICAL_TABLES[table]();
+    for (const row of rows) t.addRowObject(row);
+    return t;
+  });

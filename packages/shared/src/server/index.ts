@@ -67,7 +67,6 @@ export * from "./greptime/converters";
 export * from "./greptime/deletion";
 export * from "./greptime/ingest/tableSchemas";
 export * from "./greptime/ingest/rowBuilders";
-export * from "./greptime/ingest/eavCleanup";
 export * from "./greptime/ingest/writeErrors";
 export * from "./storage/schemaUtils";
 export * from "./storage/schema";

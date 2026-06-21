@@ -21,6 +21,10 @@ import {
   type ObservationRecordInsertType,
 } from "@langfuse/shared/src/server";
 import { GreptimeWriter, GreptimeTable } from "../services/GreptimeWriter";
+import {
+  getFlushWorkerPool,
+  terminateFlushWorkerPool,
+} from "../services/GreptimeWriter/flushWorkerPool";
 
 const PROJECT = "contention-bench-0001";
 const RUN = Date.now();
@@ -130,10 +134,19 @@ const probeReads = async (
   return lat;
 };
 
-/** Sustained write storm against the engine for `durationMs`; returns rows pushed. */
+/**
+ * Sustained write storm against the engine for `durationMs`; returns rows pushed.
+ *
+ * `BENCH_OFFLOAD=1` routes the storm through the flush worker_threads pool (the Phase B fix), so the
+ * protobuf encode runs off this process's event loop; the default keeps the legacy in-process write so
+ * the same harness can A/B the read-latency inflation the offload removes.
+ */
 const writeStorm = async (durationMs: number): Promise<number> => {
+  const offload = process.env.BENCH_OFFLOAD === "1";
   const writer = GreptimeWriter.createForTest({
-    write: (tables) => getGreptimeIngestClient().write(tables),
+    ...(offload
+      ? { writeEntries: (entries) => getFlushWorkerPool().write(entries) }
+      : { write: (tables) => getGreptimeIngestClient().write(tables) }),
     batchSize: 4000,
     autoFlush: false,
     maxConcurrentFlushes: 8,
@@ -202,11 +215,13 @@ async function main() {
 
 main()
   .then(async () => {
+    await terminateFlushWorkerPool();
     await closeGreptimeConnections();
     process.exit(0);
   })
   .catch(async (e) => {
     console.error("contention-bench failed", e);
+    await terminateFlushWorkerPool().catch(() => undefined);
     await closeGreptimeConnections().catch(() => undefined);
     process.exit(1);
   });

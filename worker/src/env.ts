@@ -110,6 +110,27 @@ const EnvSchema = z
       .number()
       .positive()
       .default(3),
+    // How long worker init waits for the web container's Postgres migrations to create the tables the
+    // seeds (model prices, dashboards) depend on, before giving up. Generous so a slow first migration
+    // never fails an otherwise-healthy worker; bounded so a broken DB surfaces instead of hanging.
+    LANGFUSE_WORKER_INIT_SCHEMA_WAIT_TIMEOUT_MS: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(300_000),
+    // Coalesce redundant full-history rebuilds: the rebuild reads an entity's whole raw_events history
+    // and is idempotent, so when several ingestion jobs for one entity are queued (the common case in a
+    // drain backlog), the first to run already covers the others. A per-entity redis "rebuilt
+    // watermark" (max ingested_at covered) lets a later job skip its read+rebuild when a prior rebuild
+    // provably already saw all of its events. Conservative (never skips uncovered events); needs redis.
+    LANGFUSE_INGESTION_COALESCE_REBUILDS: z
+      .enum(["true", "false"])
+      .default("true"),
+    // TTL of that watermark; an expiry only costs a redundant rebuild, never correctness.
+    LANGFUSE_INGESTION_COALESCE_WATERMARK_TTL_SECONDS: z.coerce
+      .number()
+      .positive()
+      .default(300),
 
     LANGFUSE_USE_AZURE_BLOB: z.enum(["true", "false"]).default("false"),
 
@@ -140,6 +161,15 @@ const EnvSchema = z
     // EAV delete/write ordering is preserved. Conservative default — each flush still amplifies into
     // EAV DELETEs against one GreptimeDB; raise once headroom is measured.
     LANGFUSE_GREPTIME_MAX_CONCURRENT_FLUSHES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(4),
+    // Size of the worker_threads pool that runs the synchronous protobuf encode + gRPC write off the
+    // worker's main event loop (the contention that starved per-job raw_events reads). Should be >=
+    // MAX_CONCURRENT_FLUSHES so concurrent flushes don't queue behind each other on one worker; each
+    // worker holds its own gRPC client, so this also bounds the live writer's gRPC connection fan-out.
+    LANGFUSE_GREPTIME_FLUSH_WORKER_POOL_SIZE: z.coerce
       .number()
       .int()
       .positive()
@@ -191,6 +221,19 @@ const EnvSchema = z
       .int()
       .min(1000)
       .default(60000),
+    // raw_events is point-read on every ingestion event; on the bulk memtable that read is an
+    // O(memtable) scan until the data flushes to a (prunable) SST. GreptimeDB's auto_flush_interval is
+    // engine-global (default 30min), so instead of flushing every table aggressively we issue a
+    // table-scoped `ADMIN flush_table('raw_events')` on this timer — keeping only raw_events' hot
+    // memtable small and most of its history in prunable SSTs, without adding compaction load elsewhere.
+    LANGFUSE_GREPTIME_RAW_EVENTS_FLUSH_ENABLED: z
+      .enum(["true", "false"])
+      .default("true"),
+    LANGFUSE_GREPTIME_RAW_EVENTS_FLUSH_INTERVAL_MS: z.coerce
+      .number()
+      .int()
+      .min(1000)
+      .default(90000),
     LANGFUSE_EVAL_CREATOR_LIMITER_DURATION: z.coerce
       .number()
       .positive()

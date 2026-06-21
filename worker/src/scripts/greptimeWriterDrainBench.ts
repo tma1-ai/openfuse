@@ -20,6 +20,10 @@ import {
   type ObservationRecordInsertType,
 } from "@langfuse/shared/src/server";
 import { GreptimeWriter, GreptimeTable } from "../services/GreptimeWriter";
+import {
+  getFlushWorkerPool,
+  terminateFlushWorkerPool,
+} from "../services/GreptimeWriter/flushWorkerPool";
 
 const PROJECT = "writer-drain-bench-0001";
 const RUN = Date.now();
@@ -124,9 +128,14 @@ async function main() {
   console.log(header);
   console.log("-".repeat(header.length));
 
+  const offload = process.env.BENCH_OFFLOAD === "1";
   for (const { batchSize, concurrency } of CONFIGS) {
     const writer = GreptimeWriter.createForTest({
-      write: (tables) => getGreptimeIngestClient().write(tables),
+      // BENCH_OFFLOAD=1 routes flushes through the worker_threads pool (Phase B) so this isolates raw
+      // write throughput of the offload path vs the legacy in-process encode (confirm it does not regress).
+      ...(offload
+        ? { writeEntries: (entries) => getFlushWorkerPool().write(entries) }
+        : { write: (tables) => getGreptimeIngestClient().write(tables) }),
       batchSize,
       autoFlush: false, // we drive the drain loop ourselves for a deterministic measurement
       maxConcurrentFlushes: concurrency,
@@ -150,11 +159,13 @@ async function main() {
 
 main()
   .then(async () => {
+    await terminateFlushWorkerPool();
     await closeGreptimeConnections();
     process.exit(0);
   })
   .catch(async (e) => {
     console.error("writer-drain-bench failed", e);
+    await terminateFlushWorkerPool().catch(() => undefined);
     await closeGreptimeConnections().catch(() => undefined);
     process.exit(1);
   });

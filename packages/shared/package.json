@@ -34,6 +34,10 @@
       "import": "./dist/src/server/auth/apiKeys.js",
       "require": "./dist/src/server/auth/apiKeys.js"
     },
+    "./src/server/greptime/flushWorkerExports": {
+      "import": "./dist/src/server/greptime/flushWorkerExports.js",
+      "require": "./dist/src/server/greptime/flushWorkerExports.js"
+    },
     "./src/utils/chatml": {
       "import": "./dist/src/utils/chatml/index.js",
       "require": "./dist/src/utils/chatml/index.js"

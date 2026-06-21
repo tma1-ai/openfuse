@@ -50,6 +50,24 @@ export interface WriteErrorClassification {
   errorClass: string;
 }
 
+/**
+ * Carries a write failure's `WriteErrorClassification` across a `worker_threads` boundary. When the
+ * gRPC write is offloaded to a flush worker, the SDK error object stays in the worker's realm — its
+ * prototype (and thus the `instanceof` checks `classifyGreptimeWriteError` relies on) cannot survive
+ * structured clone. So the worker classifies in-realm and the main thread rethrows this wrapper with
+ * the already-computed classification; `classifyGreptimeWriteError` recognises it and passes it
+ * through, keeping transient/oversize/poison isolation identical to the in-process path.
+ */
+export class GreptimeWorkerWriteError extends Error {
+  constructor(
+    public readonly classification: WriteErrorClassification,
+    message: string,
+  ) {
+    super(message);
+    this.name = "GreptimeWorkerWriteError";
+  }
+}
+
 /** Bounded, low-cardinality label for metrics — kind plus the (enumerated) status/grpc code. */
 const errorClassLabel = (err: unknown): string => {
   if (err instanceof ValueError) return "value";
@@ -73,6 +91,9 @@ const errorClassLabel = (err: unknown): string => {
 export const classifyGreptimeWriteError = (
   err: unknown,
 ): WriteErrorClassification => {
+  // A flush worker already classified the failure in the realm that holds the live SDK error; trust
+  // that verdict rather than re-deriving it from a clone whose prototype (and instanceof) is gone.
+  if (err instanceof GreptimeWorkerWriteError) return err.classification;
   const errorClass = errorClassLabel(err);
   if (
     err instanceof TransportError &&

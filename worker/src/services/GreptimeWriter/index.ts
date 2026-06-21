@@ -4,10 +4,10 @@ import type { AffectedRows, Table } from "@greptime/ingester";
 import {
   bisectGroups,
   buildGreptimeRowsForRecord,
+  buildGreptimeTables,
   classifyGreptimeWriteError,
   DatasetRunItemRecordInsertType,
   EAV_TABLES_FOR_PROJECTION,
-  getGreptimeIngestClient,
   GreptimeRow,
   GreptimeTable,
   type GreptimeTableRows,
@@ -27,6 +27,7 @@ import {
 } from "@langfuse/shared/src/server";
 
 import { env } from "../../env";
+import { getFlushWorkerPool } from "./flushWorkerPool";
 import type { GreptimeProjectionSink } from "./sink";
 
 /**
@@ -81,8 +82,20 @@ interface QueueItem {
   row: GreptimeRow;
 }
 
-/** Injected so tests can drive `flushAll` with a fake writer (no live DB) and disable the interval. */
+/**
+ * Table-based write seam used by tests/manual writers: they build `Table`s on the calling thread and
+ * inject a fake (no live DB). The running singleton instead offloads via a rows-based `WriteEntriesFn`
+ * so the protobuf encode runs in a worker thread; the constructor derives one from the other.
+ */
 type WriteFn = (tables: Table[]) => Promise<AffectedRows>;
+
+/**
+ * Rows-based write seam (the offload boundary). Carries plain clone-safe `(table, rows)` pairs so the
+ * singleton can hand them to the flush worker pool, which builds the `Table`s and runs `client.write`
+ * off the main event loop. The return value is unused by the writer's accounting (landed rows are
+ * counted from the logical groups), so it is intentionally opaque.
+ */
+type WriteEntriesFn = (entries: GreptimeTableRows[]) => Promise<unknown>;
 
 export class GreptimeWriter implements GreptimeProjectionSink {
   private static instance: GreptimeWriter | null = null;
@@ -91,7 +104,8 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   private readonly maxAttempts: number;
   private readonly maxFieldBytes: number;
   private readonly queues: Record<string, QueueItem[]>;
-  private readonly write: WriteFn;
+  /** The rows-based write seam every flush funnels through (live: worker pool; test/manual: a wrapped fake). */
+  private readonly writeEntries: WriteEntriesFn;
   /** Size-triggered background flush is only armed on the running singleton; a test writer is fully manual. */
   private autoFlush: boolean;
   /** Max simultaneously in-flight auto (size/interval) flushes; one entity stays serialized regardless. */
@@ -112,14 +126,22 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   private nextGroupId = 0;
 
   private constructor(deps: {
-    write: WriteFn;
+    /** Table-based fake (tests/manual): `Table`s are built on this thread and inspected by the fake. */
+    write?: WriteFn;
+    /** Rows-based seam (live singleton): offloads build + `client.write` to the flush worker pool. */
+    writeEntries?: WriteEntriesFn;
     autoStart: boolean;
     batchSize?: number;
     /** Enable size-triggered auto-flush without arming the interval (tests drive the pump directly). */
     autoFlush?: boolean;
     maxConcurrentFlushes?: number;
   }) {
-    this.write = deps.write;
+    // Exactly one seam is injected. A `write` fake is wrapped into the rows-based seam by building the
+    // `Table`s here (cheap; the costly protobuf encode that warranted offloading lives in client.write,
+    // which the fake stubs out), so the entire writer funnels through one `writeEntries` path.
+    const write = deps.write;
+    this.writeEntries =
+      deps.writeEntries ?? ((entries) => write!(buildGreptimeTables(entries)));
     this.batchSize = deps.batchSize ?? env.LANGFUSE_INGESTION_WRITE_BATCH_SIZE;
     this.writeInterval = env.LANGFUSE_INGESTION_WRITE_INTERVAL_MS;
     this.maxAttempts = env.LANGFUSE_INGESTION_WRITE_MAX_ATTEMPTS;
@@ -138,7 +160,9 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   public static getInstance(): GreptimeWriter {
     if (!GreptimeWriter.instance) {
       GreptimeWriter.instance = new GreptimeWriter({
-        write: (tables) => getGreptimeIngestClient().write(tables),
+        // Offload build + protobuf-encode + gRPC write to the worker pool; the pool reconstructs a
+        // classified error on this thread so isolation/retry on the main thread is unchanged.
+        writeEntries: (entries) => getFlushWorkerPool().write(entries),
         autoStart: true,
       });
     }
@@ -150,7 +174,10 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * driven explicitly against a fake that throws per row-predicate. Never touches the singleton.
    */
   public static createForTest(deps: {
-    write: WriteFn;
+    /** Table-based fake (the common case): inspect the built `Table`s, throw per row-predicate. */
+    write?: WriteFn;
+    /** Rows-based seam, to drive the real offload pool from a benchmark without the singleton interval. */
+    writeEntries?: WriteEntriesFn;
     batchSize?: number;
     /** Arm the size-triggered auto-flush pump (no interval) to assert concurrency-cap behavior. */
     autoFlush?: boolean;
@@ -158,6 +185,7 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   }): GreptimeWriter {
     return new GreptimeWriter({
       write: deps.write,
+      writeEntries: deps.writeEntries,
       autoStart: false,
       batchSize: deps.batchSize,
       autoFlush: deps.autoFlush,
@@ -294,17 +322,6 @@ export class GreptimeWriter implements GreptimeProjectionSink {
     for (const row of rows) this.push(table, row, groupId);
   }
 
-  /** Build one fresh `Table` per physical table from `(table,row)` pairs (`addRowObject` mutates). */
-  private buildTables(
-    entries: { table: string; rows: GreptimeRow[] }[],
-  ): Table[] {
-    return entries.map(({ table, rows }) => {
-      const t = PHYSICAL_TABLES[table]();
-      for (const row of rows) t.addRowObject(row);
-      return t;
-    });
-  }
-
   /** Write the rows of the given logical groups in a SINGLE combined call, regrouped per table. */
   private async writeGroups(groups: WriteGroup<QueueItem>[]): Promise<void> {
     const byTable = new Map<string, GreptimeRow[]>();
@@ -315,10 +332,12 @@ export class GreptimeWriter implements GreptimeProjectionSink {
         else byTable.set(table, [item.row]);
       }
     }
-    const tables = this.buildTables(
+    // Hand the per-table rows to the write seam as one combined unit. Table construction + protobuf
+    // encode happen wherever the seam runs (a worker thread for the live singleton), never splitting an
+    // entity's projection from its EAV across calls.
+    await this.writeEntries(
       [...byTable].map(([table, rows]) => ({ table, rows })),
     );
-    await this.write(tables);
   }
 
   /** Regroup spliced per-table batches into logical groups keyed by `groupId` for bisection. */

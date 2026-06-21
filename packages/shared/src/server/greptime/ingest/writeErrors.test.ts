@@ -11,6 +11,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   bisectGroups,
   classifyGreptimeWriteError,
+  GreptimeWorkerWriteError,
   truncateOversizedRow,
   type WriteGroup,
 } from "./writeErrors";
@@ -61,6 +62,24 @@ describe("classifyGreptimeWriteError", () => {
       class: "transient",
       errorClass: "unknown",
     });
+  });
+
+  it("passes a worker-supplied classification through unchanged", () => {
+    // The flush worker classifies in its own realm (where the SDK error's prototype is intact) and
+    // hands the verdict back as a GreptimeWorkerWriteError. The main thread must trust it verbatim —
+    // re-deriving from the cloned message would lose the instanceof signal and mislabel poison/oversize
+    // as transient, defeating isolation.
+    for (const classification of [
+      { class: "oversize", errorClass: "transport_8" },
+      { class: "poison", errorClass: "value" },
+      { class: "transient", errorClass: "server_4009" },
+    ] as const) {
+      expect(
+        classifyGreptimeWriteError(
+          new GreptimeWorkerWriteError(classification, "boom"),
+        ),
+      ).toEqual(classification);
+    }
   });
 });
 
