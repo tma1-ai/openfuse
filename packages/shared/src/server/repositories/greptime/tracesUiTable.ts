@@ -110,7 +110,8 @@ export type GreptimeTracesTableMetricsRow = Omit<
 // ---------------------------------------------------------------------------
 
 type AssembledQuery = {
-  tracesFilterSql: string;
+  traceScopedFilterSql: string;
+  observationsFilterSql: string;
   cteSql: string;
   requiresObservationsJoin: boolean;
   obsLookback?: string;
@@ -120,7 +121,7 @@ type AssembledQuery = {
 const buildShared = (props: GreptimeTracesTableProps): AssembledQuery => {
   const { projectId, filter, orderBy } = props;
 
-  const tracesFilter = new FilterList(
+  const filters = new FilterList(
     createGreptimeFilterFromFilterState(
       filter,
       tracesTableGreptimeColumnDefinitions,
@@ -131,7 +132,7 @@ const buildShared = (props: GreptimeTracesTableProps): AssembledQuery => {
   // Scope the observation rollup to the filtered trace ids when the user filtered by id (perf only;
   // correctness comes from the LEFT JOIN). Mirrors the CH traceId push into the observations CTE.
   const observationsFilter = new FilterList();
-  const traceIdFilter = tracesFilter.find(
+  const traceIdFilter = filters.find(
     (f) => f.table === "traces" && f.field === "id",
   );
   const traceIdValues =
@@ -153,7 +154,7 @@ const buildShared = (props: GreptimeTracesTableProps): AssembledQuery => {
   }
 
   // Trace timestamp lower bound -> observation start_time lookback (absolute, app-computed).
-  const tsFilter = tracesFilter.find(
+  const tsFilter = filters.find(
     (f) =>
       f.field === "timestamp" && (f.operator === ">=" || f.operator === ">"),
   ) as DateTimeFilter | undefined;
@@ -163,12 +164,16 @@ const buildShared = (props: GreptimeTracesTableProps): AssembledQuery => {
       )
     : undefined;
 
+  const traceScopedFilters = filters.filter((f) => f.table !== "observations");
+  const observationsFilters = filters.filter((f) => f.table === "observations");
+  const traceScopedFilterRes = traceScopedFilters.apply();
+  const observationsFilterRes = observationsFilters.apply();
+
   const requiresObservationsJoin =
-    tracesFilter.some((f) => f.table === "observations") ||
+    observationsFilters.length() > 0 ||
     findUiColumnMapping(tracesTableGreptimeColumnDefinitions, orderBy?.column)
       ?.greptimeTableName === "observations";
 
-  const tracesFilterRes = tracesFilter.apply();
   const obsFilterRes = observationsFilter.apply();
 
   const cteSql = buildObservationsStatsCte({
@@ -177,14 +182,16 @@ const buildShared = (props: GreptimeTracesTableProps): AssembledQuery => {
   });
 
   return {
-    tracesFilterSql: tracesFilterRes.query,
+    traceScopedFilterSql: traceScopedFilterRes.query,
+    observationsFilterSql: observationsFilterRes.query,
     cteSql,
     requiresObservationsJoin,
     obsLookback,
     params: {
       projectId,
       ...(obsLookback ? { obsLookback } : {}),
-      ...tracesFilterRes.params,
+      ...traceScopedFilterRes.params,
+      ...observationsFilterRes.params,
       ...obsFilterRes.params,
     },
   };
@@ -203,7 +210,7 @@ const tracesScopedSource = (
 ): { from: string; where: string } => {
   const traceWhere =
     `t.project_id = :projectId AND ${notDeleted("t")}` +
-    `${shared.tracesFilterSql ? ` AND ${shared.tracesFilterSql}` : ""}` +
+    `${shared.traceScopedFilterSql ? ` AND ${shared.traceScopedFilterSql}` : ""}` +
     `${search.query ? ` ${search.query}` : ""}`;
   if (!join) return { from: "traces t", where: `WHERE ${traceWhere}` };
   return {
@@ -212,6 +219,9 @@ const tracesScopedSource = (
     where: "",
   };
 };
+
+const observationsRollupWhere = (shared: AssembledQuery): string =>
+  shared.observationsFilterSql ? `WHERE ${shared.observationsFilterSql}` : "";
 
 const orderByClause = (orderBy?: OrderByState): string => {
   const primary: OrderByState = orderBy ?? {
@@ -258,7 +268,8 @@ export const getTracesTableCountGreptime = async (
       ${join ? `WITH ${shared.cteSql}` : ""}
       SELECT count(distinct t.id) AS count
       FROM ${src.from}
-      ${src.where}`,
+      ${src.where}
+      ${observationsRollupWhere(shared)}`,
     params: { ...shared.params, ...search.params },
     readOnly: true,
   });
@@ -303,6 +314,7 @@ export const getTracesTableGreptime = async (
       SELECT ${select}
       FROM ${src.from}
       ${src.where}
+      ${observationsRollupWhere(shared)}
       ${orderByClause(props.orderBy)}
       ${paginationClause(props)}`,
     params: { ...shared.params, ...search.params, ...paginationParams(props) },
@@ -330,6 +342,7 @@ export const getTraceIdentifiersGreptime = async (
       SELECT t.id AS id, t.project_id AS project_id, t.timestamp AS timestamp
       FROM ${src.from}
       ${src.where}
+      ${observationsRollupWhere(shared)}
       ${orderByClause(props.orderBy)}
       ${paginationClause(props)}`,
     params: { ...shared.params, ...search.params, ...paginationParams(props) },
@@ -384,6 +397,7 @@ export const getTracesTableMetricsGreptime = async (
         o.debug_count AS debug_count,
         o.observation_count AS observation_count
       FROM ${tracesScopedSource(shared, search, true).from}
+      ${observationsRollupWhere(shared)}
       ${orderByClause(props.orderBy)}
       ${paginationClause(props)}`,
     params: { ...shared.params, ...search.params, ...paginationParams(props) },

@@ -15,8 +15,8 @@ import {
   buildObservationsTableQuery,
   getObservationsTableCountGreptime,
   getObservationsTableRowsGreptime,
+  observationsScopedFrom,
 } from "./observationsTable";
-import { notDeleted } from "./queryHelpers";
 
 /**
  * GreptimeDB obs-from-events collapse (04-read-path.md, P5 Piece D).
@@ -78,11 +78,7 @@ const resolvePositionQualifyingIds = async (
             PARTITION BY o.trace_id
             ORDER BY o.start_time ${direction}, o.id ${direction}
           ) AS rn
-        FROM observations o
-        ${compiled.traceJoin ? "LEFT JOIN traces t ON t.id = o.trace_id AND t.project_id = o.project_id AND " + notDeleted("t") : ""}
-        WHERE ${compiled.whereSql} AND ${notDeleted("o")}
-          ${compiled.lookback ? "AND t.timestamp >= :obsTraceLookback" : ""}
-          ${search.query}
+        FROM ${observationsScopedFrom(compiled, search)}
       )
       SELECT id FROM qualifying WHERE rn = :rank`,
     params: {

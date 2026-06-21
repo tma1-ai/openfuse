@@ -9,10 +9,9 @@ import {
 import { v4 as uuidv4 } from "uuid";
 import { getUserMetrics } from "@langfuse/shared/src/server";
 
-const projectId = "7a88fb47-b4e2-43b8-a06c-a5ce950dc53a";
-
 describe("getUserMetrics function", () => {
   it("should return correct user metrics for a trace with two observations", async () => {
+    const projectId = uuidv4();
     const userId = uuidv4();
     const traceId = uuidv4();
 
@@ -67,6 +66,7 @@ describe("getUserMetrics function", () => {
   });
 
   it("should return correct user metrics for a trace with two observations and timestamp filter", async () => {
+    const projectId = uuidv4();
     const userId = uuidv4();
     const traceId = uuidv4();
 
@@ -138,6 +138,7 @@ describe("getUserMetrics function", () => {
   // the same heuristic the windowed path already applies; for sane data (observation at/after its
   // trace) the dropped set is empty, as the two tests above show.
   it("drops observations starting more than the lookback before the trace (all-time path)", async () => {
+    const projectId = uuidv4();
     const userId = uuidv4();
     const traceId = uuidv4();
     const now = Date.now();
