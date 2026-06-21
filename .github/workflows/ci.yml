@@ -203,7 +203,8 @@ jobs:
             src/__tests__/server/repositories/experiment-items-repository.servertest.ts \
             src/__tests__/server/code-eval-test-run-trpc.servertest.ts \
             src/__tests__/server/queryBuilder.servertest.ts \
-            src/__tests__/server/dashboard-v1-v2-consistency.servertest.ts
+            src/__tests__/server/dashboard-v1-v2-consistency.servertest.ts \
+            src/__tests__/server/greptime-read-path.servertest.ts
 
       - name: Worker deletion + eval servertests (GreptimeDB-backed)
         env:
