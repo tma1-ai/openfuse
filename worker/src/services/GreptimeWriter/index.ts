@@ -313,17 +313,21 @@ export class GreptimeWriter implements GreptimeProjectionSink {
     targets: Map<GreptimeTable, Map<string, Set<string>>>,
   ): Promise<void> {
     // The deletes are independent and idempotent (one per EAV table, scoped to this flush's entities),
-    // so fire them in parallel: the whole cleanup costs ~one round-trip instead of one per EAV table,
-    // and it still fully completes (await all) before any projection/EAV row of this batch is written.
-    // On a partial failure the siblings that landed are harmless to re-run when the restored batch
-    // retries cleanup on a later flush.
+    // so fire them in parallel: the whole cleanup costs ~one round-trip instead of one per EAV table.
+    // Wait for EVERY delete to settle (allSettled), not just the first failure: on `Promise.all` a fast
+    // rejection would return while a sibling delete is still in flight, the caller would restore the
+    // batch and release the entity, and that still-running delete could later erase the EAV rows a retry
+    // had already re-written. Only after all settle do we surface a failure so the batch is restored
+    // with nothing left running.
     const deletes: Promise<void>[] = [];
     for (const [projectionTable, byProject] of targets) {
       for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ?? []) {
         deletes.push(this.deleteEav(eavTable, byProject));
       }
     }
-    await Promise.all(deletes);
+    const settled = await Promise.allSettled(deletes);
+    const failed = settled.find((s) => s.status === "rejected");
+    if (failed) throw (failed as PromiseRejectedResult).reason;
   }
 
   /**
