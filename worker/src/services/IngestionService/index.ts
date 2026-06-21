@@ -146,6 +146,11 @@ export class IngestionService {
     // True when the entity was deleted (raw_events tombstone seen). The merged projection is marked
     // is_deleted=true so a replay rebuilds it soft-deleted instead of resurrecting live data.
     deleted: boolean = false,
+    // Monotonic EAV generation for this rebuild = max(ingested_at) of the entity's raw_events. Stamped
+    // on the projection + EAV rows so reads select the entity's current EAV set without a delete. A
+    // later rebuild gets a higher generation; an idempotent reprocess gets the same one. Defaulted for
+    // one-shot dev/smoke callers; the live ingestion + reconciliation paths pass the real value.
+    generation: number = Date.now(),
   ): Promise<void> {
     logger.debug(
       `Merging ingestion ${eventType} event for project ${projectId} and event ${eventBodyId}`,
@@ -157,6 +162,7 @@ export class IngestionService {
           projectId,
           entityId: eventBodyId,
           createdAtTimestamp,
+          generation,
           traceEventList: events as TraceEventType[],
           deleted,
         });
@@ -165,6 +171,7 @@ export class IngestionService {
           projectId,
           entityId: eventBodyId,
           createdAtTimestamp,
+          generation,
           observationEventList: events as ObservationEvent[],
           deleted,
         });
@@ -173,6 +180,7 @@ export class IngestionService {
           projectId,
           entityId: eventBodyId,
           createdAtTimestamp,
+          generation,
           scoreEventList: events as (ScoreEventType | ScoreSnapshotEventType)[],
           deleted,
         });
@@ -479,11 +487,18 @@ export class IngestionService {
     projectId: string;
     entityId: string;
     createdAtTimestamp: Date;
+    generation: number;
     scoreEventList: (ScoreEventType | ScoreSnapshotEventType)[];
     deleted?: boolean;
   }) {
-    const { projectId, entityId, createdAtTimestamp, scoreEventList, deleted } =
-      params;
+    const {
+      projectId,
+      entityId,
+      createdAtTimestamp,
+      generation,
+      scoreEventList,
+      deleted,
+    } = params;
     if (scoreEventList.length === 0) return;
 
     const timeSortedEvents =
@@ -566,7 +581,11 @@ export class IngestionService {
     // Tombstoned entity: mark soft-deleted so a replay rebuilds it deleted, not resurrected.
     if (deleted) finalScoreRecord.is_deleted = 1;
 
-    this.greptimeWriter.addToQueue(GreptimeTable.Scores, finalScoreRecord);
+    this.greptimeWriter.addToQueue(
+      GreptimeTable.Scores,
+      finalScoreRecord,
+      generation,
+    );
   }
 
   /** Map a synthetic score-snapshot body (already inflated) straight to a projection record. */
@@ -608,11 +627,18 @@ export class IngestionService {
     projectId: string;
     entityId: string;
     createdAtTimestamp: Date;
+    generation: number;
     traceEventList: TraceEventType[];
     deleted?: boolean;
   }) {
-    const { projectId, entityId, createdAtTimestamp, traceEventList, deleted } =
-      params;
+    const {
+      projectId,
+      entityId,
+      createdAtTimestamp,
+      generation,
+      traceEventList,
+      deleted,
+    } = params;
     if (traceEventList.length === 0) return;
 
     const timeSortedEvents =
@@ -643,7 +669,11 @@ export class IngestionService {
     // Tombstoned entity: mark soft-deleted so a replay rebuilds it deleted, not resurrected.
     if (deleted) finalTraceRecord.is_deleted = 1;
 
-    this.greptimeWriter.addToQueue(GreptimeTable.Traces, finalTraceRecord);
+    this.greptimeWriter.addToQueue(
+      GreptimeTable.Traces,
+      finalTraceRecord,
+      generation,
+    );
 
     // If the trace has a sessionId, we upsert the corresponding session into Postgres.
     const traceRecordWithSession = traceRecords
@@ -704,6 +734,7 @@ export class IngestionService {
     projectId: string;
     entityId: string;
     createdAtTimestamp: Date;
+    generation: number;
     observationEventList: ObservationEvent[];
     deleted?: boolean;
   }) {
@@ -711,6 +742,7 @@ export class IngestionService {
       projectId,
       entityId,
       createdAtTimestamp,
+      generation,
       observationEventList,
       deleted,
     } = params;
@@ -795,7 +827,11 @@ export class IngestionService {
         is_deleted: 0,
       };
 
-      this.greptimeWriter.addToQueue(GreptimeTable.Traces, wrapperTraceRecord);
+      this.greptimeWriter.addToQueue(
+        GreptimeTable.Traces,
+        wrapperTraceRecord,
+        generation,
+      );
       finalObservationRecord.trace_id = finalObservationRecord.id;
     }
 
@@ -805,6 +841,7 @@ export class IngestionService {
     this.greptimeWriter.addToQueue(
       GreptimeTable.Observations,
       finalObservationRecord,
+      generation,
     );
   }
 

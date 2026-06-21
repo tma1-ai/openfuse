@@ -120,7 +120,8 @@ export const ingestionQueueProcessorBuilder = (
         entityType: clickhouseEntityType,
         entityId,
       });
-      let { events, minIngestedAtMs, deleted } = parseRawEventHistory(rawRows);
+      let { events, minIngestedAtMs, maxIngestedAtMs, deleted } =
+        parseRawEventHistory(rawRows);
 
       // Number of (deduped) events replayed per rebuild. Renamed from the old
       // "count_files_distribution" S3-file metric, whose semantics no longer apply.
@@ -163,6 +164,7 @@ export const ingestionQueueProcessorBuilder = (
         new Date(minIngestedAtMs),
         events,
         deleted,
+        maxIngestedAtMs,
       );
 
       // Mark this batch seen only after a successful merge, so a redirected or retried job is

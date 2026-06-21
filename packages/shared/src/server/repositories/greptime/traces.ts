@@ -453,6 +453,7 @@ export const getTracesGroupedByTags = async (props: {
           SELECT 1 FROM traces t
           WHERE t.project_id = tt.project_id
             AND t.id = tt.entity_id
+            AND tt.generation = t.eav_generation
             AND ${notDeleted("t")}
             ${filterRes.query ? `AND ${filterRes.query}` : ""}
         )

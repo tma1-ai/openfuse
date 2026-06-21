@@ -404,6 +404,13 @@ export const getEventsGroupedByTraceTagsGreptime = async (
             AND o.trace_id = tt.entity_id
             AND ${facet.where}
         )
+        AND EXISTS (
+          SELECT 1 FROM traces t
+          WHERE t.project_id = tt.project_id
+            AND t.id = tt.entity_id
+            AND t.eav_generation = tt.generation
+            AND ${notDeleted("t")}
+        )
       LIMIT :limit OFFSET :offset`,
     params: {
       projectId,

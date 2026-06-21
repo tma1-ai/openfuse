@@ -394,175 +394,11 @@ describe("GreptimeWriter.resolveGroups (backfill projection gating)", () => {
   });
 });
 
-describe("GreptimeWriter EAV shrink consistency", () => {
-  // Record cleanup deletes and writes in one ordered log to assert delete-before-write.
-  const setup = () => {
-    const order: string[] = [];
-    const deletes: { table: string; entities: Record<string, string[]> }[] = [];
-    const { write } = fakeWriter(() => null);
-    const wrappedWrite = vi.fn(async (tables: Parameters<typeof write>[0]) => {
-      order.push("write");
-      return write(tables);
-    });
-    const deleteEav = vi.fn(
-      async (
-        table: string,
-        byProject: ReadonlyMap<string, ReadonlySet<string>>,
-      ) => {
-        order.push(`delete:${table}`);
-        deletes.push({
-          table,
-          entities: Object.fromEntries(
-            [...byProject].map(([p, ids]) => [p, [...ids]]),
-          ),
-        });
-      },
-    );
-    const writer = GreptimeWriter.createForTest({
-      write: wrappedWrite,
-      deleteEav,
-    });
-    return { writer, order, deletes, write: wrappedWrite, deleteEav };
-  };
-
-  it("deletes a trace's metadata + tags EAV before writing, keyed by the projection entity", async () => {
-    const { writer, order, deletes } = setup();
-    writer.addToQueue(
-      GreptimeTable.Traces,
-      createTrace({
-        project_id: "p",
-        id: "t1",
-        metadata: { a: "1" },
-        tags: ["x"],
-      }),
-    );
-    await writer.flushAll(true);
-
-    const tables = deletes.map((d) => d.table).sort();
-    expect(tables).toEqual(["traces_metadata", "traces_tags"]);
-    for (const d of deletes) expect(d.entities).toEqual({ p: ["t1"] });
-    // every delete precedes the single write
-    expect(order.indexOf("write")).toBe(order.length - 1);
-    expect(order.filter((o) => o.startsWith("delete:"))).toHaveLength(2);
-  });
-
-  it("still cleans an observation whose EAV set shrank to empty (no fanned EAV rows)", async () => {
-    const { writer, deletes } = setup();
-    // No tools, no custom usage/cost, no metadata -> the fan-out emits only the projection row, but
-    // the entity must still be cleaned so any prior tool/metadata rows are removed.
-    writer.addToQueue(
-      GreptimeTable.Observations,
-      createObservation({
-        project_id: "p",
-        id: "o1",
-        metadata: {},
-        usage_details: {},
-        cost_details: {},
-        tool_definitions: {},
-        tool_call_names: [],
-      }),
-    );
-    await writer.flushAll(true);
-
-    const cleaned = deletes.map((d) => d.table).sort();
-    expect(cleaned).toEqual([
-      "observations_metadata",
-      "observations_tool_calls",
-      "observations_tool_definitions",
-      "observations_usage_cost",
-    ]);
-    for (const d of deletes) expect(d.entities).toEqual({ p: ["o1"] });
-  });
-
-  it("does not write and keeps the batch queued when EAV cleanup fails", async () => {
-    const { writer, write, deleteEav } = setup();
-    deleteEav.mockRejectedValueOnce(new Error("delete failed"));
-
-    writer.addToQueue(
-      GreptimeTable.Traces,
-      createTrace({
-        project_id: "p",
-        id: "t-retry",
-        metadata: { stale: "gone" },
-        tags: ["x"],
-      }),
-    );
-
-    await expect(writer.flushAll(true)).rejects.toThrow("delete failed");
-    expect(write).not.toHaveBeenCalled();
-    expect(writer.pendingRows()).toBeGreaterThan(0);
-
-    await writer.flushAll(true);
-
-    expect(write).toHaveBeenCalledTimes(1);
-    // Cleanup fires its per-EAV-table deletes in parallel (Promise.all), so the first (failed) flush
-    // still issued both traces_metadata + traces_tags deletes before rejecting; the retry issues both
-    // again -> 4 total. Re-running the sibling that landed is harmless (idempotent DELETE).
-    expect(deleteEav).toHaveBeenCalledTimes(4);
-  });
-
-  it("does not lose an entity enqueued while a cleanup delete is in flight", async () => {
-    const { writer, deletes, deleteEav } = setup();
-    // A concurrent addToQueue interleaving during the cleanup await must not be lost: it only touches
-    // the queues, so the next flush splices and cleans it. Cleanup targets are derived from the
-    // spliced rows of each flush, so there is no shared cleanup state for the enqueue to corrupt.
-    let injected = false;
-    deleteEav.mockImplementation(async (table, byProject) => {
-      deletes.push({
-        table,
-        entities: Object.fromEntries(
-          [...byProject].map(([p, ids]) => [p, [...ids]]),
-        ),
-      });
-      if (!injected) {
-        injected = true;
-        writer.addToQueue(
-          GreptimeTable.Traces,
-          createTrace({
-            project_id: "p",
-            id: "concurrent",
-            metadata: { a: "1" },
-            tags: [],
-          }),
-        );
-      }
-    });
-
-    writer.addToQueue(
-      GreptimeTable.Traces,
-      createTrace({
-        project_id: "p",
-        id: "first",
-        metadata: { a: "1" },
-        tags: ["x"],
-      }),
-    );
-    await writer.flushAll(true);
-    // The concurrently-enqueued entity is cleaned on the next flush (it went to the queue).
-    await writer.flushAll(true);
-
-    const cleanedEntities = deletes.flatMap((d) => d.entities.p ?? []);
-    expect(cleanedEntities).toContain("concurrent");
-  });
-
-  it("a partial flush cleans only the entities it writes (no cross-flush gap)", async () => {
+describe("GreptimeWriter partial-flush splicing", () => {
+  it("a partial flush writes only the entities it splices, leaving the rest queued", async () => {
     const { write, landed } = fakeWriter(() => null);
-    const cleaned: string[] = [];
-    const deleteEav = vi.fn(
-      async (
-        _table: string,
-        byProject: ReadonlyMap<string, ReadonlySet<string>>,
-      ) => {
-        for (const ids of byProject.values())
-          for (const id of ids) cleaned.push(id);
-      },
-    );
     // batchSize 1: each metadata-free trace is a 1-row group, so a partial flush takes exactly one.
-    const writer = GreptimeWriter.createForTest({
-      write,
-      deleteEav,
-      batchSize: 1,
-    });
+    const writer = GreptimeWriter.createForTest({ write, batchSize: 1 });
     writer.addToQueue(
       GreptimeTable.Traces,
       createTrace({ project_id: "p", id: "first", metadata: {}, tags: [] }),
@@ -573,14 +409,15 @@ describe("GreptimeWriter EAV shrink consistency", () => {
     );
 
     await writer.flushAll(false);
+    // Only the first group landed; the second whole group waits for a later flush.
     expect(landedProjectionIds(landed, "traces")).toEqual(["first"]);
-    // Cleanup targeted only the written entity — "second"'s EAV is untouched until it is written.
-    expect(new Set(cleaned)).toEqual(new Set(["first"]));
     expect(writer.pendingRows()).toBeGreaterThan(0);
 
-    cleaned.length = 0;
     await writer.flushAll(false);
-    expect(new Set(cleaned)).toEqual(new Set(["second"]));
+    expect(landedProjectionIds(landed, "traces").sort()).toEqual([
+      "first",
+      "second",
+    ]);
   });
 
   it("never splits an entity's fan-out across a partial flush", async () => {

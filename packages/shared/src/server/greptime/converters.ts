@@ -60,6 +60,14 @@ export interface ParsedRawHistory {
   /** min(ingested_at) across the full history — the entity's created_at (invariant 7). */
   minIngestedAtMs: number;
   /**
+   * max(ingested_at) across the full live history — the rebuild's monotonic EAV `generation`. Grows as
+   * new events arrive (raw_events is append-only) and is deterministic per event set, so a later
+   * rebuild gets a strictly higher generation while a reprocess of the same set is idempotent. The
+   * write path stamps it on every projection (`eav_generation`) + EAV (`generation`) row so reads can
+   * select an entity's current EAV set without an up-front DELETE.
+   */
+  maxIngestedAtMs: number;
+  /**
    * True when the entity was deleted and not re-created afterwards — i.e. a tombstone exists and no
    * live event was ingested after the latest tombstone. The rebuild must mark the projection
    * is_deleted=true so deletion survives reprocessing.
@@ -100,11 +108,14 @@ export const parseRawEventHistory = (rows: RawEventRow[]): ParsedRawHistory => {
     }
   }
 
+  const resolvedMin = Number.isFinite(minIngestedAtMs)
+    ? minIngestedAtMs
+    : Date.now();
   return {
     events,
-    minIngestedAtMs: Number.isFinite(minIngestedAtMs)
-      ? minIngestedAtMs
-      : Date.now(),
+    minIngestedAtMs: resolvedMin,
+    // Generation = max live ingested_at; fall back to the min (or now) when there is no live event.
+    maxIngestedAtMs: maxLiveAt > -Infinity ? maxLiveAt : resolvedMin,
     // Deleted if a tombstone exists and nothing live was ingested after it (supports re-create).
     deleted: maxTombstoneAt > -Infinity && maxTombstoneAt >= maxLiveAt,
   };

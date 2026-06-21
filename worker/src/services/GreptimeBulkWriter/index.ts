@@ -4,10 +4,6 @@ import type { Client, BulkWriteOptions } from "@greptime/ingester";
 import {
   buildGreptimeRowsForRecord,
   DatasetRunItemRecordInsertType,
-  type DeleteEavRowsFn,
-  deleteEavRowsForEntities,
-  EAV_TABLES_FOR_PROJECTION,
-  mergeEntityCleanup,
   GreptimeRow,
   GreptimeTable,
   instrumentAsync,
@@ -73,74 +69,21 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
   private readonly unary: GreptimeWriter;
   private readonly batchSize: number;
   private readonly bulkOpts?: BulkWriteOptions;
-  private readonly deleteEav: DeleteEavRowsFn;
 
   private nextGroupId = 0;
   private gated = new Map<number, GatedEntity>();
   private bulkRows: BulkRow[] = [];
-  /**
-   * Projection entities whose stale EAV rows must be cleared before their current set is bulk-written
-   * (same shrink-consistency step as the live writer). Non-gated entities are recorded on enqueue;
-   * gated entities (observations) are recorded only once their projection durably lands, so a dropped
-   * projection never clears the EAV of an entity that was not actually updated this run.
-   */
-  private pendingEavCleanup = new Map<
-    GreptimeTable,
-    Map<string, Set<string>>
-  >();
 
   constructor(deps: {
     client: Client;
     unary: GreptimeWriter;
     batchSize: number;
     bulkOpts?: BulkWriteOptions;
-    deleteEav?: DeleteEavRowsFn;
   }) {
     this.client = deps.client;
     this.unary = deps.unary;
     this.batchSize = deps.batchSize;
     this.bulkOpts = deps.bulkOpts;
-    this.deleteEav = deps.deleteEav ?? deleteEavRowsForEntities;
-  }
-
-  /** Record a projection entity for pre-write EAV cleanup (skips entities with no EAV tables). */
-  private recordEavCleanup(
-    table: GreptimeTable,
-    projectId: string,
-    entityId: string,
-  ): void {
-    if (!EAV_TABLES_FOR_PROJECTION[table]) return;
-    let byProject = this.pendingEavCleanup.get(table);
-    if (!byProject) {
-      byProject = new Map();
-      this.pendingEavCleanup.set(table, byProject);
-    }
-    let ids = byProject.get(projectId);
-    if (!ids) {
-      ids = new Set();
-      byProject.set(projectId, ids);
-    }
-    ids.add(entityId);
-  }
-
-  /** Batch-delete each recorded entity's existing EAV rows; run before bulk-writing the new EAV. */
-  private async runEavCleanup(): Promise<void> {
-    if (this.pendingEavCleanup.size === 0) return;
-    // Swap to a fresh map synchronously so entries enqueued during the awaits below are not lost;
-    // merge the snapshot back on failure so it is retried without clobbering those new entries.
-    const snapshot = this.pendingEavCleanup;
-    this.pendingEavCleanup = new Map();
-    try {
-      for (const [projectionTable, byProject] of snapshot) {
-        for (const eavTable of EAV_TABLES_FOR_PROJECTION[projectionTable] ??
-          []) {
-          await this.deleteEav(eavTable, byProject);
-        }
-      }
-    } catch (err) {
-      mergeEntityCleanup(this.pendingEavCleanup, snapshot);
-      throw err;
-    }
   }
 
   public addToQueue(
@@ -150,9 +93,10 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
       | ObservationRecordInsertType
       | ScoreRecordInsertType
       | DatasetRunItemRecordInsertType,
+    generation?: number,
   ): void {
     const groupId = this.nextGroupId++;
-    const fanned = buildGreptimeRowsForRecord(table, record);
+    const fanned = buildGreptimeRowsForRecord(table, record, generation);
 
     if (GATED_ENTITIES.has(table)) {
       // The projection physical table name equals the enum value; everything else is its EAV.
@@ -169,9 +113,8 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
       return;
     }
 
-    // Non-gated entities (trace/score + EAV) ride bulk together; record them now so their stale EAV
-    // is cleared before this flush writes the new set. Gated entities are recorded post-landing.
-    this.recordEavCleanup(table, record.project_id, record.id);
+    // Non-gated entities (trace/score + EAV) ride bulk together. No pre-write delete: the generation
+    // stamped on each row supersedes the entity's prior EAV at read time.
     for (const { table: phys, rows } of fanned) {
       for (const row of rows) this.bulkRows.push({ groupId, table: phys, row });
     }
@@ -209,32 +152,16 @@ export class GreptimeBulkWriter implements GreptimeProjectionSink {
         );
       }
 
-      // 2. Release EAV only for entities whose projection landed (never orphan EAV). Record each
-      // landed gated entity for cleanup now (post-landing), so a dropped projection never clears the
-      // EAV of an entity that was not actually updated this run.
+      // 2. Release EAV only for entities whose projection landed (never orphan EAV). The EAV rows
+      // already carry this rebuild's generation, so no pre-write delete is needed — a dropped key is
+      // excluded at read time by the generation correlation.
       for (const [groupId, e] of this.gated) {
         if (!landed.has(groupId)) continue;
-        if (e.projectionTable && e.projectionRow) {
-          this.recordEavCleanup(
-            e.projectionTable as GreptimeTable,
-            e.projectionRow.project_id as string,
-            e.projectionRow.id as string,
-          );
-        }
         for (const { table, row } of e.eav) {
           this.bulkRows.push({ groupId, table, row });
         }
       }
       this.gated.clear();
-
-      // 2b. Clear stale EAV rows for all recorded entities BEFORE writing their current set, so a
-      // key/tag/tool dropped from an updated entity does not survive the rebuild.
-      try {
-        await this.runEavCleanup();
-      } catch (err) {
-        logger.error("GreptimeBulkWriter EAV cleanup failed", err);
-        throw err;
-      }
 
       // 3. Bulk-flush per physical table; on a table failure fall back to unary grouped by entity.
       const byTable = new Map<string, BulkRow[]>();

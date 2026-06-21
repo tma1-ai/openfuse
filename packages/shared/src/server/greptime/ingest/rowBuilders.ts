@@ -156,6 +156,7 @@ export const metadataRows = (params: {
   projectId: string;
   entityId: string;
   timestamp: number;
+  generation: number;
   isDeleted: boolean;
 }): GreptimeRow[] =>
   Object.entries(params.metadata ?? {}).map(([key, value]) => ({
@@ -165,6 +166,7 @@ export const metadataRows = (params: {
     timestamp: params.timestamp,
     value: value ?? null,
     is_deleted: params.isDeleted,
+    generation: params.generation,
   }));
 
 export const tagRows = (params: {
@@ -172,6 +174,7 @@ export const tagRows = (params: {
   projectId: string;
   entityId: string;
   timestamp: number;
+  generation: number;
   isDeleted: boolean;
 }): GreptimeRow[] =>
   (params.tags ?? []).map((tag) => ({
@@ -180,6 +183,7 @@ export const tagRows = (params: {
     tag,
     timestamp: params.timestamp,
     is_deleted: params.isDeleted,
+    generation: params.generation,
   }));
 
 /**
@@ -198,6 +202,7 @@ export const usageCostRows = (params: {
   projectId: string;
   entityId: string;
   timestamp: number;
+  generation: number;
   isDeleted: boolean;
 }): GreptimeRow[] => {
   const rowsForKind = (
@@ -217,6 +222,7 @@ export const usageCostRows = (params: {
         key,
         value: Number(value),
         is_deleted: params.isDeleted,
+        generation: params.generation,
       }));
   return [
     ...rowsForKind("usage", params.usageDetails),
@@ -237,6 +243,7 @@ export const toolDefinitionRows = (params: {
   projectId: string;
   entityId: string;
   timestamp: number;
+  generation: number;
   isDeleted: boolean;
 }): GreptimeRow[] =>
   Object.keys(params.toolDefinitions ?? {}).map((toolName) => ({
@@ -245,6 +252,7 @@ export const toolDefinitionRows = (params: {
     tool_name: toolName,
     timestamp: params.timestamp,
     is_deleted: params.isDeleted,
+    generation: params.generation,
   }));
 
 /**
@@ -259,6 +267,7 @@ export const toolCallRows = (params: {
   projectId: string;
   entityId: string;
   timestamp: number;
+  generation: number;
   isDeleted: boolean;
 }): GreptimeRow[] =>
   [...new Set(params.toolCallNames ?? [])].map((toolName) => ({
@@ -267,6 +276,7 @@ export const toolCallRows = (params: {
     tool_name: toolName,
     timestamp: params.timestamp,
     is_deleted: params.isDeleted,
+    generation: params.generation,
   }));
 
 /**
@@ -276,6 +286,20 @@ export const toolCallRows = (params: {
  * only, metadata is display-only JSON). Empty EAV groups are omitted so callers don't emit
  * no-op writes. This is the shared fan-out both the worker writer and the seeder rely on.
  */
+/**
+ * The EAV `generation` to stamp when the caller does not supply one (seeder, smoke scripts, tests).
+ * The live ingestion path passes the rebuild's max(ingested_at) explicitly; this fallback derives a
+ * best-effort monotonic value from the record so a one-shot writer still produces correlatable rows.
+ */
+const fallbackGeneration = (record: Record<string, unknown>): number =>
+  Number(
+    record.updated_at ??
+      record.timestamp ??
+      record.start_time ??
+      record.created_at ??
+      0,
+  );
+
 export const buildGreptimeRowsForRecord = (
   table: GreptimeTable,
   record:
@@ -283,8 +307,14 @@ export const buildGreptimeRowsForRecord = (
     | ObservationRecordInsertType
     | ScoreRecordInsertType
     | DatasetRunItemRecordInsertType,
+  // Monotonic EAV generation for this rebuild (max ingested_at). Stamped on the projection row
+  // (`eav_generation`) and every EAV row (`generation`) so a read selects the entity's current EAV
+  // set by correlation, with no up-front DELETE. Defaults to a record-derived value for one-shot
+  // callers (seeder/tests) that do not rebuild from raw_events.
+  generation?: number,
 ): GreptimeTableRows[] => {
   const out: GreptimeTableRows[] = [];
+  const gen = generation ?? fallbackGeneration(record as Record<string, unknown>);
   const pushRows = (name: string, rows: GreptimeRow[]) => {
     if (rows.length > 0) out.push({ table: name, rows });
   };
@@ -292,7 +322,7 @@ export const buildGreptimeRowsForRecord = (
   switch (table) {
     case GreptimeTable.Traces: {
       const r = record as TraceRecordInsertType;
-      out.push({ table: "traces", rows: [traceRow(r)] });
+      out.push({ table: "traces", rows: [{ ...traceRow(r), eav_generation: gen }] });
       pushRows(
         "traces_metadata",
         metadataRows({
@@ -300,6 +330,7 @@ export const buildGreptimeRowsForRecord = (
           projectId: r.project_id,
           entityId: r.id,
           timestamp: r.timestamp,
+          generation: gen,
           isDeleted: Boolean(r.is_deleted),
         }),
       );
@@ -310,6 +341,7 @@ export const buildGreptimeRowsForRecord = (
           projectId: r.project_id,
           entityId: r.id,
           timestamp: r.timestamp,
+          generation: gen,
           isDeleted: Boolean(r.is_deleted),
         }),
       );
@@ -317,7 +349,10 @@ export const buildGreptimeRowsForRecord = (
     }
     case GreptimeTable.Observations: {
       const r = record as ObservationRecordInsertType;
-      out.push({ table: "observations", rows: [observationRow(r)] });
+      out.push({
+        table: "observations",
+        rows: [{ ...observationRow(r), eav_generation: gen }],
+      });
       pushRows(
         "observations_metadata",
         metadataRows({
@@ -325,6 +360,7 @@ export const buildGreptimeRowsForRecord = (
           projectId: r.project_id,
           entityId: r.id,
           timestamp: r.start_time,
+          generation: gen,
           isDeleted: Boolean(r.is_deleted),
         }),
       );
@@ -336,6 +372,7 @@ export const buildGreptimeRowsForRecord = (
           projectId: r.project_id,
           entityId: r.id,
           timestamp: r.start_time,
+          generation: gen,
           isDeleted: Boolean(r.is_deleted),
         }),
       );
@@ -346,6 +383,7 @@ export const buildGreptimeRowsForRecord = (
           projectId: r.project_id,
           entityId: r.id,
           timestamp: r.start_time,
+          generation: gen,
           isDeleted: Boolean(r.is_deleted),
         }),
       );
@@ -356,6 +394,7 @@ export const buildGreptimeRowsForRecord = (
           projectId: r.project_id,
           entityId: r.id,
           timestamp: r.start_time,
+          generation: gen,
           isDeleted: Boolean(r.is_deleted),
         }),
       );
@@ -363,7 +402,7 @@ export const buildGreptimeRowsForRecord = (
     }
     case GreptimeTable.Scores: {
       const r = record as ScoreRecordInsertType;
-      out.push({ table: "scores", rows: [scoreRow(r)] });
+      out.push({ table: "scores", rows: [{ ...scoreRow(r), eav_generation: gen }] });
       pushRows(
         "scores_metadata",
         metadataRows({
@@ -371,12 +410,14 @@ export const buildGreptimeRowsForRecord = (
           projectId: r.project_id,
           entityId: r.id,
           timestamp: r.timestamp,
+          generation: gen,
           isDeleted: Boolean(r.is_deleted),
         }),
       );
       break;
     }
     case GreptimeTable.DatasetRunItems: {
+      // dataset_run_items has no EAV subtables, so it needs no generation.
       out.push({
         table: "dataset_run_items",
         rows: [datasetRunItemRow(record as DatasetRunItemRecordInsertType)],

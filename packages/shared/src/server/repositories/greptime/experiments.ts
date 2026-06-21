@@ -915,7 +915,9 @@ const buildItemGrainFilter = (
       const k = `${tag}emk${i}`;
       const v = `${tag}emv${i}`;
       params[k] = f.key;
-      const base = `SELECT 1 FROM ${quoteIdent("observations_metadata")} m WHERE m.${quoteIdent("project_id")} = :projectId AND m.${quoteIdent("entity_id")} = ${alias}.${quoteIdent("observation_id")} AND m.${quoteIdent("key")} = :${k} AND m.${quoteIdent("is_deleted")} = false`;
+      // JOIN observations to keep only EAV rows at the entity's current generation (no scalar subquery
+      // or nested EXISTS — GreptimeDB rejects both; a JOIN inside the EXISTS is the supported form).
+      const base = `SELECT 1 FROM ${quoteIdent("observations_metadata")} m JOIN ${quoteIdent("observations")} o ON o.${quoteIdent("id")} = m.${quoteIdent("entity_id")} AND o.${quoteIdent("project_id")} = m.${quoteIdent("project_id")} AND o.${quoteIdent("eav_generation")} = m.${quoteIdent("generation")} AND o.${quoteIdent("is_deleted")} = false WHERE m.${quoteIdent("project_id")} = :projectId AND m.${quoteIdent("entity_id")} = ${alias}.${quoteIdent("observation_id")} AND m.${quoteIdent("key")} = :${k} AND m.${quoteIdent("is_deleted")} = false`;
       if (f.operator === "=") {
         params[v] = f.value;
         clauses.push(`EXISTS (${base} AND m.${quoteIdent("value")} = :${v})`);

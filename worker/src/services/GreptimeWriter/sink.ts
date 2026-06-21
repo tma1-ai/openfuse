@@ -20,6 +20,10 @@ export interface GreptimeProjectionSink {
       | ObservationRecordInsertType
       | ScoreRecordInsertType
       | DatasetRunItemRecordInsertType,
+    // Monotonic EAV generation for this rebuild (max ingested_at). Stamped on the entity's projection
+    // + EAV rows so reads select its current EAV set without an up-front DELETE. Omitted by one-shot
+    // callers, which fall back to a record-derived value.
+    generation?: number,
   ): void;
   /** Drain buffered rows. `fullQueue` flushes everything (used at the end of a reconciliation page). */
   flushAll(fullQueue?: boolean): Promise<void>;
