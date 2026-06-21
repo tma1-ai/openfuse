@@ -142,12 +142,18 @@ describe("getObservation*ByTypeByTime: Q2 observations join is conditional", () 
     });
     return mocks.greptimeQuery.mock.calls[1]![0].query as string;
   };
+  const expectObservationsJoin = (query: string) => {
+    expect(query).toMatch(/JOIN\s*\(\s*SELECT \* FROM observations o/);
+  };
+  const expectTracesJoin = (query: string) => {
+    expect(query).toMatch(/JOIN\s*\(\s*SELECT \* FROM traces t/);
+  };
 
   it("skips the observations join when no observation/trace/environment filter is present", async () => {
     const q2 = await q2For([]);
     expect(q2).toContain("FROM observations_usage_cost uc");
-    expect(q2).not.toContain("JOIN observations o");
-    expect(q2).not.toContain("JOIN traces");
+    expect(q2).not.toMatch(/JOIN\s*\(\s*SELECT \* FROM observations o/);
+    expect(q2).not.toMatch(/JOIN\s*\(\s*SELECT \* FROM traces t/);
     // No dangling observations/traces alias may leak into SELECT/WHERE/GROUP BY once the joins drop.
     expect(q2).not.toMatch(/\bo\./);
     expect(q2).not.toMatch(/\bt\./);
@@ -164,21 +170,21 @@ describe("getObservation*ByTypeByTime: Q2 observations join is conditional", () 
         value: ["production"],
       },
     ]);
-    expect(q2).toContain("JOIN observations o");
+    expectObservationsJoin(q2);
   });
 
   it("keeps the observations join for an observation-level filter", async () => {
     const q2 = await q2For([
       { type: "string", column: "type", operator: "=", value: "GENERATION" },
     ]);
-    expect(q2).toContain("JOIN observations o");
+    expectObservationsJoin(q2);
   });
 
   it("keeps both joins for a trace-level filter", async () => {
     const q2 = await q2For([
       { type: "string", column: "userId", operator: "=", value: "u1" },
     ]);
-    expect(q2).toContain("JOIN observations o");
-    expect(q2).toContain("LEFT JOIN traces t");
+    expectObservationsJoin(q2);
+    expectTracesJoin(q2);
   });
 });

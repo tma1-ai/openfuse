@@ -136,7 +136,7 @@ export const ingestionQueueProcessorBuilder = (
         entityType: clickhouseEntityType,
         entityId,
       });
-      let { events, minIngestedAtMs, maxIngestedAtMs, deleted } =
+      let { events, minIngestedAtMs, maxIngestedAtMs, eavGeneration, deleted } =
         parseRawEventHistory(rawRows);
 
       // Number of (deduped) events replayed per rebuild. Renamed from the old
@@ -180,12 +180,12 @@ export const ingestionQueueProcessorBuilder = (
         new Date(minIngestedAtMs),
         events,
         deleted,
-        maxIngestedAtMs,
+        eavGeneration,
       );
 
-      // Publish the watermark = max ingested_at this rebuild covered, after it durably wrote, so a
-      // later job for this entity can skip (above). Plain SET: same-entity jobs are sharded in order so
-      // it is monotonic in practice, and a rare lower value only costs a redundant rebuild.
+      // Publish the watermark = max ingested_at this rebuild covered after the rebuild was accepted by
+      // the writer. Plain SET: same-entity jobs are sharded in order so it is monotonic in practice,
+      // and a rare lower value only costs a redundant rebuild.
       if (env.LANGFUSE_INGESTION_COALESCE_REBUILDS === "true" && redis) {
         await redis
           .set(

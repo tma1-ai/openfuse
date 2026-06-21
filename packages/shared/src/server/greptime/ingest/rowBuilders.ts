@@ -291,14 +291,20 @@ export const toolCallRows = (params: {
  * The live ingestion path passes the rebuild's max(ingested_at) explicitly; this fallback derives a
  * best-effort monotonic value from the record so a one-shot writer still produces correlatable rows.
  */
-const fallbackGeneration = (record: Record<string, unknown>): number =>
-  Number(
+let lastFallbackGeneration = 0;
+
+const fallbackGeneration = (record: Record<string, unknown>): number => {
+  const base = Number(
     record.updated_at ??
       record.timestamp ??
       record.start_time ??
       record.created_at ??
-      0,
+      Date.now(),
   );
+  const next = Number.isFinite(base) ? base * 4096 : Date.now() * 4096;
+  lastFallbackGeneration = Math.max(lastFallbackGeneration + 1, next);
+  return lastFallbackGeneration;
+};
 
 export const buildGreptimeRowsForRecord = (
   table: GreptimeTable,
@@ -314,7 +320,8 @@ export const buildGreptimeRowsForRecord = (
   generation?: number,
 ): GreptimeTableRows[] => {
   const out: GreptimeTableRows[] = [];
-  const gen = generation ?? fallbackGeneration(record as Record<string, unknown>);
+  const gen =
+    generation ?? fallbackGeneration(record as Record<string, unknown>);
   const pushRows = (name: string, rows: GreptimeRow[]) => {
     if (rows.length > 0) out.push({ table: name, rows });
   };
@@ -322,7 +329,10 @@ export const buildGreptimeRowsForRecord = (
   switch (table) {
     case GreptimeTable.Traces: {
       const r = record as TraceRecordInsertType;
-      out.push({ table: "traces", rows: [{ ...traceRow(r), eav_generation: gen }] });
+      out.push({
+        table: "traces",
+        rows: [{ ...traceRow(r), eav_generation: gen }],
+      });
       pushRows(
         "traces_metadata",
         metadataRows({
@@ -402,7 +412,10 @@ export const buildGreptimeRowsForRecord = (
     }
     case GreptimeTable.Scores: {
       const r = record as ScoreRecordInsertType;
-      out.push({ table: "scores", rows: [{ ...scoreRow(r), eav_generation: gen }] });
+      out.push({
+        table: "scores",
+        rows: [{ ...scoreRow(r), eav_generation: gen }],
+      });
       pushRows(
         "scores_metadata",
         metadataRows({
