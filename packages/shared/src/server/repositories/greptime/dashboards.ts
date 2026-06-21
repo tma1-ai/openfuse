@@ -111,7 +111,6 @@ export const getScoreAggregateGreptime = async (
       dashboardGreptimeColumnDefinitions,
     ),
   );
-  const restRes = restList.apply();
   // Split by physical table so each side pre-filters inside its own subquery: a flat `scores JOIN
   // traces` defeats GreptimeDB pushdown of the scores TIME INDEX / trace_id bloom and the traces TIME
   // INDEX to the region scans.
@@ -127,7 +126,8 @@ export const getScoreAggregateGreptime = async (
   const useLookback = Boolean(timeFilter && hasTraceFilter);
   const params: Record<string, unknown> = {
     projectId,
-    ...restRes.params,
+    ...scoreRestRes.params,
+    ...traceRestRes.params,
     ...env.params,
   };
   if (useLookback && timeFilter) {
@@ -158,7 +158,7 @@ export const getScoreAggregateGreptime = async (
         hasTraceFilter
           ? `JOIN (
         SELECT * FROM traces t
-        WHERE ${notDeleted("t")}
+        WHERE t.project_id = :projectId AND ${notDeleted("t")}
           ${traceRestRes.query ? `AND ${traceRestRes.query}` : ""}
           ${useLookback ? "AND t.timestamp >= :tracesTimestamp" : ""}
       ) t ON t.id = s.trace_id AND t.project_id = s.project_id`
@@ -203,7 +203,6 @@ const getObservationDetailByTypeByTime = async (opts: {
       dashboardGreptimeColumnDefinitions,
     ),
   );
-  const restRes = restList.apply();
 
   const hasTraceFilter = restList.some((f) => f.table === "traces");
   // CH derived the trace lookback from an observation start_time lower bound, only when a trace
@@ -227,11 +226,20 @@ const getObservationDetailByTypeByTime = async (opts: {
     Boolean(env.query) ||
     restList.some((f) => f.table === "observations");
 
+  // Split predicates by physical table so each base table pre-filters inside its own subquery: a flat
+  // `uc JOIN observations JOIN traces ... WHERE` defeats GreptimeDB pushdown of the uc/observations TIME
+  // INDEX window to the region scans. Score-grain predicates correlate to `o`, so they stay obs-side.
+  const obsRestRes = restList.filter((f) => f.table !== "traces").apply();
+  const traceRestRes = restList.filter((f) => f.table === "traces").apply();
+  const obsRestClause = obsRestRes.query ? `AND ${obsRestRes.query}` : "";
+  const traceRestClause = traceRestRes.query ? `AND ${traceRestRes.query}` : "";
+
   const params: Record<string, unknown> = {
     projectId,
     winFrom: greptimeTsParam(new Date(fromTime)),
     winTo: greptimeTsParam(new Date(toTime)),
-    ...restRes.params,
+    ...obsRestRes.params,
+    ...traceRestRes.params,
     ...env.params,
   };
   if (useLookback && obsStartLowerBound) {
@@ -246,13 +254,6 @@ const getObservationDetailByTypeByTime = async (opts: {
   const kind = jsonColumn === "cost_details" ? "cost" : "usage";
   params.kind = kind;
 
-  // Split predicates by physical table so each base table pre-filters inside its own subquery: a flat
-  // `uc JOIN observations JOIN traces ... WHERE` defeats GreptimeDB pushdown of the uc/observations TIME
-  // INDEX window to the region scans. Score-grain predicates correlate to `o`, so they stay obs-side.
-  const obsRestRes = restList.filter((f) => f.table !== "traces").apply();
-  const traceRestRes = restList.filter((f) => f.table === "traces").apply();
-  const obsRestClause = obsRestRes.query ? `AND ${obsRestRes.query}` : "";
-  const traceRestClause = traceRestRes.query ? `AND ${traceRestRes.query}` : "";
   const envClause = env.query ? `AND ${env.query}` : "";
   const lookbackClause = useLookback
     ? "AND t.timestamp >= :traceTimestamp"
@@ -263,7 +264,7 @@ const getObservationDetailByTypeByTime = async (opts: {
   const tracesJoinSql = hasTraceFilter
     ? `JOIN (
         SELECT * FROM traces t
-        WHERE ${notDeleted("t")} ${traceRestClause} ${lookbackClause}
+        WHERE t.project_id = :projectId AND ${notDeleted("t")} ${traceRestClause} ${lookbackClause}
       ) t ON o.trace_id = t.id AND o.project_id = t.project_id`
     : "";
   // Pre-filtered observations subquery for Q2, bounded by the same window (the EAV row's timestamp is

@@ -135,7 +135,9 @@ export const buildObservationsTableQuery = (
   return {
     obsWhereSql: obsRes.query,
     traceWhereSql: traceRes.query,
-    params: { ...obsRes.params, ...traceRes.params },
+    // `projectId` binds the `t.project_id = :projectId` scope in the traces subquery (the o-side
+    // project filter above carries its own auto-generated placeholder, not :projectId).
+    params: { projectId, ...obsRes.params, ...traceRes.params },
     traceJoin,
     innerTraceJoin: traceFilters.length() > 0 || lookback !== undefined,
     lookback,

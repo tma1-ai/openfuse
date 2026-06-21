@@ -747,9 +747,9 @@ export const getUserMetrics = async (
 
   // Split the compiled filter by physical table so each side can be pre-filtered inside its own
   // subquery (a flat `traces JOIN observations ... WHERE` defeats GreptimeDB index pushdown on both
-  // the TIME INDEX and the user_id / trace_id bloom indexes). Observation-mapped columns target the
-  // observations_stats rollup, which this query does not use, so in practice only trace-level filters
-  // appear here -- splitting just keeps that invariant explicit and safe.
+  // the TIME INDEX and the user_id / trace_id bloom indexes). Score-grain predicates compile to
+  // trace-correlated EXISTS clauses, so keep them on the trace side; only observation-mapped predicates
+  // move into the observations subquery.
   const filterList = new FilterList(
     createGreptimeFilterFromFilterState(
       filter,
@@ -757,7 +757,9 @@ export const getUserMetrics = async (
       tracesTableCols,
     ),
   );
-  const traceFilterRes = filterList.filter((f) => f.table === "traces").apply();
+  const traceFilterRes = filterList
+    .filter((f) => f.table !== "observations")
+    .apply();
   const obsFilterRes = filterList
     .filter((f) => f.table === "observations")
     .apply();
