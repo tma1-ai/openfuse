@@ -157,9 +157,9 @@ const EnvSchema = z
     // singleton. The old single-flight gate capped live throughput at batchSize / single-flush-time
     // regardless of ingestion concurrency; allowing several flushes to pipeline lifts that ceiling.
     // Concurrent flushes claim disjoint group batches atomically and a per-entity in-flight guard keeps
-    // one entity's projection+EAV writes serialized, so different entities parallelize while same-entity
-    // EAV delete/write ordering is preserved. Conservative default — each flush still amplifies into
-    // EAV DELETEs against one GreptimeDB; raise once headroom is measured.
+    // one entity's projection+EAV writes serialized, so different entities parallelize while a single
+    // entity's writes stay ordered (its latest generation lands last). Conservative default — each flush
+    // still amplifies into the EAV fan-out against one GreptimeDB; raise once headroom is measured.
     LANGFUSE_GREPTIME_MAX_CONCURRENT_FLUSHES: z.coerce
       .number()
       .int()

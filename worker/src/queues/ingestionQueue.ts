@@ -185,8 +185,8 @@ export const ingestionQueueProcessorBuilder = (
 
       // Publish the watermark = max ingested_at this rebuild covered after the rebuild was accepted by
       // the writer. Plain SET: same-entity jobs are sharded in order so it is monotonic in practice,
-      // and a rare lower value only costs a redundant rebuild.
-      if (env.LANGFUSE_INGESTION_COALESCE_REBUILDS === "true" && redis) {
+      // and a rare lower value only costs a redundant rebuild. `redis` is non-null here (guarded above).
+      if (env.LANGFUSE_INGESTION_COALESCE_REBUILDS === "true") {
         await redis
           .set(
             coalesceKey,

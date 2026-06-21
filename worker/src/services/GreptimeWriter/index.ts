@@ -138,10 +138,18 @@ export class GreptimeWriter implements GreptimeProjectionSink {
   }) {
     // Exactly one seam is injected. A `write` fake is wrapped into the rows-based seam by building the
     // `Table`s here (cheap; the costly protobuf encode that warranted offloading lives in client.write,
-    // which the fake stubs out), so the entire writer funnels through one `writeEntries` path.
-    const write = deps.write;
-    this.writeEntries =
-      deps.writeEntries ?? ((entries) => write!(buildGreptimeTables(entries)));
+    // which the fake stubs out), so the entire writer funnels through one `writeEntries` path. Fail fast
+    // if neither seam is given rather than deferring to a confusing "write is not a function" later.
+    const { write, writeEntries } = deps;
+    if (writeEntries) {
+      this.writeEntries = writeEntries;
+    } else if (write) {
+      this.writeEntries = (entries) => write(buildGreptimeTables(entries));
+    } else {
+      throw new Error(
+        "GreptimeWriter requires either a `write` (Table-based) or `writeEntries` (rows-based) seam",
+      );
+    }
     this.batchSize = deps.batchSize ?? env.LANGFUSE_INGESTION_WRITE_BATCH_SIZE;
     this.writeInterval = env.LANGFUSE_INGESTION_WRITE_INTERVAL_MS;
     this.maxAttempts = env.LANGFUSE_INGESTION_WRITE_MAX_ATTEMPTS;
@@ -479,7 +487,8 @@ export class GreptimeWriter implements GreptimeProjectionSink {
    * A group (an entity's projection row + all its EAV rows, sharing one groupId) is never split.
    * Selection rules:
    *  - skip a group whose entity is already in-flight in another flush (`inFlightEntities`), so one
-   *    entity's EAV delete/write is never reordered across concurrent flushes;
+   *    entity's writes are never reordered across concurrent flushes (its latest generation must land
+   *    last so it wins the `last_non_null` merge and the projection's `eav_generation` points at it);
    *  - for a partial flush, take at most ONE group per entity (lowest groupId first, preserving the
    *    entity's write order) and stop near `batchSize` (always >= 1 group so an oversized fan-out still
    *    makes progress); `fullQueue` takes every group of every free entity.
@@ -512,10 +521,11 @@ export class GreptimeWriter implements GreptimeProjectionSink {
     let total = 0;
     for (const groupId of [...rowsByGroup.keys()].sort((a, b) => a - b)) {
       const entity = groupEntity.get(groupId);
-      // Another flush owns this entity — leave the group for a later flush to keep EAV order.
+      // Another flush owns this entity — leave the group for a later flush to keep its write order.
       if (entity !== undefined && this.inFlightEntities.has(entity)) continue;
       if (!fullQueue) {
-        // One group per entity per flush: avoids merging two snapshots' EAV under a single delete.
+        // One group per entity per flush: avoids mixing two snapshots' (generations') EAV rows in one
+        // combined write, where intra-request row order across tables is otherwise undefined.
         if (entity !== undefined && claimed.has(entity)) continue;
         const rows = rowsByGroup.get(groupId)!;
         if (chosen.size > 0 && total + rows > this.batchSize) break; // always take >= 1 group

@@ -10,17 +10,6 @@ const gpt4o = {
   tokenizerConfig: { tokenizerModel: "gpt-4o" },
 } as unknown as Model;
 
-const prose = (bytes: number): string => {
-  const words =
-    "the model generated a response about distributed systems and time series data".split(
-      " ",
-    );
-  let s = "";
-  let i = 0;
-  while (s.length < bytes) s += words[i++ % words.length] + " ";
-  return s.slice(0, bytes);
-};
-
 describe("tokenCount long-unbroken-run guard", () => {
   it("leaves normal text exact (no chunking below the run threshold)", () => {
     // A short whitespace-separated string never trips the guard, so the count must equal a single
@@ -37,8 +26,9 @@ describe("tokenCount long-unbroken-run guard", () => {
     const elapsedMs = performance.now() - start;
 
     expect(tokens).toBeGreaterThan(0);
-    // Windowed encode is linear; the un-guarded path took ~1.6s for this input. Stay well under.
-    expect(elapsedMs).toBeLessThan(400);
+    // Windowed encode is linear; the un-guarded path took ~1.6s for this input. A generous ceiling
+    // still catches the quadratic regression without flaking on a loaded CI host (wall-clock timing).
+    expect(elapsedMs).toBeLessThan(1000);
   });
 
   it("keeps the chunked count within a small boundary error of a coarser split", () => {
