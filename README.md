@@ -37,6 +37,21 @@ It also opens a direction that a single-purpose store cannot. Because the events
 - **Mutations, deletion, replay**: UI edits and deletions append synthetic events to `raw_events`, so replay rebuilds the merged (or soft-deleted) state instead of resurrecting or losing it.
 - **Automatic migrations**: the web and standalone containers migrate both Postgres and the GreptimeDB schema on startup — no manual bootstrap.
 
+## Screenshots
+
+The full Langfuse UI, served entirely from GreptimeDB.
+
+<table>
+  <tr>
+    <td width="50%"><img src="resources/screenshots/openfuse-dashboard-home.png" alt="Openfuse home dashboard — traces, model cost, scores, and latency analytics" /><br/><sub>Home dashboard — traces, model cost, scores, latency analytics</sub></td>
+    <td width="50%"><img src="resources/screenshots/openfuse-trace-detail.png" alt="Trace detail with a nested observation tree" /><br/><sub>Trace detail — nested observation tree</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="resources/screenshots/openfuse-traces-list.png" alt="Traces list with filters" /><br/><sub>Traces list</sub></td>
+    <td width="50%"><img src="resources/screenshots/openfuse-session-detail.png" alt="Session view" /><br/><sub>Session view</sub></td>
+  </tr>
+</table>
+
 ## Project status
 
 Openfuse is in **alpha** and actively moving toward beta. The ClickHouse → GreptimeDB migration is in place, the read path is parity-checked byte-for-byte against upstream Langfuse, and the full Langfuse product, API, and SDK surface works. Try it, run real workloads against it, and open issues — that feedback is what gets it to beta.
