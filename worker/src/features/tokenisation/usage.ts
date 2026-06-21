@@ -170,7 +170,47 @@ const getTokensByModel = (model: TiktokenModel, text: string) => {
   const cleandedText = unicodeToBytesInString(text);
 
   logger.debug(`Tokenized data for model: ${model}`);
-  return encoding?.encode(cleandedText, "all").length;
+  return encoding ? encodeTokenLength(encoding, cleandedText) : undefined;
+};
+
+// tiktoken's BPE is ~O(L^2) within a single pre-tokenized piece (a run with no whitespace/punctuation
+// for the GPT regex to split on). Natural-language and JSON text breaks into tiny pieces, so a full
+// encode is effectively linear. But a long unbroken run — base64 blobs, minified payloads,
+// embeddings-as-text — collapses into one huge piece and BPE degrades to quadratic: a 50KB blob costs
+// ~1.6s of CPU. Because token counting runs on a small worker pool, a handful of such observations
+// stalls ingestion drain. Guard it: only when an oversized unbroken run is present do we encode in
+// bounded windows and sum, capping per-encode work so the worst case is linear. The common path (no
+// long run) still encodes the whole text, so normal token counts stay exact.
+const PATHOLOGICAL_RUN_CHARS = 4_000;
+const ENCODE_WINDOW_CHARS = 2_000;
+
+const encodeTokenLength = (encoding: Tiktoken, text: string): number => {
+  if (!hasLongUnbrokenRun(text, PATHOLOGICAL_RUN_CHARS)) {
+    return encoding.encode(text, "all").length;
+  }
+  let total = 0;
+  for (let i = 0; i < text.length; i += ENCODE_WINDOW_CHARS) {
+    total += encoding.encode(
+      text.slice(i, i + ENCODE_WINDOW_CHARS),
+      "all",
+    ).length;
+  }
+  return total;
+};
+
+/** True if `text` contains a run of >= `threshold` consecutive non-whitespace chars (ASCII ws only). */
+const hasLongUnbrokenRun = (text: string, threshold: number): boolean => {
+  let run = 0;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    // space, or tab/LF/VT/FF/CR (9..13) — the cheap ASCII-whitespace check; any other char extends run.
+    if (c === 32 || (c >= 9 && c <= 13)) {
+      run = 0;
+    } else if (++run >= threshold) {
+      return true;
+    }
+  }
+  return false;
 };
 
 interface Tokenizer {
