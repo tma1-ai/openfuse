@@ -132,8 +132,8 @@ COPY --chown=openfuse:openfuse ./scripts/standalone-entrypoint.sh ./standalone-e
 RUN chmod +x ./standalone-entrypoint.sh
 
 # Default local blob-store mounts owned by the app user (see web/Dockerfile).
-RUN mkdir -p /langfuse_media_data /langfuse_event_data && \
-    chown openfuse:openfuse /langfuse_media_data /langfuse_event_data
+RUN mkdir -p /langfuse_media_data /langfuse_event_data /langfuse_batch_export_data && \
+    chown openfuse:openfuse /langfuse_media_data /langfuse_event_data /langfuse_batch_export_data
 
 USER openfuse
 

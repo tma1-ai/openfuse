@@ -18,7 +18,7 @@ The web and standalone entrypoints apply the GreptimeDB schema on startup (gated
 
 ### Object storage is optional, not gone
 
-Ingestion needs no object store — traces, observations, and scores persist to GreptimeDB `raw_events`. Media uploads, the OTel carrier, and the eval blob store default to local filesystem volumes in the bundled Compose files. But opt-in batch/blob **exports** still require an S3-compatible bucket. See [deployment](deployment.md).
+Ingestion needs no object store — traces, observations, and scores persist to GreptimeDB `raw_events`. Media uploads, the OTel carrier, the eval blob store, and batch exports all default to local filesystem volumes in the bundled Compose files, so a stock deployment runs with no S3/MinIO at all. Object storage stays fully supported (set the `*_STORAGE_BACKEND` variables to `s3`) for multi-node deployments, where a shared object store is the simpler way to share blobs across replicas. See [deployment](deployment.md).
 
 ## Source-of-truth exception
 

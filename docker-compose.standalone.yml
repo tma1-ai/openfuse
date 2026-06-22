@@ -38,6 +38,7 @@ services:
     volumes:
       - langfuse_media_data:/langfuse_media_data
       - langfuse_event_data:/langfuse_event_data
+      - langfuse_batch_export_data:/langfuse_batch_export_data
     environment:
       # --- core ---
       NEXTAUTH_URL: ${NEXTAUTH_URL:-http://localhost:3000}
@@ -64,6 +65,8 @@ services:
       LANGFUSE_MEDIA_LOCAL_PATH: ${LANGFUSE_MEDIA_LOCAL_PATH:-/langfuse_media_data}
       LANGFUSE_EVENT_STORAGE_BACKEND: ${LANGFUSE_EVENT_STORAGE_BACKEND:-local}
       LANGFUSE_EVENT_LOCAL_PATH: ${LANGFUSE_EVENT_LOCAL_PATH:-/langfuse_event_data}
+      LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND: ${LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND:-local}
+      LANGFUSE_BATCH_EXPORT_LOCAL_PATH: ${LANGFUSE_BATCH_EXPORT_LOCAL_PATH:-/langfuse_batch_export_data}
       # --- optional initial bootstrap org/project/user (web only) ---
       LANGFUSE_INIT_ORG_ID: ${LANGFUSE_INIT_ORG_ID:-}
       LANGFUSE_INIT_ORG_NAME: ${LANGFUSE_INIT_ORG_NAME:-}
@@ -143,6 +146,8 @@ volumes:
   langfuse_media_data:
     driver: local
   langfuse_event_data:
+    driver: local
+  langfuse_batch_export_data:
     driver: local
   langfuse_redis_data:
     driver: local

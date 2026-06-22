@@ -51,27 +51,28 @@ The fork ships a small server config at `docker/greptimedb/config.toml`, mounted
 
 ### Object storage is optional
 
-Ingestion and eval-generated scores persist to GreptimeDB `raw_events`, not to a blob store. The remaining object-storage consumers support a local-file backend, so a stock deployment needs **no** MinIO/S3:
+Ingestion and eval-generated scores persist to GreptimeDB `raw_events`, not to a blob store. Every remaining object-storage consumer supports a local-file backend, so a stock deployment needs **no** MinIO/S3:
 
-| Variable                         | App default | Bundled Compose | Local backend                         |
-| -------------------------------- | ----------- | --------------- | ------------------------------------- |
-| `LANGFUSE_MEDIA_STORAGE_BACKEND` | `s3`        | `local`         | `local` + `LANGFUSE_MEDIA_LOCAL_PATH` |
-| `LANGFUSE_EVENT_STORAGE_BACKEND` | `s3`        | `local`         | `local` + `LANGFUSE_EVENT_LOCAL_PATH` |
+| Variable                                | App default | Bundled Compose | Local backend                                |
+| --------------------------------------- | ----------- | --------------- | -------------------------------------------- |
+| `LANGFUSE_MEDIA_STORAGE_BACKEND`        | `s3`        | `local`         | `local` + `LANGFUSE_MEDIA_LOCAL_PATH`        |
+| `LANGFUSE_EVENT_STORAGE_BACKEND`        | `s3`        | `local`         | `local` + `LANGFUSE_EVENT_LOCAL_PATH`        |
+| `LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND` | `s3`        | `local`         | `local` + `LANGFUSE_BATCH_EXPORT_LOCAL_PATH` |
 
-The application default for these variables is `s3`, but this repo's `docker-compose.yml` overrides both to `local` (`${...:-local}`), so the bundled stack starts with no object store. `LANGFUSE_EVENT_STORAGE_BACKEND` covers both the OTel carrier and the eval blob store; with `local` they share a filesystem volume, so web and worker must mount the same `LANGFUSE_EVENT_LOCAL_PATH` (the Compose files wire a shared `langfuse_event_data` volume). Only opt-in batch/blob **exports** still require an S3-compatible bucket. The Compose files default both backends to `local` and put MinIO behind a `s3` profile (`docker compose --profile s3 up`), so the default stack starts no object store.
+The application default for these variables is `s3`, but this repo's `docker-compose.yml` overrides them to `local` (`${...:-local}`), so the bundled stack starts with no object store. Each `local` backend shares a filesystem volume between web and worker (the Compose files wire `langfuse_event_data` and `langfuse_batch_export_data`); `LANGFUSE_EVENT_STORAGE_BACKEND` covers both the OTel carrier and the eval blob store. Batch exports on the `local` backend are served by an authenticated web download route (signed, time-limited token, re-validated against the export row) instead of an S3 presigned URL, so the link in the export email and the exports page works without a bucket. The Compose files put MinIO behind a `s3` profile (`docker compose --profile s3 up`), so the default stack starts no object store.
 
 ### Data directories and persistent volumes
 
 The Compose files use Docker named volumes for every stateful path. Treat these as the deployment's data directory set:
 
-| Volume                       | Mounted path                  | Stores                                                                 |
-| ---------------------------- | ----------------------------- | ---------------------------------------------------------------------- |
-| `langfuse_postgres_data`     | `/var/lib/postgresql/data`    | Postgres application state: users, projects, API keys, prompts, config |
-| `langfuse_greptimedb_data`   | `/greptimedb_data`            | GreptimeDB analytics store: traces, observations, scores, dashboards   |
-| `langfuse_redis_data`        | `/data`                       | Redis queue state                                                       |
-| `langfuse_media_data`        | `/langfuse_media_data`        | Local media uploads when `LANGFUSE_MEDIA_STORAGE_BACKEND=local`        |
-| `langfuse_event_data`        | `/langfuse_event_data`        | Local OTel carrier and eval blobs when `LANGFUSE_EVENT_STORAGE_BACKEND=local` |
-| `langfuse_minio_data`        | `/data` in `minio`            | Optional MinIO bucket data when the `s3` profile is enabled             |
+| Volume                     | Mounted path               | Stores                                                                        |
+| -------------------------- | -------------------------- | ----------------------------------------------------------------------------- |
+| `langfuse_postgres_data`   | `/var/lib/postgresql/data` | Postgres application state: users, projects, API keys, prompts, config        |
+| `langfuse_greptimedb_data` | `/greptimedb_data`         | GreptimeDB analytics store: traces, observations, scores, dashboards          |
+| `langfuse_redis_data`      | `/data`                    | Redis queue state                                                             |
+| `langfuse_media_data`      | `/langfuse_media_data`     | Local media uploads when `LANGFUSE_MEDIA_STORAGE_BACKEND=local`               |
+| `langfuse_event_data`      | `/langfuse_event_data`     | Local OTel carrier and eval blobs when `LANGFUSE_EVENT_STORAGE_BACKEND=local` |
+| `langfuse_minio_data`      | `/data` in `minio`         | Optional MinIO bucket data when the `s3` profile is enabled                   |
 
 Runtime logs are not written to a separate application log directory by default. Web, worker, the standalone supervisor, Postgres, Redis, and GreptimeDB all write to container stdout/stderr; collect them through `docker compose logs` or your Docker logging driver. If you enable GreptimeDB file logging or replace Docker named volumes with bind mounts, keep the log directory outside the container's writable layer and include it in the same backup/retention plan as `langfuse_greptimedb_data`.
 

@@ -42,6 +42,14 @@ const EnvSchema = z
       .default("false"),
     LANGFUSE_S3_BATCH_EXPORT_SSE: z.enum(["AES256", "aws:kms"]).optional(),
     LANGFUSE_S3_BATCH_EXPORT_SSE_KMS_KEY_ID: z.string().optional(),
+    // Storage backend for batch exports. "local" writes the export file to a
+    // shared filesystem volume and hands out a signed web download URL instead
+    // of an S3 presigned URL, making object storage fully optional. Defaults to
+    // "s3" to preserve existing behavior (gated by LANGFUSE_S3_BATCH_EXPORT_ENABLED).
+    LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND: z
+      .enum(["s3", "local"])
+      .default("s3"),
+    LANGFUSE_BATCH_EXPORT_LOCAL_PATH: z.string().optional(),
 
     // Optional: ingestion + eval scores persist to GreptimeDB raw_events. A bucket is only needed when
     // LANGFUSE_EVENT_STORAGE_BACKEND is "s3" (OTel ingestion carrier + eval observation blob store).
@@ -576,6 +584,17 @@ const EnvSchema = z
         path: ["LANGFUSE_EVENT_LOCAL_PATH"],
         message:
           "LANGFUSE_EVENT_LOCAL_PATH is required when LANGFUSE_EVENT_STORAGE_BACKEND is 'local'",
+      });
+    }
+    if (
+      env.LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND === "local" &&
+      !env.LANGFUSE_BATCH_EXPORT_LOCAL_PATH
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["LANGFUSE_BATCH_EXPORT_LOCAL_PATH"],
+        message:
+          "LANGFUSE_BATCH_EXPORT_LOCAL_PATH is required when LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND is 'local'",
       });
     }
   });

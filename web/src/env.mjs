@@ -331,6 +331,12 @@ export const env = createEnv({
     LANGFUSE_S3_MEDIA_UPLOAD_SSE_KMS_KEY_ID: z.string().optional(),
     LANGFUSE_MEDIA_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
     LANGFUSE_MEDIA_LOCAL_PATH: z.string().optional(),
+    // Local-backend batch exports stream from this shared volume via the signed
+    // download route. Must match the worker's LANGFUSE_BATCH_EXPORT_LOCAL_PATH.
+    LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND: z
+      .enum(["s3", "local"])
+      .default("s3"),
+    LANGFUSE_BATCH_EXPORT_LOCAL_PATH: z.string().optional(),
 
     LANGFUSE_ALLOWED_ORGANIZATION_CREATORS: z
       .string()
@@ -713,6 +719,10 @@ export const env = createEnv({
       process.env.LANGFUSE_S3_MEDIA_UPLOAD_SSE_KMS_KEY_ID,
     LANGFUSE_MEDIA_STORAGE_BACKEND: process.env.LANGFUSE_MEDIA_STORAGE_BACKEND,
     LANGFUSE_MEDIA_LOCAL_PATH: process.env.LANGFUSE_MEDIA_LOCAL_PATH,
+    LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND:
+      process.env.LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND,
+    LANGFUSE_BATCH_EXPORT_LOCAL_PATH:
+      process.env.LANGFUSE_BATCH_EXPORT_LOCAL_PATH,
     // Worker
     NEXT_PUBLIC_POSTHOG_KEY: process.env.NEXT_PUBLIC_POSTHOG_KEY,
     NEXT_PUBLIC_POSTHOG_HOST: process.env.NEXT_PUBLIC_POSTHOG_HOST,

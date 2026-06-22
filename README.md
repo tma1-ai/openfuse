@@ -112,7 +112,7 @@ Full instructions for standalone, split web/worker images, and tag policy: [depl
 
 ## Architecture
 
-Postgres holds application and config data (users, projects, prompts, dataset definitions, API keys), unchanged from upstream Langfuse. GreptimeDB is the analytics event store: an append-only `raw_events` table as the source of truth, plus merged projection tables and indexed EAV side-tables that back metadata, tag, and tool filtering. Redis runs the BullMQ queues. Object storage (S3/MinIO) is optional for the default stack: media uploads, the OTel carrier, and the eval blob store default to local filesystem paths. Opt-in batch/blob exports still need an S3-compatible bucket.
+Postgres holds application and config data (users, projects, prompts, dataset definitions, API keys), unchanged from upstream Langfuse. GreptimeDB is the analytics event store: an append-only `raw_events` table as the source of truth, plus merged projection tables and indexed EAV side-tables that back metadata, tag, and tool filtering. Redis runs the BullMQ queues. Object storage (S3/MinIO) is optional for the default stack: media uploads, the OTel carrier, the eval blob store, and batch exports all default to local filesystem paths, so a stock deployment needs no bucket at all.
 
 Full write-up: [architecture](docs/architecture.md).
 
