@@ -24,9 +24,9 @@
  * filter actually took effect, so a silently-dropped column (wrong filter
  * name -> no-op filter) fails red instead of passing green.
  *
- * The exact failing case from #55 — a Sessions-list query with a `none of`
+ * The exact failing case from #55 - a Sessions-list query with a `none of`
  * environment filter, run through `getSessionsTable` (the rows query that
- * builds the `session_tags` CTE) — is asserted explicitly below.
+ * builds the `session_tags` CTE) - is asserted explicitly below.
  *
  * Run locally (needs a live GreptimeDB, e.g. `docker compose -f
  * docker-compose.dev.yml up -d greptimedb`):
@@ -121,7 +121,7 @@ const obsA = createObservation({
 });
 
 // SPAN under the staging session: no model, no cost, ERROR level, distinct
-// metadata — lets the model / cost / level / metadata filters discriminate.
+// metadata - lets the model / cost / level / metadata filters discriminate.
 const obsB = createObservation({
   id: v4(),
   trace_id: traceB.id,
@@ -633,7 +633,7 @@ const observationCases: Case[] = [
   },
 ];
 
-describe("GreptimeDB read path — plan-time integration gate (issue #55)", () => {
+describe("GreptimeDB read path - plan-time integration gate (issue #55)", () => {
   describe("sessions UI table", () => {
     it.each(sessionCases)(
       "plans + executes count/rows/metrics with filter: $label",
