@@ -8,7 +8,7 @@ For local development (no app containers), see [development](development.md). Fo
 
 There are two starting points:
 
-- **Evaluation / quickstart** — `cp .env.quickstart.example .env`. This ships working dev defaults (insecure, public) plus an auto-provisioned demo project, so `docker compose up` boots with zero edits. Do not use it on a network you do not control.
+- **Evaluation / quickstart** — `cp .env.quickstart.example .env`. This ships working dev defaults (insecure, public) plus an auto-provisioned demo project, so the bundled Compose files boot with zero edits. Do not use it on a network you do not control.
 - **Real deployment** — `cp .env.prod.example .env`, then set your own values for the secrets below.
 
 | Variable                              | Purpose                                                              | How to set                                                                                                                     |
@@ -60,6 +60,23 @@ Ingestion and eval-generated scores persist to GreptimeDB `raw_events`, not to a
 
 The application default for these variables is `s3`, but this repo's `docker-compose.yml` overrides both to `local` (`${...:-local}`), so the bundled stack starts with no object store. `LANGFUSE_EVENT_STORAGE_BACKEND` covers both the OTel carrier and the eval blob store; with `local` they share a filesystem volume, so web and worker must mount the same `LANGFUSE_EVENT_LOCAL_PATH` (the Compose files wire a shared `langfuse_event_data` volume). Only opt-in batch/blob **exports** still require an S3-compatible bucket. The Compose files default both backends to `local` and put MinIO behind a `s3` profile (`docker compose --profile s3 up`), so the default stack starts no object store.
 
+### Data directories and persistent volumes
+
+The Compose files use Docker named volumes for every stateful path. Treat these as the deployment's data directory set:
+
+| Volume                       | Mounted path                  | Stores                                                                 |
+| ---------------------------- | ----------------------------- | ---------------------------------------------------------------------- |
+| `langfuse_postgres_data`     | `/var/lib/postgresql/data`    | Postgres application state: users, projects, API keys, prompts, config |
+| `langfuse_greptimedb_data`   | `/greptimedb_data`            | GreptimeDB analytics store: traces, observations, scores, dashboards   |
+| `langfuse_redis_data`        | `/data`                       | Redis queue state                                                       |
+| `langfuse_media_data`        | `/langfuse_media_data`        | Local media uploads when `LANGFUSE_MEDIA_STORAGE_BACKEND=local`        |
+| `langfuse_event_data`        | `/langfuse_event_data`        | Local OTel carrier and eval blobs when `LANGFUSE_EVENT_STORAGE_BACKEND=local` |
+| `langfuse_minio_data`        | `/data` in `minio`            | Optional MinIO bucket data when the `s3` profile is enabled             |
+
+Runtime logs are not written to a separate application log directory by default. Web, worker, the standalone supervisor, Postgres, Redis, and GreptimeDB all write to container stdout/stderr; collect them through `docker compose logs` or your Docker logging driver. If you enable GreptimeDB file logging or replace Docker named volumes with bind mounts, keep the log directory outside the container's writable layer and include it in the same backup/retention plan as `langfuse_greptimedb_data`.
+
+Do not run `docker compose down -v` on a real deployment unless you intentionally want to delete the service data. `docker compose down` removes containers and networks but keeps the named volumes; `down -v` removes them. If you replace the named volumes with bind mounts, keep the same container paths above and make sure the app containers can write to the media/event paths. In the split topology, both `langfuse-web` and `langfuse-worker` must mount the same `langfuse_media_data` and `langfuse_event_data` storage.
+
 ## 2. Migrations run automatically on startup
 
 Both schemas are applied by the container entrypoint when the app starts — you do not bootstrap anything by hand for a normal deployment:
@@ -90,50 +107,50 @@ There are two topologies. Both read the same `.env`, both auto-migrate on startu
 
 `tma1ai/openfuse-standalone` runs **both** the web server and the worker in one container under a process supervisor — the GreptimeDB-standalone analogue for Openfuse. `docker-compose.standalone.yml` wires it to Postgres, Redis, and GreptimeDB.
 
-Build from this repo:
+Run the published image:
 
 ```bash
-docker compose -f docker-compose.standalone.yml up -d   # then open http://localhost:3000
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.2 \
+  docker compose -f docker-compose.standalone.yml up -d --pull always
 ```
 
-Or run the published image instead of building locally — set the override in `.env` and pull:
+Then open <http://localhost:3000>.
+
+Or build from this repo:
+
+```bash
+docker compose -f docker-compose.standalone.yml up -d
+```
+
+The supervisor treats the two processes as one unit: if either exits, the container stops so your restart policy restarts the whole thing. To keep the image tag across restarts, put this in `.env`:
 
 ```bash
 OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.2
 ```
 
-```bash
-docker compose -f docker-compose.standalone.yml up -d --pull always
-```
-
-The supervisor treats the two processes as one unit: if either exits, the container stops so your restart policy restarts the whole thing.
-
 ### Split web + worker (`docker-compose.yml`)
 
 The production stack runs web and worker as separate, independently scalable services: `langfuse-web`, `langfuse-worker`, `greptimedb`, `postgres`, `redis` (`minio` is defined but gated behind the `s3` profile, so it does not start by default). GreptimeDB runs in `standalone` mode and persists to the `langfuse_greptimedb_data` volume.
 
-Build from this repo (default):
+Run the published images:
 
 ```bash
-docker compose up -d   # builds web/worker from source, starts the full stack
+OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.2 \
+OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.2 \
+  docker compose up -d --pull always
 ```
 
-Or run the published images instead of building — pin the tags in `.env`:
+Or build web/worker from this repo:
 
 ```bash
-OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.2
-OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.2
+docker compose up -d
 ```
 
-```bash
-docker compose up -d --pull always   # uses the pinned images instead of building
-```
-
-This Compose file defines both `build:` and `image:` for web/worker, so `--pull always` is what makes it pull the published image rather than build locally; a plain `docker compose up` would build. Validate the file first with `docker compose config -q`.
+The split Compose file defines both `build:` and `image:` for web/worker, so `--pull always` is what makes it pull the published images rather than build locally; a plain `docker compose up` builds. Validate the file first with `docker compose config -q`.
 
 ### Published images and tags
 
-Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: [`tma1ai/openfuse-web`](https://hub.docker.com/r/tma1ai/openfuse-web), [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker), [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone). The first preview is `1.0.0-alpha.2`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha.2`) and a commit-SHA tag. The floating `major.minor` and `major` tags and `latest` are published only for stable releases — the workflow skips all of them for any SemVer pre-release (`-alpha` / `-beta` / `-rc`), which get only the exact `{{version}}` and commit-SHA tags. So during the alpha, `latest` does not move; pin an explicit tag. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
+Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: [`tma1ai/openfuse-web`](https://hub.docker.com/r/tma1ai/openfuse-web), [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker), [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone). The current preview is `1.0.0-alpha.2`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha.2`) and a commit-SHA tag. The floating `major.minor` and `major` tags and `latest` are published only for stable releases — the workflow skips all of them for any SemVer pre-release (`-alpha` / `-beta` / `-rc`), which get only the exact `{{version}}` and commit-SHA tags. So during the alpha, `latest` does not move; pin an explicit tag. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
 
 ## 4. Verify and persist
 

@@ -7,12 +7,11 @@
 
 ### LLM engineering on a real observability database
 
-[![Release](https://img.shields.io/badge/release-1.0.0--alpha.1-f97316)](https://github.com/tma1-ai/openfuse/releases)
+[![Release](https://img.shields.io/badge/release-1.0.0--alpha.2-f97316)](https://github.com/tma1-ai/openfuse/releases)
+[![Docker Standalone](https://img.shields.io/docker/v/tma1ai/openfuse-standalone?label=docker%20standalone&sort=semver&color=2496ed)](https://hub.docker.com/r/tma1ai/openfuse-standalone)
 [![Status](https://img.shields.io/badge/status-alpha-eab308)](docs/known-limitations.md)
 [![License](https://img.shields.io/badge/license-MIT-3b82f6)](LICENSE)
 [![Based on Langfuse](https://img.shields.io/badge/based%20on-Langfuse%20v3.184.1-0ea5e9)](https://github.com/langfuse/langfuse)
-[![Storage: GreptimeDB](https://img.shields.io/badge/storage-GreptimeDB-00b39f)](https://github.com/GreptimeTeam/greptimedb)
-[![GitHub stars](https://img.shields.io/github/stars/tma1-ai/openfuse?style=flat&color=8b5cf6)](https://github.com/tma1-ai/openfuse/stargazers)
 
 [Quickstart](#5-minute-quickstart-docker-compose) · [Deployment](docs/deployment.md) · [Operations](docs/operations.md) · [Architecture](docs/architecture.md) · [Known limitations](docs/known-limitations.md) · [中文](README.zh.md)
 
@@ -48,30 +47,39 @@ The full Langfuse UI, served entirely from GreptimeDB.
 
 - **Your Langfuse SDKs work unchanged.** Point any existing Langfuse SDK — or any OpenTelemetry tracer — at Openfuse, and your traces, observations, and scores land with zero code changes.
 - **The full tracing UI.** Explore traces and nested observations, sessions, and users, with the same search and filtering you have in Langfuse.
-- **Dashboards and metrics.** Cost, token usage, latency percentiles, and score analytics — filtered and broken down by metadata, tags, and tools. The numbers match upstream Langfuse exactly ([parity report](docs/greptimedb-migration/parity/PARITY-REPORT.md)).
+- **Dashboards and metrics.** Cost, token usage, latency percentiles, and score analytics — filtered and broken down by metadata, tags, and tools. Covered parity cases match upstream Langfuse; intentional differences are documented in the [parity report](docs/greptimedb-migration/parity/PARITY-REPORT.md).
 - **Datasets, experiments, and evals.** The evaluation workflow works end to end.
 - **Edit, delete, and export.** UI edits, deletions, and data exports behave as you'd expect, including full project deletion.
 - **Self-host in one container.** The standalone image brings up the whole stack and prepares its storage on first start — no manual database steps.
 
 ## 5-minute quickstart (Docker Compose)
 
-Requirements: Docker and Docker Compose. The quickest path is the single `openfuse-standalone` container — web + worker in one process — wired to Postgres, Redis, and GreptimeDB. Both schemas migrate automatically on startup; object storage is off by default.
+Requirements: Docker and Docker Compose. The quickest path is the published single `openfuse-standalone` image — web + worker in one process — wired to Postgres, Redis, and GreptimeDB. Both schemas migrate automatically on startup; object storage is off by default.
 
 ```bash
 git clone https://github.com/tma1-ai/openfuse.git
 cd openfuse
-cp .env.quickstart.example .env                        # working dev defaults — no edits needed
-docker compose -f docker-compose.standalone.yml up -d  # one app container + Postgres/Redis/GreptimeDB
+cp .env.quickstart.example .env
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.2 \
+  docker compose -f docker-compose.standalone.yml up -d --pull always
 ```
 
 Open <http://localhost:3000>. The quickstart env auto-creates a demo project, so you can log in as `demo@example.com` / `langfuse-dev` or point any Langfuse SDK at the bundled keys (`pk-lf-1234567890` / `sk-lf-1234567890`) right away. Those values are insecure dev defaults — for a real deployment start from `.env.prod.example` and set your own secrets, including a GreptimeDB password (`GREPTIME_PASSWORD`) to turn on enforced auth on the analytics store. Full guide: [deployment](docs/deployment.md).
 
-### Split web + worker
-
-To scale web and worker independently, use the default `docker-compose.yml` (separate `langfuse-web` and `langfuse-worker` images) instead:
+To build the standalone image from the checkout instead of pulling the published image:
 
 ```bash
-docker compose up -d   # builds web/worker, starts the full stack
+docker compose -f docker-compose.standalone.yml up -d
+```
+
+### Split web + worker
+
+To scale web and worker independently, use the default `docker-compose.yml` (separate `openfuse-web` and `openfuse-worker` images) instead:
+
+```bash
+OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.2 \
+OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.2 \
+  docker compose up -d --pull always
 ```
 
 ## Project status
@@ -88,7 +96,19 @@ Release images are published to Docker Hub on each `v*` tag:
 - [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker)
 - [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone) — web + worker in one container, for single-node self-hosting
 
-The first preview is `1.0.0-alpha.2`. To run the standalone image instead of building locally, pin a tag in `.env` (e.g. `OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.2`) and start with `docker compose -f docker-compose.standalone.yml up -d --pull always`. Full instructions for standalone, split web/worker images, and tag policy: [deployment](docs/deployment.md#published-images-and-tags).
+The current preview is `1.0.0-alpha.2`. To run the standalone image instead of building locally, pin a tag in `.env`:
+
+```bash
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.2
+```
+
+and start with:
+
+```bash
+docker compose -f docker-compose.standalone.yml up -d --pull always
+```
+
+Full instructions for standalone, split web/worker images, and tag policy: [deployment](docs/deployment.md#published-images-and-tags).
 
 ## Architecture
 
@@ -104,7 +124,7 @@ Openfuse is a community fork and is not affiliated with or endorsed by Langfuse.
 
 ## Documentation
 
-- [Deployment](docs/deployment.md): self-host with Docker Compose, env, automatic migrations, standalone and published images.
+- [Deployment](docs/deployment.md): self-host with Docker Compose, env, data directories, automatic migrations, standalone and published images.
 - [Operations](docs/operations.md): monitoring, performance and compaction, capacity, backup and recovery, upgrades.
 - [Development](docs/development.md): local setup, GreptimeDB schema, targeted tests.
 - [Architecture](docs/architecture.md): what lives where, and why ClickHouse is gone.

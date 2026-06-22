@@ -63,7 +63,7 @@ For measured drain / query-latency / storage numbers against upstream Langfuse o
 
 Retention is database-level TTL: `LANGFUSE_GREPTIME_TTL` (default `730d`) is applied at startup via `ALTER DATABASE ... SET 'ttl'`, covering every table at once. To change it, set the env and restart.
 
-GreptimeDB stores data in object storage with local disk as cache, so storage scales independently of compute. For sizing disk, object storage, and compute, see [GreptimeDB · Capacity plan](https://docs.greptime.com/user-guide/deployments-administration/capacity-plan/). For scaling the Langfuse web/worker tier, see [Langfuse · Scaling](https://langfuse.com/self-hosting/scaling).
+The bundled single-node Compose stack stores GreptimeDB data on local disk (`langfuse_greptimedb_data`). GreptimeDB can also use object storage with local disk as cache, which lets storage scale independently of compute when you move beyond the default standalone setup. For sizing disk, object storage, and compute, see [GreptimeDB · Capacity plan](https://docs.greptime.com/user-guide/deployments-administration/capacity-plan/). For scaling the Langfuse web/worker tier, see [Langfuse · Scaling](https://langfuse.com/self-hosting/scaling).
 
 ## Backup and disaster recovery
 
