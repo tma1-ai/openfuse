@@ -788,8 +788,7 @@ export async function getAuthOptions(): Promise<NextAuthOptions> {
             environment: {
               enableExperimentalFeatures:
                 env.LANGFUSE_ENABLE_EXPERIMENTAL_FEATURES === "true",
-              // Enables features that are only available under an enterprise license when self-hosting Langfuse
-              // If you edit this line, you risk executing code that is not MIT licensed (self-contained in /ee folders otherwise)
+              // Openfuse runs every self-hosted feature unlocked under MIT.
               selfHostedInstancePlan: getSelfHostedInstancePlanServerSide(),
             },
             user:
@@ -856,8 +855,8 @@ export async function getAuthOptions(): Promise<NextAuthOptions> {
                               ),
                             ),
 
-                          // Enables features/entitlements based on the plan of the organization, either cloud or EE version when self-hosting
-                          // If you edit this line, you risk executing code that is not MIT licensed (contained in /ee folders, see LICENSE)
+                          // Resolves the organization plan. Self-hosted Openfuse
+                          // always returns the top tier; cloud plans still apply.
                           plan: getOrganizationPlanServerSide(
                             parsedCloudConfig.data,
                           ),

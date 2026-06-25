@@ -38,7 +38,6 @@ export interface OtelIngestionProcessorConfig {
   projectId: string;
   publicKey?: string;
   orgId?: string;
-  propagatedHeaders?: Record<string, string>;
   sdkName?: string;
   sdkVersion?: string;
   ingestionVersion?: string;
@@ -152,7 +151,6 @@ export class OtelIngestionProcessor {
   private readonly projectId: string;
   private readonly publicKey?: string;
   private readonly orgId?: string;
-  private readonly propagatedHeaders?: Record<string, string>;
   private readonly sdkName?: string;
   private readonly sdkVersion?: string;
   private readonly ingestionVersion?: string;
@@ -161,7 +159,6 @@ export class OtelIngestionProcessor {
     this.projectId = config.projectId;
     this.publicKey = config.publicKey;
     this.orgId = config.orgId;
-    this.propagatedHeaders = config.propagatedHeaders;
     this.sdkName = config.sdkName;
     this.sdkVersion = config.sdkVersion;
     this.ingestionVersion = config.ingestionVersion;
@@ -209,7 +206,6 @@ export class OtelIngestionProcessor {
                 orgId: this.orgId,
               },
             },
-            propagatedHeaders: this.propagatedHeaders,
             sdkName: this.sdkName,
             sdkVersion: this.sdkVersion,
             ingestionVersion: this.ingestionVersion,

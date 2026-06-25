@@ -23,12 +23,8 @@ export async function telemetry() {
     if (process.env.NODE_ENV !== "production") return;
     // Do not run in Langfuse cloud, separate telemetry is used
     if (env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION !== undefined) return;
-    // Check if telemetry is not disabled, except for EE
-    if (
-      env.TELEMETRY_ENABLED === "false" &&
-      env.LANGFUSE_EE_LICENSE_KEY === undefined
-    )
-      return;
+    // Check if telemetry is disabled
+    if (env.TELEMETRY_ENABLED === "false") return;
     // Do not run in CI
     if (process.env.CI) return;
 
@@ -265,7 +261,6 @@ async function posthogTelemetry({
         datasetRunItems: countDatasetRunItems,
         startTimeframe: startTimeframe?.toISOString(),
         endTimeframe: endTimeframe.toISOString(),
-        eeLicenseKey: env.LANGFUSE_EE_LICENSE_KEY,
         langfuseCloudRegion: env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION,
         $set: {
           environment: process.env.NODE_ENV,

@@ -158,25 +158,10 @@ export default withMiddlewares({
         };
       }
 
-      // Extract headers to propagate for ingestion masking
-      const propagatedHeaderNames =
-        env.LANGFUSE_INGESTION_MASKING_PROPAGATED_HEADERS;
-      const propagatedHeaders: Record<string, string> = {};
-      for (const headerName of propagatedHeaderNames) {
-        const value = req.headers[headerName];
-        if (typeof value === "string") {
-          propagatedHeaders[headerName] = value;
-        }
-      }
-
       const processor = new OtelIngestionProcessor({
         projectId: auth.scope.projectId,
         publicKey: auth.scope.publicKey,
         orgId: auth.scope.orgId,
-        propagatedHeaders:
-          Object.keys(propagatedHeaders).length > 0
-            ? propagatedHeaders
-            : undefined,
         sdkName,
         sdkVersion,
         ingestionVersion,

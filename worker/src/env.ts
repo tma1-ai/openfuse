@@ -325,15 +325,6 @@ const EnvSchema = z
     QUEUE_CONSUMER_MONITOR_QUEUE_IS_ENABLED: z
       .enum(["true", "false"])
       .default("true"),
-    QUEUE_CONSUMER_CLOUD_USAGE_METERING_QUEUE_IS_ENABLED: z
-      .enum(["true", "false"])
-      .default("true"),
-    QUEUE_CONSUMER_CLOUD_SPEND_ALERT_QUEUE_IS_ENABLED: z
-      .enum(["true", "false"])
-      .default("true"),
-    QUEUE_CONSUMER_FREE_TIER_USAGE_THRESHOLD_QUEUE_IS_ENABLED: z
-      .enum(["true", "false"])
-      .default("true"),
     QUEUE_CONSUMER_INGESTION_QUEUE_IS_ENABLED: z
       .enum(["true", "false"])
       .default("true"),
@@ -447,17 +438,6 @@ const EnvSchema = z
     // the filesystem (no object store).
     LANGFUSE_EVENT_STORAGE_BACKEND: z.enum(["s3", "local"]).default("s3"),
     LANGFUSE_EVENT_LOCAL_PATH: z.string().optional(),
-
-    // Metering data Postgres export - Langfuse Cloud
-    LANGFUSE_POSTGRES_METERING_DATA_EXPORT_IS_ENABLED: z
-      .enum(["true", "false"])
-      .default("false"),
-
-    // When disabled: Usage is still tracked in DB but no emails are sent and no orgs are blocked
-    // When enabled: Full enforcement (emails + blocking)
-    LANGFUSE_FREE_TIER_USAGE_THRESHOLD_ENFORCEMENT_ENABLED: z
-      .enum(["true", "false"])
-      .default("false"),
 
     LANGFUSE_PROJECT_DELETION_CONCURRENCY_DURATION_MS: z.coerce
       .number()

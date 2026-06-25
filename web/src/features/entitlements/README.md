@@ -15,7 +15,9 @@ This feature allows to control for availability of features. Entitlements are ma
   - Self-hosted
     - Added to JWT via NextAuth on `environment` as `selfHostedInstancePlan`
     - In addition, also added to the organization object on the JWT via NextAuth
-    - Available based on license key outside of TRPC apis and react hooks via `getSelfHostedInstancePlanServerSide`
+    - Openfuse runs MIT-only: `getSelfHostedInstancePlanServerSide` always
+      returns the top tier, so every self-hosted feature is unlocked with no
+      license key
   - Use of plan
     - Hook: `usePlan`
     - Server side: `getOrganizationPlanServerSide` based on cloudConfig, or `getSelfHostedInstancePlanServerSide` for instance-level plan

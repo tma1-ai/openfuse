@@ -62,7 +62,7 @@ export class QueueMetricsRunner extends PeriodicRunner {
     // Only poll queues that have registered workers. This avoids calling
     // getInstance() on queues this worker doesn't consume, which would
     // create unnecessary Redis connections and can trigger side effects
-    // (e.g. CloudUsageMeteringQueue.getInstance() enqueues cron jobs).
+    // (e.g. a scheduled-cron queue's getInstance() enqueues jobs).
     const registeredNames = new Set(WorkerManager.getRegisteredQueueNames());
     const promises: Promise<void>[] = [];
 

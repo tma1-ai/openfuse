@@ -1,9 +1,6 @@
 import { Queue } from "bullmq";
 import { QueueName } from "../queues";
 import { BatchExportQueue } from "./batchExport";
-import { CloudUsageMeteringQueue } from "./cloudUsageMeteringQueue";
-import { CloudSpendAlertQueue } from "./cloudSpendAlertQueue";
-import { CloudFreeTierUsageThresholdQueue } from "./cloudFreeTierUsageThresholdQueue";
 import { DatasetRunItemUpsertQueue } from "./datasetRunItemUpsert";
 import { ExperimentCreateQueue } from "./experimentCreateQueue";
 import { TraceDeleteQueue } from "./traceDelete";
@@ -15,7 +12,6 @@ import { MixpanelIntegrationProcessingQueue } from "./mixpanelIntegrationProcess
 import { BlobStorageIntegrationQueue } from "./blobStorageIntegrationQueue";
 import { BlobStorageIntegrationProcessingQueue } from "./blobStorageIntegrationProcessingQueue";
 import { CoreDataS3ExportQueue } from "./coreDataS3ExportQueue";
-import { MeteringDataPostgresExportQueue } from "./meteringDataPostgresExportQueue";
 import { BatchActionQueue } from "./batchActionQueue";
 import { CreateEvalQueue } from "./createEvalQueue";
 import { ScoreDeleteQueue } from "./scoreDelete";
@@ -47,12 +43,6 @@ export function getQueue(
   switch (queueName) {
     case QueueName.BatchExport:
       return BatchExportQueue.getInstance();
-    case QueueName.CloudUsageMeteringQueue:
-      return CloudUsageMeteringQueue.getInstance();
-    case QueueName.CloudSpendAlertQueue:
-      return CloudSpendAlertQueue.getInstance();
-    case QueueName.CloudFreeTierUsageThresholdQueue:
-      return CloudFreeTierUsageThresholdQueue.getInstance();
     case QueueName.DatasetRunItemUpsert:
       return DatasetRunItemUpsertQueue.getInstance();
     case QueueName.DatasetDelete:
@@ -77,8 +67,6 @@ export function getQueue(
       return BlobStorageIntegrationProcessingQueue.getInstance();
     case QueueName.CoreDataS3ExportQueue:
       return CoreDataS3ExportQueue.getInstance();
-    case QueueName.MeteringDataPostgresExportQueue:
-      return MeteringDataPostgresExportQueue.getInstance();
     case QueueName.BatchActionQueue:
       return BatchActionQueue.getInstance();
     case QueueName.CreateEvalQueue:
