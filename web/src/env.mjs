@@ -336,7 +336,19 @@ export const env = createEnv({
     LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND: z
       .enum(["s3", "local"])
       .default("s3"),
-    LANGFUSE_BATCH_EXPORT_LOCAL_PATH: z.string().optional(),
+    // Fail fast like the worker: the download route streams from this path, so a
+    // "local" backend with no path would let exports complete but 500 every
+    // download. t3-env has no cross-field hook, so the gate reads the sibling
+    // backend from process.env directly.
+    LANGFUSE_BATCH_EXPORT_LOCAL_PATH: z
+      .string()
+      .optional()
+      .refine(
+        (value) =>
+          process.env.LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND !== "local" ||
+          !!value,
+        "LANGFUSE_BATCH_EXPORT_LOCAL_PATH is required when LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND is 'local'",
+      ),
 
     LANGFUSE_ALLOWED_ORGANIZATION_CREATORS: z
       .string()
