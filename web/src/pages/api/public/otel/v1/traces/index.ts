@@ -9,7 +9,6 @@ import { z } from "zod";
 import { $root } from "@/src/pages/api/public/otel/otlp-proto/generated/root";
 import { gunzip } from "node:zlib";
 import { ForbiddenError } from "@langfuse/shared";
-import { env } from "@/src/env.mjs";
 
 /** Read a Langfuse header that may arrive with hyphens or underscores. */
 function getLangfuseHeader(
