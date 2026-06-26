@@ -138,4 +138,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) to contribute, and [SECURITY.md](SECURITY
 
 ## License
 
-This fork inherits upstream Langfuse licensing: the core is MIT; `ee/` is under the Langfuse EE license. Openfuse is a community fork of Langfuse and retains upstream copyright and attribution. See [LICENSE](LICENSE).
+Openfuse is licensed in full under the MIT license — every feature ships unlocked, with no enterprise tier or commercial license key. It is a community fork of Langfuse and retains upstream copyright and attribution. See [LICENSE](LICENSE).

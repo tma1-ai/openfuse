@@ -269,14 +269,6 @@ export const env = createEnv({
     OTEL_SERVICE_NAME: z.string().default("web"),
     OTEL_TRACE_SAMPLING_RATIO: z.coerce.number().gt(0).lte(1).default(1),
 
-    // OTel Masking
-    LANGFUSE_INGESTION_MASKING_PROPAGATED_HEADERS: z
-      .string()
-      .optional()
-      .transform((s) =>
-        s ? s.split(",").map((h) => h.toLowerCase().trim()) : [],
-      ),
-
     // clickhouse
 
     // EE ui customization
@@ -293,8 +285,6 @@ export const env = createEnv({
     LANGFUSE_UI_DEFAULT_BASE_URL_ANTHROPIC: z.url().optional(),
     LANGFUSE_UI_DEFAULT_BASE_URL_AZURE: z.url().optional(),
 
-    // EE License
-    LANGFUSE_EE_LICENSE_KEY: z.string().optional(),
     ADMIN_API_KEY: z.string().optional(),
     ENCRYPTION_KEY: z
       .string()
@@ -686,9 +676,6 @@ export const env = createEnv({
     OTEL_SERVICE_NAME: process.env.OTEL_SERVICE_NAME,
     OTEL_TRACE_SAMPLING_RATIO: process.env.OTEL_TRACE_SAMPLING_RATIO,
 
-    LANGFUSE_INGESTION_MASKING_PROPAGATED_HEADERS:
-      process.env.LANGFUSE_INGESTION_MASKING_PROPAGATED_HEADERS,
-
     // S3 media upload
     LANGFUSE_S3_MEDIA_MAX_CONTENT_LENGTH:
       process.env.LANGFUSE_S3_MEDIA_MAX_CONTENT_LENGTH,
@@ -746,8 +733,6 @@ export const env = createEnv({
     // Playground
     NEXT_PUBLIC_LANGFUSE_PLAYGROUND_STREAMING_ENABLED_DEFAULT:
       process.env.NEXT_PUBLIC_LANGFUSE_PLAYGROUND_STREAMING_ENABLED_DEFAULT,
-    // EE License
-    LANGFUSE_EE_LICENSE_KEY: process.env.LANGFUSE_EE_LICENSE_KEY,
     ADMIN_API_KEY: process.env.ADMIN_API_KEY,
     ENCRYPTION_KEY: process.env.ENCRYPTION_KEY,
     // langfuse caching

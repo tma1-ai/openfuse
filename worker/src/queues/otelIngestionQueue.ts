@@ -17,10 +17,6 @@ import {
   TQueueJobTypes,
   traceException,
 } from "@langfuse/shared/src/server";
-import {
-  applyIngestionMasking,
-  isIngestionMaskingEnabled,
-} from "@langfuse/shared/src/server/ee/ingestionMasking";
 import { env } from "../env";
 import { IngestionService } from "../services/IngestionService";
 import { prisma } from "@langfuse/shared/src/db";
@@ -103,32 +99,7 @@ export const otelIngestionQueueProcessorBuilder = (
       );
 
       // Parse spans from S3 download
-      let parsedSpans = JSON.parse(resourceSpans);
-
-      // Apply ingestion masking if enabled (EE feature)
-      if (isIngestionMaskingEnabled()) {
-        const maskingResult = await applyIngestionMasking({
-          data: parsedSpans,
-          projectId,
-          orgId: job.data.payload.authCheck.scope.orgId,
-          propagatedHeaders: job.data.payload.propagatedHeaders,
-        });
-
-        if (!maskingResult.success) {
-          // Fail-closed: drop event. Emit the carrier location so operators can identify which raw
-          // OTel payloads were dropped; the file remains in the event blob store and can be
-          // re-ingested once the upstream masking callback is healthy again.
-          logger.warn(`Dropping OTEL event due to masking failure`, {
-            projectId,
-            orgId: job.data.payload.authCheck.scope.orgId,
-            fileKey,
-            error: maskingResult.error,
-            propagatedHeaders: job.data.payload.propagatedHeaders,
-          });
-          return;
-        }
-        parsedSpans = maskingResult.data;
-      }
+      const parsedSpans = JSON.parse(resourceSpans);
 
       // Generate events via OtelIngestionProcessor
       const processor = new OtelIngestionProcessor({

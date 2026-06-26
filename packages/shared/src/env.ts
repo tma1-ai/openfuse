@@ -294,9 +294,6 @@ const EnvSchema = z
       .default("false"),
     LANGFUSE_S3_CORE_DATA_EXPORT_SSE: z.enum(["AES256", "aws:kms"]).optional(),
     LANGFUSE_S3_CORE_DATA_EXPORT_SSE_KMS_KEY_ID: z.string().optional(),
-    LANGFUSE_POSTGRES_METERING_DATA_EXPORT_IS_ENABLED: z
-      .enum(["true", "false"])
-      .default("false"),
 
     LANGFUSE_CUSTOM_SSO_EMAIL_CLAIM: z.string().default("email"),
     LANGFUSE_CUSTOM_SSO_NAME_CLAIM: z.string().default("name"),
@@ -446,29 +443,6 @@ const EnvSchema = z
     LANGFUSE_DATASET_SERVICE_READ_FROM_VERSIONED_IMPLEMENTATION: z
       .enum(["true", "false"])
       .default("true"),
-
-    // EE License
-    LANGFUSE_EE_LICENSE_KEY: z.string().optional(),
-
-    // Ingestion Masking (EE feature)
-    LANGFUSE_INGESTION_MASKING_CALLBACK_URL: z.url().optional(),
-    LANGFUSE_INGESTION_MASKING_CALLBACK_TIMEOUT_MS: z.coerce
-      .number()
-      .positive()
-      .default(500),
-    LANGFUSE_INGESTION_MASKING_CALLBACK_FAIL_CLOSED: z
-      .enum(["true", "false"])
-      .default("false"),
-    LANGFUSE_INGESTION_MASKING_MAX_RETRIES: z.coerce
-      .number()
-      .nonnegative()
-      .default(1),
-    LANGFUSE_INGESTION_MASKING_PROPAGATED_HEADERS: z
-      .string()
-      .optional()
-      .transform((s) =>
-        s ? s.split(",").map((h) => h.toLowerCase().trim()) : [],
-      ),
   })
   .superRefine((env, ctx) => {
     // The local media backend cannot resolve any path without an explicit base

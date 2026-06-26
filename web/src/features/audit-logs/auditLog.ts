@@ -43,7 +43,6 @@ export type AuditableResource =
   | "automation"
   | "action"
   | "slackIntegration"
-  | "cloudSpendAlert"
   | "verifiedDomain"
   | "ssoConfig"
   // legacy resources

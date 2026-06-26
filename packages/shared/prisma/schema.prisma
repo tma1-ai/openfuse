@@ -101,7 +101,6 @@ model Organization {
   cloudBillingCycleAnchor          DateTime?                @default(now()) @map("cloud_billing_cycle_anchor")
   cloudBillingCycleUpdatedAt       DateTime?                @map("cloud_billing_cycle_updated_at")
   cloudCurrentCycleUsage           Int?                     @map("cloud_current_cycle_usage")
-  cloudFreeTierUsageThresholdState String?                  @map("cloud_free_tier_usage_threshold_state")
   aiFeaturesEnabled                Boolean                  @default(false) @map("ai_features_enabled")
   aiTelemetryEnabled               Boolean                  @default(true) @map("ai_telemetry_enabled")
   organizationMemberships          OrganizationMembership[]
@@ -109,7 +108,6 @@ model Organization {
   MembershipInvitation             MembershipInvitation[]
   ApiKey                           ApiKey[]
   surveys                          Survey[]
-  cloudSpendAlerts                 CloudSpendAlert[]
   verifiedDomains                  VerifiedDomain[]
 
   @@map("organizations")
@@ -1817,21 +1815,4 @@ enum SurveyName {
   USER_ONBOARDING @map("user_onboarding")
 
   @@map("SurveyName")
-}
-
-model CloudSpendAlert {
-  id    String       @id @default(cuid())
-  orgId String       @map("org_id")
-  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  title     String // e.g., "Production Alert"
-  threshold Decimal @map("threshold") // USD amount
-
-  triggeredAt DateTime? @map("triggered_at") // Last trigger timestamp
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
-
-  @@index([orgId])
-  @@map("cloud_spend_alerts")
 }

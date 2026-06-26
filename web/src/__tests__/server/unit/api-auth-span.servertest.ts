@@ -100,7 +100,6 @@ const createProjectApiKey = () => {
         organization: {
           id: orgId,
           cloudConfig: null,
-          cloudFreeTierUsageThresholdState: null,
           createdAt: now,
           name: "Org",
           updatedAt: now,

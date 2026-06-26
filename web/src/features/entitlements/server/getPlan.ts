@@ -1,4 +1,3 @@
-import { env } from "@/src/env.mjs";
 import { type Plan } from "@langfuse/shared";
 import { type CloudConfigSchema } from "@langfuse/shared";
 
@@ -36,22 +35,12 @@ export function getOrganizationPlanServerSide(
     return "cloud:hobby";
   }
 
-  const selfHostedPlan = getSelfHostedInstancePlanServerSide();
-  if (selfHostedPlan) {
-    return selfHostedPlan;
-  }
-
-  return "oss";
+  return getSelfHostedInstancePlanServerSide();
 }
 
-export function getSelfHostedInstancePlanServerSide(): Plan | null {
-  const licenseKey = env.LANGFUSE_EE_LICENSE_KEY;
-  if (!licenseKey) return null;
-  if (licenseKey.startsWith("langfuse_ee_")) {
-    return "self-hosted:enterprise";
-  }
-  if (licenseKey.startsWith("langfuse_pro_")) {
-    return "self-hosted:pro";
-  }
-  return null;
+// Openfuse is fully MIT-licensed: every feature ships unlocked, with no
+// commercial license key or entitlement gate. Self-hosted instances always run
+// at the highest tier.
+export function getSelfHostedInstancePlanServerSide(): Plan {
+  return "self-hosted:enterprise";
 }

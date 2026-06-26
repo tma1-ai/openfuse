@@ -33,7 +33,6 @@ export const getQueues = () => {
     QueueName.BlobStorageIntegrationQueue,
     QueueName.DeadLetterRetryQueue,
     QueueName.PostHogIntegrationQueue,
-    QueueName.CloudFreeTierUsageThresholdQueue,
   ];
 
   return queues

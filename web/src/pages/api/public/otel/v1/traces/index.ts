@@ -9,7 +9,6 @@ import { z } from "zod";
 import { $root } from "@/src/pages/api/public/otel/otlp-proto/generated/root";
 import { gunzip } from "node:zlib";
 import { ForbiddenError } from "@langfuse/shared";
-import { env } from "@/src/env.mjs";
 
 /** Read a Langfuse header that may arrive with hyphens or underscores. */
 function getLangfuseHeader(
@@ -158,25 +157,10 @@ export default withMiddlewares({
         };
       }
 
-      // Extract headers to propagate for ingestion masking
-      const propagatedHeaderNames =
-        env.LANGFUSE_INGESTION_MASKING_PROPAGATED_HEADERS;
-      const propagatedHeaders: Record<string, string> = {};
-      for (const headerName of propagatedHeaderNames) {
-        const value = req.headers[headerName];
-        if (typeof value === "string") {
-          propagatedHeaders[headerName] = value;
-        }
-      }
-
       const processor = new OtelIngestionProcessor({
         projectId: auth.scope.projectId,
         publicKey: auth.scope.publicKey,
         orgId: auth.scope.orgId,
-        propagatedHeaders:
-          Object.keys(propagatedHeaders).length > 0
-            ? propagatedHeaders
-            : undefined,
         sdkName,
         sdkVersion,
         ingestionVersion,

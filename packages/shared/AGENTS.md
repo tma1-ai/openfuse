@@ -57,8 +57,7 @@ Use root [AGENTS.md](../../AGENTS.md) for monorepo-level rules.
   signature helpers for secrets and signed payloads.
 - `@langfuse/shared/query` via `src/features/query/index.ts`: dashboard query feature.
 - Narrower exported subpaths also exist for targeted imports:
-  `@langfuse/shared/src/server/auth/apiKeys`,
-  `@langfuse/shared/src/server/ee/ingestionMasking`, and
+  `@langfuse/shared/src/server/auth/apiKeys` and
   `@langfuse/shared/src/utils/chatml`.
 
 When changing export surfaces, keep `package.json#exports`, the relevant barrel
