@@ -109,7 +109,6 @@ model Organization {
   MembershipInvitation             MembershipInvitation[]
   ApiKey                           ApiKey[]
   surveys                          Survey[]
-  cloudSpendAlerts                 CloudSpendAlert[]
   verifiedDomains                  VerifiedDomain[]
 
   @@map("organizations")
@@ -1817,21 +1816,4 @@ enum SurveyName {
   USER_ONBOARDING @map("user_onboarding")
 
   @@map("SurveyName")
-}
-
-model CloudSpendAlert {
-  id    String       @id @default(cuid())
-  orgId String       @map("org_id")
-  org   Organization @relation(fields: [orgId], references: [id], onDelete: Cascade)
-
-  title     String // e.g., "Production Alert"
-  threshold Decimal @map("threshold") // USD amount
-
-  triggeredAt DateTime? @map("triggered_at") // Last trigger timestamp
-
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
-
-  @@index([orgId])
-  @@map("cloud_spend_alerts")
 }
