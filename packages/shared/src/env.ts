@@ -16,6 +16,11 @@ const EnvSchema = z
       .enum(["development", "test", "production"])
       .default("development"),
     NEXTAUTH_URL: z.url().optional(),
+    // Signing secret shared with the web package. Used to mint/verify signed
+    // download tokens (e.g. local-backend batch exports) from the worker so the
+    // web download route can verify them with the same secret resolution as
+    // NextAuth (`NEXTAUTH_SECRET ?? SALT`).
+    NEXTAUTH_SECRET: z.string().optional(),
     EMAIL_FROM_ADDRESS: z.string().optional(),
     // Standard SMTP URL (`smtp://`, `smtps://`) or `ses://<region>` to send via
     // AWS SES using the default AWS credential chain (IAM role, SSO, env vars).

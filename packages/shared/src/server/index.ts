@@ -1,4 +1,5 @@
 export * from "./services/StorageService";
+export * from "./services/batchExport/downloadToken";
 export * from "./cache";
 export * from "./services/BufferedStreamUploader";
 export * from "./services/S3ChunkedUploadStrategy";

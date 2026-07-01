@@ -40,14 +40,14 @@ section.
 
 Ingestion and eval-generated scores persist to GreptimeDB `raw_events`, not to a
 blob store. The remaining object-storage consumers — media uploads, the OTel
-ingestion carrier, and the eval observation blob store — all support a local-file
-backend, so a stock deployment needs **no** MinIO/S3 (only opt-in batch/blob
-exports still require an S3-compatible bucket):
+ingestion carrier, the eval observation blob store, and batch exports — all
+support a local-file backend, so a stock deployment needs **no** MinIO/S3:
 
-| Variable                         | Default | Set to `local` for no object storage  |
-| -------------------------------- | ------- | ------------------------------------- |
-| `LANGFUSE_MEDIA_STORAGE_BACKEND` | `s3`    | `local` + `LANGFUSE_MEDIA_LOCAL_PATH` |
-| `LANGFUSE_EVENT_STORAGE_BACKEND` | `s3`    | `local` + `LANGFUSE_EVENT_LOCAL_PATH` |
+| Variable                                | Default | Set to `local` for no object storage         |
+| --------------------------------------- | ------- | -------------------------------------------- |
+| `LANGFUSE_MEDIA_STORAGE_BACKEND`        | `s3`    | `local` + `LANGFUSE_MEDIA_LOCAL_PATH`        |
+| `LANGFUSE_EVENT_STORAGE_BACKEND`        | `s3`    | `local` + `LANGFUSE_EVENT_LOCAL_PATH`        |
+| `LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND` | `s3`    | `local` + `LANGFUSE_BATCH_EXPORT_LOCAL_PATH` |
 
 `LANGFUSE_EVENT_STORAGE_BACKEND` covers both the OTel carrier and the eval blob
 store; with `local` they share a filesystem volume, so the API and worker must

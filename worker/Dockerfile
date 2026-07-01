@@ -97,8 +97,8 @@ RUN chmod +x ./worker/entrypoint.sh
 
 # Pre-create the default local blob-store mount points owned by the app user so a fresh named volume
 # inherits writable ownership (see web/Dockerfile); a root-owned mount blocks the non-root user.
-RUN mkdir -p /langfuse_media_data /langfuse_event_data && \
-    chown expressjs:expressjs /langfuse_media_data /langfuse_event_data
+RUN mkdir -p /langfuse_media_data /langfuse_event_data /langfuse_batch_export_data && \
+    chown expressjs:expressjs /langfuse_media_data /langfuse_event_data /langfuse_batch_export_data
 
 USER expressjs
 

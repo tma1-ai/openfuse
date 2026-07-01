@@ -17,6 +17,7 @@ import {
   getCurrentSpan,
   applyCommentFilters,
   type CommentObjectType,
+  getBatchExportLocalDownloadUrl,
 } from "@langfuse/shared/src/server";
 import { env } from "../../env";
 import { getDatabaseReadStreamPaginated } from "../database-read-stream/getDatabaseReadStream";
@@ -34,7 +35,14 @@ const tableToCommentType: Record<string, CommentObjectType | undefined> = {
 export const handleBatchExportJob = async (
   batchExportJob: BatchExportJobType,
 ) => {
-  if (env.LANGFUSE_S3_BATCH_EXPORT_ENABLED !== "true") {
+  const useLocalFileStorage =
+    env.LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND === "local";
+
+  // The local backend is self-enabling (its required path is validated at boot);
+  // the S3 backend stays behind the explicit enable flag.
+  const isBatchExportEnabled =
+    useLocalFileStorage || env.LANGFUSE_S3_BATCH_EXPORT_ENABLED === "true";
+  if (!isBatchExportEnabled) {
     throw new Error(
       "Batch export is not enabled. Configure environment variables to use this feature. See https://langfuse.com/self-hosting/infrastructure/blobstorage#batch-exports for more details.",
     );
@@ -238,42 +246,77 @@ export const handleBatchExportJob = async (
   const fileDate = new Date().getTime();
   const fileExtension =
     exportOptions[jobDetails.format as BatchExportFileFormat].extension;
-  const fileName = `${env.LANGFUSE_S3_BATCH_EXPORT_PREFIX}${fileDate}-lf-${parsedQuery.data.tableName}-export-${projectId}.${fileExtension}`;
+  const filePrefix = useLocalFileStorage
+    ? ""
+    : env.LANGFUSE_S3_BATCH_EXPORT_PREFIX;
+  const fileName = `${filePrefix}${fileDate}-lf-${parsedQuery.data.tableName}-export-${projectId}.${fileExtension}`;
+  const fileType =
+    exportOptions[jobDetails.format as BatchExportFileFormat].fileType;
   const expiresInSeconds =
     env.BATCH_EXPORT_DOWNLOAD_LINK_EXPIRATION_HOURS * 3600;
 
-  // Stream upload results to blob storage
-  const bucketName = env.LANGFUSE_S3_BATCH_EXPORT_BUCKET;
-  if (!bucketName) {
-    throw new Error("No S3 bucket configured for exports.");
+  // Resolve the download link differently per backend:
+  //  - local: write to a shared volume + mint a signed web download URL (object
+  //    storage fully optional).
+  //  - s3/blob: upload to the bucket + hand out a time-limited presigned URL.
+  let signedUrl: string;
+
+  if (useLocalFileStorage) {
+    const storageService = StorageServiceFactory.getInstance({
+      useLocalFileStorage: true,
+      localFileStoragePath: env.LANGFUSE_BATCH_EXPORT_LOCAL_PATH,
+      // The remaining params are unused by the local backend.
+      bucketName: "",
+      accessKeyId: undefined,
+      secretAccessKey: undefined,
+      endpoint: undefined,
+      region: undefined,
+      forcePathStyle: false,
+      awsSse: undefined,
+      awsSseKmsKeyId: undefined,
+    });
+
+    await storageService.uploadFileBuffered({
+      fileName,
+      fileType,
+      data: fileStream,
+      partSizeBytes: env.BATCH_EXPORT_S3_PART_SIZE_MIB * 1024 * 1024,
+    });
+
+    signedUrl = getBatchExportLocalDownloadUrl({
+      projectId,
+      batchExportId,
+      fileName,
+      contentType: fileType,
+      ttlSeconds: expiresInSeconds,
+    });
+  } else {
+    const bucketName = env.LANGFUSE_S3_BATCH_EXPORT_BUCKET;
+    if (!bucketName) {
+      throw new Error("No S3 bucket configured for exports.");
+    }
+
+    const storageService = StorageServiceFactory.getInstance({
+      bucketName,
+      accessKeyId: env.LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID,
+      secretAccessKey: env.LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY,
+      endpoint: env.LANGFUSE_S3_BATCH_EXPORT_ENDPOINT,
+      externalEndpoint: env.LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT,
+      region: env.LANGFUSE_S3_BATCH_EXPORT_REGION,
+      forcePathStyle: env.LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE === "true",
+      awsSse: env.LANGFUSE_S3_BATCH_EXPORT_SSE,
+      awsSseKmsKeyId: env.LANGFUSE_S3_BATCH_EXPORT_SSE_KMS_KEY_ID,
+    });
+
+    await storageService.uploadFileBuffered({
+      fileName,
+      fileType,
+      data: fileStream,
+      partSizeBytes: env.BATCH_EXPORT_S3_PART_SIZE_MIB * 1024 * 1024,
+    });
+
+    signedUrl = await storageService.getSignedUrl(fileName, expiresInSeconds);
   }
-
-  const storageParams = {
-    bucketName,
-    accessKeyId: env.LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID,
-    secretAccessKey: env.LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY,
-    endpoint: env.LANGFUSE_S3_BATCH_EXPORT_ENDPOINT,
-    externalEndpoint: env.LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT,
-    region: env.LANGFUSE_S3_BATCH_EXPORT_REGION,
-    forcePathStyle: env.LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE === "true",
-    awsSse: env.LANGFUSE_S3_BATCH_EXPORT_SSE,
-    awsSseKmsKeyId: env.LANGFUSE_S3_BATCH_EXPORT_SSE_KMS_KEY_ID,
-  };
-
-  const storageService = StorageServiceFactory.getInstance(storageParams);
-
-  await storageService.uploadFileBuffered({
-    fileName,
-    fileType:
-      exportOptions[jobDetails.format as BatchExportFileFormat].fileType,
-    data: fileStream,
-    partSizeBytes: env.BATCH_EXPORT_S3_PART_SIZE_MIB * 1024 * 1024,
-  });
-
-  const signedUrl = await storageService.getSignedUrl(
-    fileName,
-    expiresInSeconds,
-  );
 
   logger.info(`[BATCH EXPORT] Batch export file ${fileName} uploaded`);
 

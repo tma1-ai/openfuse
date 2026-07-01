@@ -16,6 +16,10 @@ const EnvSchema = z
       .default(3030),
 
     NEXTAUTH_URL: z.string().optional(),
+    // Signing secret for worker-minted local batch-export download tokens. Must
+    // match web, which signs with NEXTAUTH_SECRET in production. Required (see
+    // superRefine below) only when the local batch-export backend is selected.
+    NEXTAUTH_SECRET: z.string().optional(),
 
     NEXT_PUBLIC_LANGFUSE_CLOUD_REGION: z
       .enum(["US", "EU", "STAGING", "DEV", "HIPAA", "JP"])
@@ -42,6 +46,14 @@ const EnvSchema = z
       .default("false"),
     LANGFUSE_S3_BATCH_EXPORT_SSE: z.enum(["AES256", "aws:kms"]).optional(),
     LANGFUSE_S3_BATCH_EXPORT_SSE_KMS_KEY_ID: z.string().optional(),
+    // Storage backend for batch exports. "local" writes the export file to a
+    // shared filesystem volume and hands out a signed web download URL instead
+    // of an S3 presigned URL, making object storage fully optional. Defaults to
+    // "s3" to preserve existing behavior (gated by LANGFUSE_S3_BATCH_EXPORT_ENABLED).
+    LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND: z
+      .enum(["s3", "local"])
+      .default("s3"),
+    LANGFUSE_BATCH_EXPORT_LOCAL_PATH: z.string().optional(),
 
     // Optional: ingestion + eval scores persist to GreptimeDB raw_events. A bucket is only needed when
     // LANGFUSE_EVENT_STORAGE_BACKEND is "s3" (OTel ingestion carrier + eval observation blob store).
@@ -557,6 +569,41 @@ const EnvSchema = z
         message:
           "LANGFUSE_EVENT_LOCAL_PATH is required when LANGFUSE_EVENT_STORAGE_BACKEND is 'local'",
       });
+    }
+    if (env.LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND === "local") {
+      if (!env.LANGFUSE_BATCH_EXPORT_LOCAL_PATH) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["LANGFUSE_BATCH_EXPORT_LOCAL_PATH"],
+          message:
+            "LANGFUSE_BATCH_EXPORT_LOCAL_PATH is required when LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND is 'local'",
+        });
+      }
+      // The worker mints HMAC-signed download tokens that the web container
+      // verifies. Web signs with NEXTAUTH_SECRET in production, so the worker
+      // must resolve the same secret; otherwise tokens fail verification and
+      // every download 400s. Fail fast instead of silently falling back to SALT.
+      if (!env.NEXTAUTH_SECRET) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["NEXTAUTH_SECRET"],
+          message:
+            "NEXTAUTH_SECRET is required when LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND is 'local' so worker-signed download tokens verify against the web container (which signs with NEXTAUTH_SECRET in production)",
+        });
+      }
+      // The worker mints the user-facing download URL from NEXTAUTH_URL. Without
+      // it the helper falls back to http://localhost:3000, which resolves to the
+      // user's own machine in a split deployment, so the export completes but the
+      // stored link is unreachable. Require it in production; dev/test may rely on
+      // the localhost fallback.
+      if (env.NODE_ENV === "production" && !env.NEXTAUTH_URL) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["NEXTAUTH_URL"],
+          message:
+            "NEXTAUTH_URL is required in production when LANGFUSE_BATCH_EXPORT_STORAGE_BACKEND is 'local' so worker-minted download links are reachable (not localhost)",
+        });
+      }
     }
   });
 
