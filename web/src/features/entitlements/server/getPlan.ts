@@ -1,3 +1,4 @@
+import { env } from "@/src/env.mjs";
 import { type Plan } from "@langfuse/shared";
 import { type CloudConfigSchema } from "@langfuse/shared";
 
@@ -7,9 +8,9 @@ import { type CloudConfigSchema } from "@langfuse/shared";
 export function getOrganizationPlanServerSide(
   cloudConfig?: CloudConfigSchema,
 ): Plan {
-  if (process.env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION) {
+  if (env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION) {
     // in dev, grant team plan to all organizations
-    // if (process.env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION === "DEV") {
+    // if (env.NEXT_PUBLIC_LANGFUSE_CLOUD_REGION === "DEV") {
     //   return "cloud:team";
     // }
     if (cloudConfig) {
