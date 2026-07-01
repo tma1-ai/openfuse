@@ -84,11 +84,17 @@ export default async function handler(
     }
 
     const downloadName = path.basename(token.fileName);
+    // RFC 5987/6266: give an ASCII-only fallback (control chars, quotes, and
+    // non-ASCII stripped so the header cannot be broken or injected) plus a
+    // UTF-8 `filename*` carrying the real name. Mirrors the trace download route.
+    const asciiFallback =
+      downloadName.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "_") ||
+      "batch-export";
     res.setHeader("Content-Type", token.contentType);
     res.setHeader("Content-Length", String(size));
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${downloadName}"`,
+      `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(downloadName)}`,
     );
 
     await pipeline(createReadStream(filePath), res);
