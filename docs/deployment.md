@@ -110,7 +110,7 @@ There are two topologies. Both read the same `.env`, both auto-migrate on startu
 Run the published image:
 
 ```bash
-OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.2 \
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.3 \
   docker compose -f docker-compose.standalone.yml up -d --pull always
 ```
 
@@ -125,7 +125,7 @@ docker compose -f docker-compose.standalone.yml up -d
 The supervisor treats the two processes as one unit: if either exits, the container stops so your restart policy restarts the whole thing. To keep the image tag across restarts, put this in `.env`:
 
 ```bash
-OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.2
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.3
 ```
 
 ### Split web + worker (`docker-compose.yml`)
@@ -135,8 +135,8 @@ The production stack runs web and worker as separate, independently scalable ser
 Run the published images:
 
 ```bash
-OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.2 \
-OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.2 \
+OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.3 \
+OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.3 \
   docker compose up -d --pull always
 ```
 
@@ -150,7 +150,7 @@ The split Compose file defines both `build:` and `image:` for web/worker, so `--
 
 ### Published images and tags
 
-Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: [`tma1ai/openfuse-web`](https://hub.docker.com/r/tma1ai/openfuse-web), [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker), [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone). The current preview is `1.0.0-alpha.2`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha.2`) and a commit-SHA tag. The floating `major.minor` and `major` tags and `latest` are published only for stable releases — the workflow skips all of them for any SemVer pre-release (`-alpha` / `-beta` / `-rc`), which get only the exact `{{version}}` and commit-SHA tags. So during the alpha, `latest` does not move; pin an explicit tag. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
+Images are published to Docker Hub by the `release-images.yml` workflow on each `v*` git tag: [`tma1ai/openfuse-web`](https://hub.docker.com/r/tma1ai/openfuse-web), [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker), [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone). The current preview is `1.0.0-alpha.3`. A `v*` tag always publishes the exact semver (e.g. `1.0.0-alpha.3`) and a commit-SHA tag. The floating `major.minor` and `major` tags and `latest` are published only for stable releases — the workflow skips all of them for any SemVer pre-release (`-alpha` / `-beta` / `-rc`), which get only the exact `{{version}}` and commit-SHA tags. So during the alpha, `latest` does not move; pin an explicit tag. To upgrade later, bump the pinned tag and re-run `docker compose up -d --pull always`.
 
 ## 4. Verify and persist
 

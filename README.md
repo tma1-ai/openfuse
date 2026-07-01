@@ -7,7 +7,7 @@
 
 ### LLM engineering on a real observability database
 
-[![Release](https://img.shields.io/badge/release-1.0.0--alpha.2-f97316)](https://github.com/tma1-ai/openfuse/releases)
+[![Release](https://img.shields.io/badge/release-1.0.0--alpha.3-f97316)](https://github.com/tma1-ai/openfuse/releases)
 [![Docker Standalone](https://img.shields.io/docker/v/tma1ai/openfuse-standalone?label=docker%20standalone&sort=semver&color=2496ed)](https://hub.docker.com/r/tma1ai/openfuse-standalone)
 [![Status](https://img.shields.io/badge/status-alpha-eab308)](docs/known-limitations.md)
 [![License](https://img.shields.io/badge/license-MIT-3b82f6)](LICENSE)
@@ -60,7 +60,7 @@ Requirements: Docker and Docker Compose. The quickest path is the published sing
 git clone https://github.com/tma1-ai/openfuse.git
 cd openfuse
 cp .env.quickstart.example .env
-OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.2 \
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.3 \
   docker compose -f docker-compose.standalone.yml up -d --pull always
 ```
 
@@ -77,8 +77,8 @@ docker compose -f docker-compose.standalone.yml up -d
 To scale web and worker independently, use the default `docker-compose.yml` (separate `openfuse-web` and `openfuse-worker` images) instead:
 
 ```bash
-OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.2 \
-OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.2 \
+OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.3 \
+OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.3 \
   docker compose up -d --pull always
 ```
 
@@ -96,10 +96,10 @@ Release images are published to Docker Hub on each `v*` tag:
 - [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker)
 - [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone) — web + worker in one container, for single-node self-hosting
 
-The current preview is `1.0.0-alpha.2`. To run the standalone image instead of building locally, pin a tag in `.env`:
+The current preview is `1.0.0-alpha.3`. To run the standalone image instead of building locally, pin a tag in `.env`:
 
 ```bash
-OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.2
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.3
 ```
 
 and start with:
@@ -118,7 +118,7 @@ Full write-up: [architecture](docs/architecture.md).
 
 ## Compatibility with Langfuse
 
-Openfuse `1.0.0-alpha.2` is based on upstream Langfuse `v3.184.1`. Existing Langfuse SDKs and the public ingestion/REST APIs work unchanged. Dashboard and metrics output is checked byte-for-byte against upstream for the covered query surface; the few intentional divergences, all cases where the fork is equal or more correct, are listed in the [parity ledger](docs/greptimedb-migration/parity/ledger.md). Postgres migrations are upstream Langfuse's and apply as-is; the GreptimeDB schema is fork-specific and migrates automatically on container startup (idempotent, advisory-lock serialised, fail-closed).
+Openfuse `1.0.0-alpha.3` is based on upstream Langfuse `v3.184.1`. Existing Langfuse SDKs and the public ingestion/REST APIs work unchanged. Dashboard and metrics output is checked byte-for-byte against upstream for the covered query surface; the few intentional divergences, all cases where the fork is equal or more correct, are listed in the [parity ledger](docs/greptimedb-migration/parity/ledger.md). Postgres migrations are upstream Langfuse's and apply as-is; the GreptimeDB schema is fork-specific and migrates automatically on container startup (idempotent, advisory-lock serialised, fail-closed).
 
 Openfuse is a community fork and is not affiliated with or endorsed by Langfuse. See [migration from Langfuse](docs/migration-from-langfuse.md) for the full compatibility statement.
 
