@@ -1,5 +1,9 @@
 import { prisma } from "../../../db";
-import { InternalServerError, LangfuseNotFoundError } from "../../../errors";
+import {
+  InternalServerError,
+  LangfuseNotFoundError,
+  PayloadTooLargeError,
+} from "../../../errors";
 import { type FilterState } from "../../../types";
 import { type ObservationType } from "../../../domain";
 import { observationsTableCols } from "../../../observationsTable";
@@ -123,7 +127,7 @@ export const getObservationsForTrace = async <IncludeIO extends boolean>(opts: {
       if (typeof v === "string") payloadSize += v.length;
     }
     if (payloadSize >= env.LANGFUSE_API_TRACE_OBSERVATIONS_SIZE_LIMIT_BYTES) {
-      throw new Error(
+      throw new PayloadTooLargeError(
         `Observations in trace are too large: ${(payloadSize / 1e6).toFixed(2)}MB exceeds limit of ${(env.LANGFUSE_API_TRACE_OBSERVATIONS_SIZE_LIMIT_BYTES / 1e6).toFixed(2)}MB`,
       );
     }

@@ -6,6 +6,7 @@ import {
 import {
   BaseError,
   LangfuseNotFoundError,
+  PayloadTooLargeError,
   UnauthorizedError,
   ServiceUnavailableError,
 } from "@langfuse/shared";
@@ -92,6 +93,67 @@ describe("withMiddlewares error handling", () => {
         error: "ServiceUnavailable",
       });
       // Should trace 5xx errors
+      expect(traceException).toHaveBeenCalledWith(error);
+    });
+  });
+
+  describe("oversized response handling", () => {
+    it("maps a PayloadTooLargeError to a 422 response", async () => {
+      const error = new PayloadTooLargeError();
+
+      const handler = withMiddlewares({
+        GET: async () => {
+          throw error;
+        },
+      });
+
+      const { req, res } = createMocks<NextApiRequest, NextApiResponse>({
+        method: "GET",
+        headers: {
+          "x-langfuse-public-key": "test-key",
+        },
+      });
+
+      await handler(req, res);
+
+      expect(res._getStatusCode()).toBe(422);
+      const jsonData = JSON.parse(res._getData());
+      expect(jsonData).toMatchObject({
+        message: "Response payload is too large",
+        error: "PayloadTooLargeError",
+      });
+      // 4xx errors are not traced to Sentry.
+      expect(traceException).not.toHaveBeenCalledWith(error);
+    });
+
+    it("keeps handler RangeError instances on the generic 500 path", async () => {
+      // Only the response-write RangeError becomes a 422 (via
+      // createAuthedProjectAPIRoute); a RangeError thrown from handler logic
+      // must still surface as a generic 500.
+      const error = new RangeError("Invalid string length");
+
+      const handler = withMiddlewares({
+        GET: async () => {
+          throw error;
+        },
+      });
+
+      const { req, res } = createMocks<NextApiRequest, NextApiResponse>({
+        method: "GET",
+        headers: {
+          "x-langfuse-public-key": "test-key",
+        },
+      });
+
+      await handler(req, res);
+
+      expect(res._getStatusCode()).toBe(500);
+      const jsonData = JSON.parse(res._getData());
+      expect(jsonData).toMatchObject({
+        message: "Internal Server Error",
+        error: "Invalid string length",
+      });
+      expect(logger.error).toHaveBeenCalledWith(error);
       expect(traceException).toHaveBeenCalledWith(error);
     });
   });

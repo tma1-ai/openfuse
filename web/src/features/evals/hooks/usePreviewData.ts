@@ -2,7 +2,7 @@ import {
   isEventTarget,
   isExperimentTarget,
 } from "@/src/features/evals/utils/typeHelpers";
-import { api, type RouterOutputs } from "@/src/utils/api";
+import { api, sendAsPostOption, type RouterOutputs } from "@/src/utils/api";
 import {
   EvalTargetObject,
   extractValueFromObject,
@@ -199,6 +199,7 @@ function useEventPreview({
       truncated: false,
     },
     {
+      ...sendAsPostOption,
       enabled: enabled && !!observationId && !!traceId && !!timestamp,
     },
   );
@@ -246,6 +247,7 @@ function useExperimentPreview({
       truncated: false,
     },
     {
+      ...sendAsPostOption,
       enabled: enabled && !!observationId && !!traceId && !!timestamp,
     },
   );
