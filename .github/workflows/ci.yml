@@ -308,7 +308,6 @@ jobs:
           # Match upstream's test tuning so deletes propagate within the poll.
           echo "LANGFUSE_TRACE_DELETE_DELAY_MS=1" >> .env
           echo "LANGFUSE_TRACE_DELETE_CONCURRENCY=100" >> .env
-          echo "LANGFUSE_CACHE_PROMPT_ENABLED=false" >> .env
 
       - run: pnpm install --frozen-lockfile --config.minimumReleaseAge=0
       - run: pnpm run db:generate
