@@ -24,6 +24,7 @@ import {
   NumberFilter,
   NumberObjectFilter,
   type ScoreGrain,
+  ScoreCategoryMembershipFilter,
   ScoreNumberObjectFilter,
   StringFilter,
   StringObjectFilter,
@@ -74,8 +75,25 @@ const FULLTEXT_COLUMNS: Record<string, ReadonlySet<string>> = {
 const isFullTextColumn = (table: string, field: string): boolean =>
   FULLTEXT_COLUMNS[table]?.has(field) ?? false;
 
-// Rollup-score column refs that only exist as a materialised array in the CH UI CTE.
-const ROLLUP_SCORE_FIELDS = new Set(["scores_avg", "score_categories"]);
+// The compiled CH filter carries `clickhouseSelect` as `field`, which may be prefixed
+// (`s.score_categories`). Compare against the bare column name so rollup-score detection is
+// prefix-insensitive.
+const bareField = (field: string): string =>
+  field.includes(".") ? field.slice(field.lastIndexOf(".") + 1) : field;
+
+const isRollupScoreField = (field: string, name: string): boolean =>
+  bareField(field) === name;
+
+// `score_categories` StringOptions are combined `name:string_value` options (CH stored
+// `concat(name, ':', string_value)`). Split on the first `:` so a `:` inside the value is preserved.
+const parseCategoryOption = (
+  option: string,
+): { name: string; value: string } => {
+  const idx = option.indexOf(":");
+  return idx < 0
+    ? { name: option, value: "" }
+    : { name: option.slice(0, idx), value: option.slice(idx + 1) };
+};
 
 /**
  * Tool-name array columns: the compiled CH `ArrayOptionsFilter` carries the `clickhouseSelect`
@@ -123,6 +141,16 @@ export const chFilterToGreptime = (
     });
   }
   if (f instanceof ChStringOptionsFilter) {
+    // `score_categories` StringOptions carry combined `name:string_value` options; GreptimeDB has no
+    // such materialised column, so route them to a categorical score-grain EXISTS (same semantics as
+    // ChCategoryOptionsFilter, matching CH's `hasAny(score_categories, ['name:value'])`).
+    if (isRollupScoreField(f.field, "score_categories")) {
+      return new ScoreCategoryMembershipFilter({
+        pairs: f.values.map(parseCategoryOption),
+        operator: f.operator,
+        grain: requireGrain(opts, "StringOptionsFilter[score_categories]"),
+      });
+    }
     return new StringOptionsFilter({
       table,
       field: f.field,
@@ -203,7 +231,7 @@ export const chFilterToGreptime = (
   }
   if (f instanceof ChNumberObjectFilter) {
     // `scores_avg` -> rollup score-grain EXISTS; any other field -> numeric metadata EAV EXISTS.
-    if (ROLLUP_SCORE_FIELDS.has(f.field)) {
+    if (isRollupScoreField(f.field, "scores_avg")) {
       return new ScoreNumberObjectFilter({
         key: f.key,
         value: f.value,
