@@ -263,7 +263,9 @@ jobs:
 
       # GreptimeDB and MinIO need custom start commands that GitHub `services:`
       # cannot express — run them detached and wait for their HTTP health, same
-      # as the `servertests` job above.
+      # as the `servertests` job above. Fail fast (with container logs) if a
+      # service never comes up, so a later step doesn't fail with a misleading
+      # error that hides the real root cause.
       - name: Start GreptimeDB
         run: |
           docker run -d --name greptimedb \
@@ -276,6 +278,8 @@ jobs:
             if curl -sf http://localhost:4000/health; then echo "greptimedb up"; break; fi
             echo "waiting for greptimedb ($i)"; sleep 2
           done
+          curl -sf http://localhost:4000/health > /dev/null \
+            || { echo "greptimedb never became healthy"; docker logs greptimedb; exit 1; }
 
       - name: Start MinIO
         run: |
@@ -287,6 +291,8 @@ jobs:
             if curl -sf http://localhost:9090/minio/health/live; then echo "minio up"; break; fi
             echo "waiting for minio ($i)"; sleep 2
           done
+          curl -sf http://localhost:9090/minio/health/live > /dev/null \
+            || { echo "minio never became healthy"; docker logs minio; exit 1; }
 
       - name: Load env
         run: |
