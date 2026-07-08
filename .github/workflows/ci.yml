@@ -217,3 +217,155 @@ jobs:
             src/__tests__/projectDeletionProcessing.test.ts \
             src/queues/__tests__/otelToObservationForEval.test.ts \
             src/features/experiments/__tests__/scheduleExperimentEvals.test.ts
+
+  # End-to-end black-box job: boots the real web (:3000) and worker (:3030) HTTP
+  # servers, ingests through the public API (Langfuse SDK batch + OTLP), and
+  # verifies the data is queryable back through the public API. This is the only
+  # job that exercises the full ingest -> queue -> worker -> GreptimeDB -> query
+  # path over HTTP; the `servertests` job above only calls the DB/tRPC layer
+  # in-process and never starts the servers. Like that job, the test list is a
+  # curated green subset that grows as more paths pass on GreptimeDB.
+  e2e-blackbox:
+    name: e2e black-box (HTTP ingest -> query)
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    timeout-minutes: 25
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7.2.4
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+
+      # GreptimeDB and MinIO need custom start commands that GitHub `services:`
+      # cannot express — run them detached and wait for their HTTP health, same
+      # as the `servertests` job above.
+      - name: Start GreptimeDB
+        run: |
+          docker run -d --name greptimedb \
+            -p 4000:4000 -p 4001:4001 -p 4002:4002 \
+            greptime/greptimedb:v1.1.1 standalone start \
+            --http-addr 0.0.0.0:4000 \
+            --rpc-bind-addr 0.0.0.0:4001 \
+            --mysql-addr 0.0.0.0:4002
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:4000/health; then echo "greptimedb up"; break; fi
+            echo "waiting for greptimedb ($i)"; sleep 2
+          done
+
+      - name: Start MinIO
+        run: |
+          docker run -d --name minio -p 9090:9000 \
+            -e MINIO_ROOT_USER=minio -e MINIO_ROOT_PASSWORD=miniosecret \
+            --entrypoint sh minio/minio \
+            -c 'mkdir -p /data/langfuse && minio server /data'
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9090/minio/health/live; then echo "minio up"; break; fi
+            echo "waiting for minio ($i)"; sleep 2
+          done
+
+      - name: Load env
+        run: |
+          cp .env.dev.example .env
+          # Drain the async ingestion pipeline as fast as possible so the
+          # waitForExpect polls in the black-box tests resolve quickly:
+          # queue delay before the worker picks a batch, and the worker's
+          # GreptimeDB write flush interval.
+          echo "LANGFUSE_INGESTION_QUEUE_DELAY_MS=1" >> .env
+          echo "LANGFUSE_INGESTION_WRITE_INTERVAL_MS=1" >> .env
+
+      - run: pnpm install --frozen-lockfile --config.minimumReleaseAge=0
+      - run: pnpm run db:generate
+
+      - name: Build (web + worker)
+        run: pnpm run build
+        env:
+          NODE_OPTIONS: --max_old_space_size=8192
+
+      - name: Prisma migrate
+        run: pnpm --filter @langfuse/shared run db:deploy
+
+      - name: Bootstrap GreptimeDB schema
+        env:
+          GREPTIME_DB: openfuse
+        run: pnpm --filter @langfuse/shared run greptime:migrate
+
+      # Seed the fixed demo project (7a88...) plus the eval templates and job
+      # configurations the __e2e__ suite asserts on (api.servertest.ts triggers
+      # an eval on userId=user-1 and expects a jobExecution row).
+      - name: Seed example data
+        run: pnpm --filter @langfuse/shared run db:seed:examples
+
+      # `pnpm run start` fans out via turbo to `next start` (web :3000) and
+      # `node dist/index.js` (worker :3030). LANGFUSE_INIT_* provisions the same
+      # fixed org/project/keys the seed uses, idempotently, so a live server is
+      # available even before the seed's rows are read.
+      - name: Start web + worker
+        run: (pnpm run start > /tmp/langfuse-app.log 2>&1 &)
+        env:
+          LANGFUSE_INIT_ORG_ID: "seed-org-id"
+          LANGFUSE_INIT_ORG_NAME: "Seed Org"
+          LANGFUSE_INIT_PROJECT_ID: "7a88fb47-b4e2-43b8-a06c-a5ce950dc53a"
+          LANGFUSE_INIT_PROJECT_NAME: "Seed Project"
+          LANGFUSE_INIT_PROJECT_PUBLIC_KEY: "pk-lf-1234567890"
+          LANGFUSE_INIT_PROJECT_SECRET_KEY: "sk-lf-1234567890"
+          LANGFUSE_INIT_USER_EMAIL: "demo@langfuse.com"
+          LANGFUSE_INIT_USER_NAME: "Demo User"
+          LANGFUSE_INIT_USER_PASSWORD: "password"
+
+      - name: Wait for worker + web health
+        run: |
+          timeout 120 bash -c 'until curl -sf http://localhost:3030/api/health; do echo "waiting for worker"; sleep 2; done' \
+            || { echo "worker never became healthy"; cat /tmp/langfuse-app.log; exit 1; }
+          timeout 120 bash -c 'until curl -sf http://localhost:3000/api/public/health; do echo "waiting for web"; sleep 2; done' \
+            || { echo "web never became healthy"; cat /tmp/langfuse-app.log; exit 1; }
+
+      # HTTP black-box tests that self-provision their project via
+      # createOrgProjectAndApiKey and hit http://localhost:3000. Curated green
+      # subset covering the core ingest -> query families; expand as more pass.
+      - name: Public API black-box servertests (HTTP)
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          GREPTIME_DB: openfuse
+        run: |
+          pnpm --filter web run test \
+            src/__tests__/server/ingestion-api.servertest.ts \
+            src/__tests__/server/otel-api.servertest.ts \
+            src/__tests__/server/traces-api.servertest.ts \
+            src/__tests__/server/observations-api.servertest.ts \
+            src/__tests__/server/scores-api-v2.servertest.ts \
+            src/__tests__/server/sessions-api.servertest.ts
+
+      # The __e2e__ suite (seed-dependent): ingest a batch, poll the public
+      # GET /traces API, and assert the worker-run eval produced a jobExecution;
+      # plus OTLP tenant-isolation.
+      - name: __e2e__ black-box suite
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
+          GREPTIME_DB: openfuse
+        run: pnpm --filter web run test:e2e:server
+
+      - name: Dump app logs on failure
+        if: failure()
+        run: cat /tmp/langfuse-app.log || true
