@@ -303,6 +303,12 @@ jobs:
           # GreptimeDB write flush interval.
           echo "LANGFUSE_INGESTION_QUEUE_DELAY_MS=1" >> .env
           echo "LANGFUSE_INGESTION_WRITE_INTERVAL_MS=1" >> .env
+          # Trace deletion is queued with a delay and drained with bounded
+          # concurrency; the defaults make the DELETE-then-poll tests time out.
+          # Match upstream's test tuning so deletes propagate within the poll.
+          echo "LANGFUSE_TRACE_DELETE_DELAY_MS=1" >> .env
+          echo "LANGFUSE_TRACE_DELETE_CONCURRENCY=100" >> .env
+          echo "LANGFUSE_CACHE_PROMPT_ENABLED=false" >> .env
 
       - run: pnpm install --frozen-lockfile --config.minimumReleaseAge=0
       - run: pnpm run db:generate
@@ -351,8 +357,8 @@ jobs:
             || { echo "web never became healthy"; cat /tmp/langfuse-app.log; exit 1; }
 
       # HTTP black-box tests that self-provision their project via
-      # createOrgProjectAndApiKey and hit http://localhost:3000. Curated green
-      # subset covering the core ingest -> query families; expand as more pass.
+      # createOrgProjectAndApiKey and hit http://localhost:3000, covering the
+      # core OTLP/SDK ingest -> query families.
       - name: Public API black-box servertests (HTTP)
         env:
           DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres

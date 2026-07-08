@@ -82,6 +82,23 @@ const buildSqlPool = (host: string): mysql.Pool =>
     // offset (e.g. UTC+8 turned 14:00 into a 06:00Z Date) — which corrupts DateTime filters and
     // keyset cursors that round-trip a Date back into SQL. Pin to UTC so reads are offset-correct.
     timezone: "Z",
+    // GreptimeDB advertises text columns as MySQL VARCHAR with characterSet 33 (utf8mb3). mysql2's
+    // default reader mis-decodes that combination and mangles every 4-byte UTF-8 code point (emoji,
+    // rare CJK, etc.) into U+FFFD — silent data corruption on read. The wire bytes are valid UTF-8,
+    // so decode text columns straight from the raw buffer. Numeric / temporal / DECIMAL / BIGINT
+    // columns fall through to mysql2 so the decimalNumbers / bigNumberStrings handling above is kept.
+    typeCast: (field, next) => {
+      if (
+        field.type === "VARCHAR" ||
+        field.type === "VAR_STRING" ||
+        field.type === "STRING" ||
+        field.type === "BLOB"
+      ) {
+        const buf = field.buffer();
+        return buf === null ? null : buf.toString("utf8");
+      }
+      return next();
+    },
   });
 
 /** Read/write MySQL-wire pool (used for DDL-free reads + full-history replay). */
