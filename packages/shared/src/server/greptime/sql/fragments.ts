@@ -29,9 +29,14 @@ const ref = (prefix: string | undefined, col: string): string =>
 export const greptimeLatencyMs = (prefix?: string): string => {
   const start = ref(prefix, "start_time");
   const end = ref(prefix, "end_time");
+  // GreptimeDB's to_unixtime() truncates to whole seconds, so any sub-second span — or a span that
+  // straddles a second boundary — mis-computes latency by up to ~1s (e.g. a 1.5s observation could be
+  // read as 2.0s and dropped by a `latency <= 1.9` filter). start_time/end_time are stored at
+  // millisecond precision, and CAST(<timestamp> AS BIGINT) yields epoch milliseconds directly, so
+  // subtract the cast bounds to keep full millisecond accuracy.
   return (
-    `CAST((to_unixtime(greatest(max(${end}), max(${start}))) - ` +
-    `to_unixtime(least(min(${start}), min(${end})))) * 1000 AS BIGINT)`
+    `CAST(greatest(max(${end}), max(${start})) AS BIGINT) - ` +
+    `CAST(least(min(${start}), min(${end})) AS BIGINT)`
   );
 };
 
