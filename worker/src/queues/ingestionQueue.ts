@@ -123,7 +123,15 @@ export const ingestionQueueProcessorBuilder = (
       const coalesceKey = `langfuse:ingestion:rebuilt-watermark:${projectId}:${job.data.payload.data.type}:${entityId}`;
       if (env.LANGFUSE_INGESTION_COALESCE_REBUILDS === "true" && redis) {
         const watermark = await redis.get(coalesceKey);
-        if (watermark && Number(watermark) >= job.data.timestamp.getTime()) {
+        // `job.data.timestamp` is typed as a Date, but BullMQ round-trips job data through JSON in
+        // Redis, so a dequeued job carries it back as an ISO string. Calling .getTime() on that string
+        // threw ("getTime is not a function"), which — because the guard is only reached once a
+        // watermark exists (i.e. the second and later update to an entity) — made every follow-up
+        // rebuild fail and retry forever: entity updates silently never merged. Coerce through Date().
+        if (
+          watermark &&
+          Number(watermark) >= new Date(job.data.timestamp).getTime()
+        ) {
           recordIncrement("langfuse.ingestion.coalesced_rebuild_skipped", 1, {
             kind: clickhouseEntityType,
           });
