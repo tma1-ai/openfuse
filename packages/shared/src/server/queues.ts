@@ -30,7 +30,10 @@ export type { MonitorQueueEvent };
  * created or replayed from Redis.
  */
 export const jobDispatchTimestamp = (job: {
-  data: { timestamp: Date };
+  // Widened to `Date | string` on purpose: the queue schemas type it `Date`, but a job replayed from
+  // Redis actually carries an ISO string here, and the whole point of the helper is to absorb that.
+  // A caller passing a `Job` whose `data.timestamp` is typed `Date` still satisfies the wider type.
+  data: { timestamp: Date | string };
 }): Date => new Date(job.data.timestamp);
 
 export const IngestionEvent = z.object({
