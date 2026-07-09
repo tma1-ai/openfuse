@@ -37,7 +37,9 @@ export class DlqRetryService {
       for (const job of failedJobs) {
         try {
           const projectId = job.data.payload.projectId;
-          const ts = job.data.timestamp;
+          // job.data.timestamp is typed Date but comes back as an ISO string after BullMQ's JSON
+          // round-trip; `Date.now() - "<iso>"` is NaN, which silently poisoned the delay metric.
+          const ts = new Date(job.data.timestamp).getTime();
 
           const dlxDelay = Date.now() - ts;
 
