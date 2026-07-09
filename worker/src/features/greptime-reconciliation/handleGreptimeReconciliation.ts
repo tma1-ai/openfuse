@@ -1,7 +1,9 @@
 import { randomUUID } from "crypto";
 import {
+  firstTraceId,
   getGreptimeIngestClient,
   getProjectDeletedAt,
+  isParentTraceDeleted,
   GREPTIME_RECONCILIATION_MAX_BATCH_SIZE,
   GreptimeReconciliationEventType,
   GreptimeReconciliationQueue,
@@ -188,7 +190,16 @@ async function rebuildEntity(params: {
 
   if (events.length === 0) return;
 
-  const isDeleted = deleted || projectDeletedAt !== null;
+  let isDeleted = deleted || projectDeletedAt !== null;
+  // An observation/score whose parent trace was deleted must stay soft-deleted even if it never got
+  // its own tombstone (in-flight at delete time, or ingested late). Reconciliation is the healer for
+  // such orphans, so the check belongs here as well as on the live ingestion path.
+  if (
+    !isDeleted &&
+    (entityType === "observation" || entityType === "score")
+  ) {
+    isDeleted = await isParentTraceDeleted(projectId, firstTraceId(events));
+  }
 
   await ingestionService.mergeAndWrite(
     entityType,

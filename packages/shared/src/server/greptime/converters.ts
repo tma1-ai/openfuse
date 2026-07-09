@@ -26,6 +26,20 @@ const extractEventTs = (event: IngestionEventType): number | null => {
   return Number.isFinite(ms) ? ms : null;
 };
 
+/**
+ * The parent trace id an observation/score belongs to, read from the first event body that carries
+ * one. Every event for a given child entity shares the same `traceId`, so the first is representative;
+ * the rebuild path uses it to check whether the parent trace was deleted. Returns null for traces (no
+ * parent) or when no event carries a `traceId`.
+ */
+export const firstTraceId = (events: IngestionEventType[]): string | null => {
+  for (const event of events) {
+    const traceId = (event as { body?: { traceId?: unknown } }).body?.traceId;
+    if (typeof traceId === "string" && traceId.length > 0) return traceId;
+  }
+  return null;
+};
+
 /** Map an ingestion event to a raw_events row. Returns null when the event carries no entity id. */
 export const ingestionEventToRawEvent = (
   event: IngestionEventType,

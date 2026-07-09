@@ -1,7 +1,9 @@
 import { Job, Processor } from "bullmq";
 import {
+  firstTraceId,
   getIngestionEntityType,
   getCurrentSpan,
+  isParentTraceDeleted,
   logger,
   parseRawEventHistory,
   getProjectDeletedAt,
@@ -171,6 +173,18 @@ export const ingestionQueueProcessorBuilder = (
       const projectDeletedAt = await getProjectDeletedAt(projectId);
       if (projectDeletedAt !== null) {
         deleted = true;
+      }
+
+      // Parent-trace deletion guard: deleteTracesFromGreptime only tombstones child observations/scores
+      // already visible in the projection, so a child still in-flight (or ingested late) when its trace
+      // was deleted never gets its own tombstone and would rebuild as an orphan under a deleted trace.
+      // raw_events has no trace_id column, so the check happens per child rebuild. See isParentTraceDeleted.
+      if (
+        !deleted &&
+        (clickhouseEntityType === "observation" ||
+          clickhouseEntityType === "score")
+      ) {
+        deleted = await isParentTraceDeleted(projectId, firstTraceId(events));
       }
 
       // Perform merge of those events

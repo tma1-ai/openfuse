@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { eventTypes } from "../ingestion/types";
+import type { IngestionEventType } from "../ingestion/types";
 import {
+  firstTraceId,
   ingestionEventToRawEvent,
   parseRawEventHistory,
   TOMBSTONE_EVENT_TYPE,
@@ -9,6 +11,28 @@ import {
 import type { RawEventRow } from "./rawEvents";
 
 const PROJECT = "p1";
+
+describe("firstTraceId", () => {
+  const ev = (body: Record<string, unknown>): IngestionEventType =>
+    ({ id: "e", type: eventTypes.OBSERVATION_CREATE, body }) as IngestionEventType;
+
+  it("returns the traceId from the first event that carries one", () => {
+    expect(
+      firstTraceId([ev({ id: "o1" }), ev({ id: "o1", traceId: "t-123" })]),
+    ).toBe("t-123");
+  });
+
+  it("returns null when no event carries a traceId (e.g. a trace entity)", () => {
+    expect(firstTraceId([ev({ id: "t1", name: "root" })])).toBeNull();
+  });
+
+  it("ignores empty-string / non-string traceIds", () => {
+    expect(firstTraceId([ev({ id: "o1", traceId: "" })])).toBeNull();
+    expect(
+      firstTraceId([ev({ id: "o1", traceId: 42 as unknown as string })]),
+    ).toBeNull();
+  });
+});
 
 describe("ingestionEventToRawEvent", () => {
   it("maps a trace-create event to a raw_events row", () => {
