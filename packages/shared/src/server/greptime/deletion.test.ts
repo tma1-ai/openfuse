@@ -23,7 +23,9 @@ import {
   deleteProjectFromGreptime,
   deleteTracesFromGreptime,
   getProjectDeletedAt,
+  isParentTraceDeleted,
 } from "./deletion";
+import { TOMBSTONE_EVENT_TYPE } from "./converters";
 
 describe("Greptime deletion", () => {
   beforeEach(() => {
@@ -31,6 +33,48 @@ describe("Greptime deletion", () => {
     mocks.greptimeQuery.mockResolvedValue([]);
     mocks.greptimeWrite.mockResolvedValue(undefined);
     mocks.writeRawEvents.mockResolvedValue(undefined);
+  });
+
+  describe("isParentTraceDeleted", () => {
+    const liveRow = (eventId: string, ingestedAt: number) => ({
+      ingested_at: new Date(ingestedAt),
+      event_id: eventId,
+      event_type: "trace-create",
+      event_ts: new Date(ingestedAt),
+      body: JSON.stringify({ id: "t1", timestamp: ingestedAt }),
+    });
+    const tombstoneRow = (ingestedAt: number) => ({
+      ingested_at: new Date(ingestedAt),
+      event_id: `tombstone-${ingestedAt}`,
+      event_type: TOMBSTONE_EVENT_TYPE,
+      event_ts: new Date(ingestedAt),
+      body: JSON.stringify({ id: "t1", deletedAt: ingestedAt }),
+    });
+
+    it("returns false for an empty traceId without querying", async () => {
+      expect(await isParentTraceDeleted("p1", "")).toBe(false);
+      expect(await isParentTraceDeleted("p1", null)).toBe(false);
+      expect(mocks.greptimeQuery).not.toHaveBeenCalled();
+    });
+
+    it("returns true when the trace's latest raw event is a tombstone", async () => {
+      mocks.greptimeQuery.mockResolvedValueOnce([liveRow("e1", 100), tombstoneRow(200)]);
+      expect(await isParentTraceDeleted("p1", "t1")).toBe(true);
+    });
+
+    it("returns false when the trace has live events and no tombstone", async () => {
+      mocks.greptimeQuery.mockResolvedValueOnce([liveRow("e1", 100)]);
+      expect(await isParentTraceDeleted("p1", "t1")).toBe(false);
+    });
+
+    it("returns false when a live event is ingested after the tombstone (re-create)", async () => {
+      mocks.greptimeQuery.mockResolvedValueOnce([
+        liveRow("e1", 100),
+        tombstoneRow(200),
+        liveRow("e2", 300),
+      ]);
+      expect(await isParentTraceDeleted("p1", "t1")).toBe(false);
+    });
   });
 
   it("deletes entity projection and EAV rows with project scoping", async () => {

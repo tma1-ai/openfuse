@@ -15,6 +15,10 @@ on:
 
 permissions:
   contents: read
+  # dorny/paths-filter reads the PR's changed-file list via the API on pull_request events; without
+  # this read-only scope the `changes` gate can fail on shallow checkouts / fork PRs and block every
+  # downstream job. Everything else stays least-privilege (contents: read).
+  pull-requests: read
 
 concurrency:
   group: ci-${{ github.ref }}
