@@ -4,6 +4,7 @@ import { prisma } from "@langfuse/shared/src/db";
 import {
   QueueName,
   TQueueJobTypes,
+  jobDispatchTimestamp,
   logger,
   traceException,
   EvalExecutionQueue,
@@ -29,7 +30,7 @@ export const evalJobTraceCreatorQueueProcessor = async (
     await createEvalJobs({
       sourceEventType: "trace-upsert",
       event: job.data.payload,
-      jobTimestamp: job.data.timestamp,
+      jobTimestamp: jobDispatchTimestamp(job),
       enforcedJobTimeScope: "NEW", // we must not execute evals which are intended for existing data only.
     });
     return true;
@@ -50,7 +51,7 @@ export const evalJobDatasetCreatorQueueProcessor = async (
     await createEvalJobs({
       sourceEventType: "dataset-run-item-upsert",
       event: job.data.payload,
-      jobTimestamp: job.data.timestamp,
+      jobTimestamp: jobDispatchTimestamp(job),
       enforcedJobTimeScope: "NEW", // we must not execute evals which are intended for existing data only.
     });
     return true;
@@ -102,7 +103,7 @@ export const evalJobCreatorQueueProcessor = async (
     await createEvalJobs({
       sourceEventType: "ui-create-eval",
       event: job.data.payload,
-      jobTimestamp: job.data.timestamp,
+      jobTimestamp: jobDispatchTimestamp(job),
     });
     return true;
   } catch (e) {

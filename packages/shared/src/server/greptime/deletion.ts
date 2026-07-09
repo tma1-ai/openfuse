@@ -1,8 +1,12 @@
 import { DataType, Precision, Table } from "@greptime/ingester";
 
 import { getGreptimeIngestClient, greptimeQuery } from "./client";
-import { TOMBSTONE_EVENT_TYPE } from "./converters";
-import { RawEventInput, writeRawEvents } from "./rawEvents";
+import { parseRawEventHistory, TOMBSTONE_EVENT_TYPE } from "./converters";
+import {
+  RawEventInput,
+  readRawEventsForEntity,
+  writeRawEvents,
+} from "./rawEvents";
 import {
   GreptimeEntityType,
   metadataTableForEntity,
@@ -139,6 +143,34 @@ export const deleteEntitiesFromGreptime = async (params: {
   for (const entityId of params.entityIds) {
     await deleteProjectionRows(params.projectId, params.entityType, entityId);
   }
+};
+
+/**
+ * Whether an observation/score's parent trace is currently deleted.
+ *
+ * `deleteTracesFromGreptime` only tombstones child observations/scores that are already visible in the
+ * projection tables. A child that was still in-flight in `raw_events` (not yet projected) when its
+ * parent trace was deleted — or one that is ingested late, after the delete — therefore never gets its
+ * own tombstone, and a later rebuild/reconciliation would resurrect it as an orphan under a deleted
+ * trace. `raw_events` has no `trace_id` column (the trace id lives inside the event body), so children
+ * cannot be enumerated by trace id at delete time; instead each child rebuild checks its parent trace
+ * here and rebuilds soft-deleted when the parent is gone. Returns false when `traceId` is empty or the
+ * trace has no tombstone (the common, live case).
+ *
+ * Cost: one extra tag-indexed `raw_events` read per observation/score rebuild. Kept correctness-first;
+ * gate behind a flag or a short-TTL positive cache if it shows up on the ingestion hot path at scale.
+ */
+export const isParentTraceDeleted = async (
+  projectId: string,
+  traceId: string | null | undefined,
+): Promise<boolean> => {
+  if (!traceId) return false;
+  const rows = await readRawEventsForEntity({
+    projectId,
+    entityType: "trace",
+    entityId: traceId,
+  });
+  return parseRawEventHistory(rows).deleted;
 };
 
 /**

@@ -1,7 +1,10 @@
 import { Job, Processor } from "bullmq";
 import {
+  firstTraceId,
   getIngestionEntityType,
   getCurrentSpan,
+  isParentTraceDeleted,
+  jobDispatchTimestamp,
   logger,
   parseRawEventHistory,
   getProjectDeletedAt,
@@ -123,7 +126,13 @@ export const ingestionQueueProcessorBuilder = (
       const coalesceKey = `langfuse:ingestion:rebuilt-watermark:${projectId}:${job.data.payload.data.type}:${entityId}`;
       if (env.LANGFUSE_INGESTION_COALESCE_REBUILDS === "true" && redis) {
         const watermark = await redis.get(coalesceKey);
-        if (watermark && Number(watermark) >= job.data.timestamp.getTime()) {
+        // jobDispatchTimestamp coerces the JSON-round-tripped timestamp back to a Date; reading
+        // job.data.timestamp directly here would be an ISO string and .getTime() would throw, making
+        // every second+ rebuild of an entity fail and retry forever (updates silently never merged).
+        if (
+          watermark &&
+          Number(watermark) >= jobDispatchTimestamp(job).getTime()
+        ) {
           recordIncrement("langfuse.ingestion.coalesced_rebuild_skipped", 1, {
             kind: clickhouseEntityType,
           });
@@ -163,6 +172,18 @@ export const ingestionQueueProcessorBuilder = (
       const projectDeletedAt = await getProjectDeletedAt(projectId);
       if (projectDeletedAt !== null) {
         deleted = true;
+      }
+
+      // Parent-trace deletion guard: deleteTracesFromGreptime only tombstones child observations/scores
+      // already visible in the projection, so a child still in-flight (or ingested late) when its trace
+      // was deleted never gets its own tombstone and would rebuild as an orphan under a deleted trace.
+      // raw_events has no trace_id column, so the check happens per child rebuild. See isParentTraceDeleted.
+      if (
+        !deleted &&
+        (clickhouseEntityType === "observation" ||
+          clickhouseEntityType === "score")
+      ) {
+        deleted = await isParentTraceDeleted(projectId, firstTraceId(events));
       }
 
       // Perform merge of those events

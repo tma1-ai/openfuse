@@ -126,8 +126,10 @@ export const processClickhouseTraceDelete = async (
   projectId: string,
   traceIds: string[],
 ) => {
+  // The function name is kept for upstream parity, but the analytics store is GreptimeDB now — log the
+  // real backend so operators reading worker logs aren't misled into looking at ClickHouse.
   logger.info(
-    `Deleting traces ${JSON.stringify(traceIds)} in project ${projectId} from Clickhouse`,
+    `Deleting traces ${JSON.stringify(traceIds)} in project ${projectId} from GreptimeDB`,
   );
 
   await deleteMediaItemsForTraces(projectId, traceIds);
@@ -136,7 +138,7 @@ export const processClickhouseTraceDelete = async (
     await deleteTracesFromGreptime({ projectId, traceIds });
   } catch (e) {
     logger.error(
-      `Error deleting trace ${JSON.stringify(traceIds)} in project ${projectId} from Clickhouse`,
+      `Error deleting trace ${JSON.stringify(traceIds)} in project ${projectId} from GreptimeDB`,
       e,
     );
     traceException(e);

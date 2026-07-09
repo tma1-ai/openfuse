@@ -1,4 +1,5 @@
 import {
+  jobDispatchTimestamp,
   logger,
   QueueName,
   recordHistogram,
@@ -37,9 +38,9 @@ export class DlqRetryService {
       for (const job of failedJobs) {
         try {
           const projectId = job.data.payload.projectId;
-          const ts = job.data.timestamp;
-
-          const dlxDelay = Date.now() - ts;
+          // jobDispatchTimestamp coerces the JSON-round-tripped timestamp; `Date.now() - "<iso>"` would
+          // be NaN and silently poison the delay metric.
+          const dlxDelay = Date.now() - jobDispatchTimestamp(job).getTime();
 
           recordHistogram("langfuse.dlq_retry_delay", dlxDelay, {
             unit: "milliseconds",

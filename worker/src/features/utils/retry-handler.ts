@@ -1,5 +1,6 @@
 import {
   convertQueueNameToMetricName,
+  jobDispatchTimestamp,
   logger,
   recordDistribution,
   RetryBaggage,
@@ -93,7 +94,7 @@ export async function retryLLMRateLimitError(
           attempt: job.data.retryBaggage.attempt + 1,
         }
       : {
-          originalJobTimestamp: new Date(job.data.timestamp),
+          originalJobTimestamp: jobDispatchTimestamp(job),
           attempt: 1,
         };
 

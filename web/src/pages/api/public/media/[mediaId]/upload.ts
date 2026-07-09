@@ -4,6 +4,7 @@ import { createReadStream } from "node:fs";
 import type { NextApiRequest, NextApiResponse } from "next";
 
 import { env } from "@/src/env.mjs";
+import { cors, runMiddleware } from "@/src/features/public-api/server/cors";
 import { getMediaStorageServiceClient } from "@/src/features/media/server/getMediaStorageClient";
 import { verifyLocalMediaToken } from "@/src/features/media/server/localMediaStorage";
 import { prisma } from "@langfuse/shared/src/db";
@@ -28,6 +29,15 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  // Browser SDK uploads are cross-origin (app origin -> Langfuse host) and send an OPTIONS preflight
+  // for `PUT` + custom headers; without CORS the preflight 405s and the upload never starts. Mirror
+  // the other public API routes and let the shared cors middleware answer the preflight.
+  await runMiddleware(req, res, cors);
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+
   if (req.method !== "PUT") {
     res.setHeader("Allow", "PUT");
     res.status(405).end();

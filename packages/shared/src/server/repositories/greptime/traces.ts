@@ -14,7 +14,10 @@ import {
   DEFAULT_RENDERING_PROPS,
   type RenderingProps,
 } from "../../utils/rendering";
-import { FilterList } from "../../greptime/sql/greptime-filter";
+import {
+  FilterList,
+  StringOptionsFilter,
+} from "../../greptime/sql/greptime-filter";
 import {
   createGreptimeFilterFromFilterState,
   greptimeProjectIdDefaultFilter,
@@ -43,6 +46,7 @@ import { LISTABLE_SCORE_TYPES } from "../../../domain/scores";
 import {
   type FilterList as ChFilterList,
   DateTimeFilter as ChDateTimeFilter,
+  StringOptionsFilter as ChStringOptionsFilter,
 } from "../../queries";
 import {
   remapObsAggregateFilter,
@@ -957,6 +961,35 @@ const findFromTimeFilter = (
       (f.operator === ">=" || f.operator === ">"),
   ) as ChDateTimeFilter | undefined;
 
+// The `environment` filter scopes the trace row (`t.environment`), but the observations/scores it
+// surfaces live in their own rows with their own `environment`. Without pushing the same predicate
+// into the rollup CTEs, a trace whose observations/scores span environments would attach ALL of them
+// (regression: `?environment=X` returned observations/scores from other environments too). Compile the
+// environment StringOptions once against each CTE's base table (no alias) so the rollup only counts
+// rows in the requested environment. Fresh uid() params avoid colliding with the trace-level predicate.
+const findEnvironmentFilter = (
+  filter: ChFilterList,
+): ChStringOptionsFilter | undefined =>
+  filter.find(
+    (f) =>
+      f instanceof ChStringOptionsFilter &&
+      f.clickhouseTable === "traces" &&
+      f.field === "environment",
+  ) as ChStringOptionsFilter | undefined;
+
+const compileCteEnvironmentPredicate = (
+  env: ChStringOptionsFilter | undefined,
+  table: string,
+): { query: string; params: Record<string, unknown> } | undefined =>
+  env
+    ? new StringOptionsFilter({
+        table,
+        field: "environment",
+        operator: env.operator,
+        values: env.values,
+      }).apply()
+    : undefined;
+
 const ALL_TRACE_FIELDS = [
   "core",
   "io",
@@ -1031,6 +1064,13 @@ export const generateTracesForPublicApi = async ({
       )
     : undefined;
 
+  const environmentFilter = findEnvironmentFilter(filter);
+  const obsEnv = compileCteEnvironmentPredicate(
+    environmentFilter,
+    "observations",
+  );
+  const scoreEnv = compileCteEnvironmentPredicate(environmentFilter, "scores");
+
   const ctes: string[] = [];
   if (joinObs) {
     ctes.push(
@@ -1038,6 +1078,7 @@ export const generateTracesForPublicApi = async ({
         includeIds: needObsCte,
         idSepParam: "idsep",
         lookbackParam: obsLowerBound ? "obsLowerBound" : undefined,
+        extraFilterSql: obsEnv?.query,
       }),
     );
   }
@@ -1049,6 +1090,7 @@ export const generateTracesForPublicApi = async ({
         AND session_id IS NULL AND dataset_run_id IS NULL
         AND ${dataTypeInClause.sql}
         ${fromTime ? "AND timestamp >= :scoreFromTime" : ""}
+        ${scoreEnv ? `AND ${scoreEnv.query}` : ""}
         AND ${notDeleted()}
       GROUP BY project_id, trace_id
     )`);
@@ -1088,6 +1130,8 @@ export const generateTracesForPublicApi = async ({
         : {}),
       ...rest.params,
       ...obs.params,
+      ...(obsEnv?.params ?? {}),
+      ...(scoreEnv?.params ?? {}),
     },
     readOnly: true,
   });

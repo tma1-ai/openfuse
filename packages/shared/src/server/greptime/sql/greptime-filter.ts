@@ -758,6 +758,65 @@ export class CategoryOptionsFilter implements GreptimeFilter {
 }
 
 /**
+ * Categorical score membership filter for the public-API `score_categories` StringOptions surface.
+ * The UI/public API sends combined `name:string_value` options (CH stored `score_categories` as a
+ * `concat(name, ':', string_value)` array and matched with `hasAny`). GreptimeDB has no such column,
+ * so a trace/session/observation matches when it has a CATEGORICAL score whose `(name, string_value)`
+ * equals one of the requested pairs. `none of` is the negated EXISTS (missing score also matches);
+ * an empty pair list short-circuits (`any of` -> nothing, `none of` -> everything).
+ */
+export class ScoreCategoryMembershipFilter implements GreptimeFilter {
+  public table = "scores";
+  public field: string;
+  public operator: (typeof filterOperators.categoryOptions)[number];
+  public pairs: Array<{ name: string; value: string }>;
+  public grain: ScoreGrain;
+
+  constructor(opts: {
+    pairs: Array<{ name: string; value: string }>;
+    operator: (typeof filterOperators.categoryOptions)[number];
+    grain: ScoreGrain;
+  }) {
+    this.pairs = opts.pairs;
+    this.operator = opts.operator;
+    this.grain = opts.grain;
+    this.field = opts.grain.scoresColumn;
+  }
+
+  apply(): CompiledFilter {
+    if (this.pairs.length === 0) {
+      return {
+        query: this.operator === "any of" ? "1 = 0" : "1 = 1",
+        params: {},
+      };
+    }
+    const cs = SCORE_GRAIN_ALIAS;
+    const params: Record<string, unknown> = {};
+    const ors = this.pairs.map((pair) => {
+      const kn = `k${uid()}`;
+      const vn = `v${uid()}`;
+      params[kn] = pair.name;
+      params[vn] = pair.value;
+      return (
+        `(${cs}.${quoteIdent("name")} = :${kn} AND ` +
+        `${cs}.${quoteIdent("string_value")} = :${vn})`
+      );
+    });
+    const inner =
+      `${cs}.${quoteIdent("data_type")} = 'CATEGORICAL' AND ` +
+      `(${ors.join(" OR ")})`;
+    return {
+      query: scoreGrainExists({
+        grain: this.grain,
+        innerPredicate: inner,
+        negate: this.operator === "none of",
+      }),
+      params,
+    };
+  }
+}
+
+/**
  * Numeric score filter (`scores_avg`). Replaces CH `arrayFilter(x -> x.1 = key AND x.2 OP v, scores_avg)`:
  * a trace/session/observation matches when its NUMERIC/BOOLEAN score named `key` has a grouped average
  * value satisfying the operator (`GROUP BY name HAVING avg(value) OP v`), mirroring the CH CTE's
