@@ -1,6 +1,6 @@
 # Known limitations
 
-Openfuse is an alpha. The GreptimeDB migration is functionally complete and parity-verified for the covered surface. This page lists the genuine limitations — constraints and caveats that affect how you deploy, query, or recover.
+Openfuse is a beta. The GreptimeDB migration is functionally complete and parity-verified for the covered surface. This page lists the genuine limitations — constraints and caveats that affect how you deploy, query, or recover.
 
 It is **not** a list of output differences. Where the fork's dashboard/metrics output diverges from upstream Langfuse, the fork is equal or more correct; those intentional differences are summarised at the end and detailed in the [parity ledger](greptimedb-migration/parity/ledger.md).
 

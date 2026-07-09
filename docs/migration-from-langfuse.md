@@ -42,4 +42,4 @@ If you need historical analytics data, keep it in your existing Langfuse deploym
 
 ## Posture
 
-This is an alpha / developer preview. Do not position it as a production-ready or no-qualifications drop-in replacement. Run it in dev/staging and on data you can afford to lose while the operational story (backfill, compaction automation, migration ledger) matures.
+This is a beta / developer preview. Do not position it as a production-ready or no-qualifications drop-in replacement. Run it in dev/staging and on data you can afford to lose while the operational story (backfill, compaction automation, migration ledger) matures.

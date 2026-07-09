@@ -7,9 +7,9 @@
 
 ### 把 LLM engineering 跑在一个真正的可观测性数据库上
 
-[![Release](https://img.shields.io/badge/release-1.0.0--alpha.3-f97316)](https://github.com/tma1-ai/openfuse/releases)
+[![Release](https://img.shields.io/badge/release-1.0.0--beta.1-f97316)](https://github.com/tma1-ai/openfuse/releases)
 [![Docker Standalone](https://img.shields.io/docker/v/tma1ai/openfuse-standalone?label=docker%20standalone&sort=semver&color=2496ed)](https://hub.docker.com/r/tma1ai/openfuse-standalone)
-[![Status](https://img.shields.io/badge/status-alpha-eab308)](docs/known-limitations.md)
+[![Status](https://img.shields.io/badge/status-beta-3b82f6)](docs/known-limitations.md)
 [![License](https://img.shields.io/badge/license-MIT-3b82f6)](LICENSE)
 [![Based on Langfuse](https://img.shields.io/badge/based%20on-Langfuse%20v3.184.1-0ea5e9)](https://github.com/langfuse/langfuse)
 
@@ -60,7 +60,7 @@ LLM trace 本质就是可观测性数据：带高基数上下文的、带时间�
 git clone https://github.com/tma1-ai/openfuse.git
 cd openfuse
 cp .env.quickstart.example .env
-OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.3 \
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-beta.1 \
   docker compose -f docker-compose.standalone.yml up -d --pull always
 ```
 
@@ -77,14 +77,14 @@ docker compose -f docker-compose.standalone.yml up -d
 要让 web 和 worker 独立扩缩，改用默认的 `docker-compose.yml`（`openfuse-web` 和 `openfuse-worker` 两个独立镜像）：
 
 ```bash
-OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-alpha.3 \
-OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-alpha.3 \
+OPENFUSE_WEB_IMAGE=tma1ai/openfuse-web:1.0.0-beta.1 \
+OPENFUSE_WORKER_IMAGE=tma1ai/openfuse-worker:1.0.0-beta.1 \
   docker compose up -d --pull always
 ```
 
 ## 项目状态
 
-Openfuse 处于 **alpha**，正在向 beta 推进。ClickHouse → GreptimeDB 的迁移已经落地，读路径与上游 Langfuse 做了逐字节 parity 校验，Langfuse 的完整产品、API、SDK 面都能用。欢迎直接上手、拿真实负载跑、提 issue——这些反馈正是推动它走向 beta 的动力。
+Openfuse 处于 **beta**，正在向稳定版打磨。ClickHouse → GreptimeDB 的迁移已经落地，读路径与上游 Langfuse 做了逐字节 parity 校验，Langfuse 的完整产品、API、SDK 面都能用。欢迎直接上手、拿真实负载跑、提 issue——这些反馈正是推动它走向稳定版的动力。
 
 在依赖它之前，建议先扫一眼[已知限制](docs/known-limitations.md)：一份真正的约束清单，外加少数与上游有意的差异（这些差异里 fork 都是等价或更正确的一侧）。
 
@@ -96,10 +96,10 @@ Openfuse 处于 **alpha**，正在向 beta 推进。ClickHouse → GreptimeDB �
 - [`tma1ai/openfuse-worker`](https://hub.docker.com/r/tma1ai/openfuse-worker)
 - [`tma1ai/openfuse-standalone`](https://hub.docker.com/r/tma1ai/openfuse-standalone)——web + worker 一个容器，用于单机自托管
 
-当前预览版是 `1.0.0-alpha.3`。要直接跑 standalone 发布镜像而不是本地 build，在 `.env` 里固定一个 tag：
+当前预览版是 `1.0.0-beta.1`。要直接跑 standalone 发布镜像而不是本地 build，在 `.env` 里固定一个 tag：
 
 ```bash
-OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-alpha.3
+OPENFUSE_STANDALONE_IMAGE=tma1ai/openfuse-standalone:1.0.0-beta.1
 ```
 
 然后启动：
@@ -118,7 +118,7 @@ Postgres 存应用和配置数据（users、projects、prompts、dataset 定义�
 
 ## 与 Langfuse 的兼容性
 
-Openfuse `1.0.0-alpha.3` 基于上游 Langfuse `v3.184.1`。现有 Langfuse SDK 和公共 ingestion/REST API 保持不变。Dashboard 和 metrics 输出在覆盖到的查询面上与上游做了逐字节比对；少数有意的差异——都是 fork 等价或更正确的情形——列在 [parity ledger](docs/greptimedb-migration/parity/ledger.md)。Postgres 迁移就是上游 Langfuse 的、原样套用；GreptimeDB schema 是 fork 特有的，在容器启动时自动迁移（幂等、advisory lock 串行、fail-closed）。
+Openfuse `1.0.0-beta.1` 基于上游 Langfuse `v3.184.1`。现有 Langfuse SDK 和公共 ingestion/REST API 保持不变。Dashboard 和 metrics 输出在覆盖到的查询面上与上游做了逐字节比对；少数有意的差异——都是 fork 等价或更正确的情形——列在 [parity ledger](docs/greptimedb-migration/parity/ledger.md)。Postgres 迁移就是上游 Langfuse 的、原样套用；GreptimeDB schema 是 fork 特有的，在容器启动时自动迁移（幂等、advisory lock 串行、fail-closed）。
 
 Openfuse 是社区 fork，与 Langfuse 没有从属关系、也未获其背书。完整兼容性声明见[从 Langfuse 迁移](docs/migration-from-langfuse.md)。
 
