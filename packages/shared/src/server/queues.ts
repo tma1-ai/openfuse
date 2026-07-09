@@ -18,6 +18,21 @@ import {
 
 export type { MonitorQueueEvent };
 
+/**
+ * The dispatch (enqueue) time of a BullMQ job, as a real Date.
+ *
+ * Every queue payload below declares `timestamp: z.date()`, but BullMQ round-trips job data through
+ * JSON in Redis, so a *dequeued* job carries `timestamp` back as an ISO string — the declared `Date`
+ * type is only true at enqueue time. Calling Date methods (`.getTime()`) or doing Date arithmetic on
+ * the raw value therefore silently breaks (`getTime is not a function`, or `Date.now() - "<iso>"` =>
+ * NaN). Consumers must read the timestamp through this helper instead of trusting the declared type;
+ * `new Date()` accepts both a Date and an ISO string, so it is correct whether the job was just
+ * created or replayed from Redis.
+ */
+export const jobDispatchTimestamp = (job: {
+  data: { timestamp: Date };
+}): Date => new Date(job.data.timestamp);
+
 export const IngestionEvent = z.object({
   data: z.object({
     type: z.enum(Object.values(eventTypes)),

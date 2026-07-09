@@ -4,6 +4,7 @@ import {
   getIngestionEntityType,
   getCurrentSpan,
   isParentTraceDeleted,
+  jobDispatchTimestamp,
   logger,
   parseRawEventHistory,
   getProjectDeletedAt,
@@ -125,14 +126,12 @@ export const ingestionQueueProcessorBuilder = (
       const coalesceKey = `langfuse:ingestion:rebuilt-watermark:${projectId}:${job.data.payload.data.type}:${entityId}`;
       if (env.LANGFUSE_INGESTION_COALESCE_REBUILDS === "true" && redis) {
         const watermark = await redis.get(coalesceKey);
-        // `job.data.timestamp` is typed as a Date, but BullMQ round-trips job data through JSON in
-        // Redis, so a dequeued job carries it back as an ISO string. Calling .getTime() on that string
-        // threw ("getTime is not a function"), which — because the guard is only reached once a
-        // watermark exists (i.e. the second and later update to an entity) — made every follow-up
-        // rebuild fail and retry forever: entity updates silently never merged. Coerce through Date().
+        // jobDispatchTimestamp coerces the JSON-round-tripped timestamp back to a Date; reading
+        // job.data.timestamp directly here would be an ISO string and .getTime() would throw, making
+        // every second+ rebuild of an entity fail and retry forever (updates silently never merged).
         if (
           watermark &&
-          Number(watermark) >= new Date(job.data.timestamp).getTime()
+          Number(watermark) >= jobDispatchTimestamp(job).getTime()
         ) {
           recordIncrement("langfuse.ingestion.coalesced_rebuild_skipped", 1, {
             kind: clickhouseEntityType,
