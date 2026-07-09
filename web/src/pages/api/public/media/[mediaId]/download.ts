@@ -5,6 +5,7 @@ import { pipeline } from "node:stream/promises";
 import type { NextApiRequest, NextApiResponse } from "next";
 
 import { env } from "@/src/env.mjs";
+import { cors, runMiddleware } from "@/src/features/public-api/server/cors";
 import { resolveByteRange } from "@/src/features/media/server/byteRange";
 import { verifyLocalMediaToken } from "@/src/features/media/server/localMediaStorage";
 import { prisma } from "@langfuse/shared/src/db";
@@ -14,6 +15,14 @@ export default async function handler(
   req: NextApiRequest,
   res: NextApiResponse,
 ) {
+  // Browser <audio>/<video> and fetch() reads are cross-origin and preflight with OPTIONS; answer it
+  // via the shared cors middleware so the browser proceeds to the actual GET (and can read Range).
+  await runMiddleware(req, res, cors);
+  if (req.method === "OPTIONS") {
+    res.status(204).end();
+    return;
+  }
+
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
     res.status(405).end();
